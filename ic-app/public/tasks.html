@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — Family Task List</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.nav-brand a{color:#fff;text-decoration:none}
+.nav-brand span{color:var(--gold);font-size:11px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.page{padding:20px;max-width:900px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.pillar-title{font-size:15px;font-weight:700;color:var(--navy);margin:20px 0 8px}
+.category-title{font-size:12px;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px}
+.task-row{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-bottom:0.5px solid var(--border)}
+.task-row:last-child{border-bottom:none}
+.task-row.child{margin-left:26px}
+.task-row.done .task-title{text-decoration:line-through;color:var(--muted)}
+.task-check{margin-top:2px;cursor:pointer;width:16px;height:16px;accent-color:var(--teal)}
+.task-title{font-size:13px;color:var(--navy);flex:1}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-left:6px}
+.badge-high{background:var(--red-l);color:#991B1B}
+.badge-medium{background:var(--amber-l);color:#92400E}
+.badge-low{background:var(--green-l);color:#065F46}
+.badge-quarter{background:var(--navy-l);color:var(--navy)}
+.badge-all{background:var(--gold-l);color:#854F0B}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select,.form-textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit;margin-bottom:12px}
+.form-textarea{resize:vertical;min-height:56px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;color:var(--navy);margin-bottom:16px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.filters select{border:0.5px solid var(--border);border-radius:7px;padding:6px 10px;font-size:12px;background:#fff}
+.muted{color:var(--muted);font-size:12px}
+.avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff;margin-right:2px}
+.task-row.highlight{background:var(--gold-l);transition:background 2s ease}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect}=React;
+const h=React.createElement;
+const api={
+  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(url,body){return api.send('POST',url,body)},
+  put(url,body){return api.send('PUT',url,body)},
+  async del(url){const r=await fetch(url,{method:'DELETE',credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+};
+
+function memberById(members,id){return members.find(m=>m.id===id)}
+
+function AssigneeBadges({task,members}){
+  if(task.assignedToAll)return h('span',{className:'badge badge-all'},'All');
+  return h(React.Fragment,null,task.assigneeIds.map(id=>{
+    const m=memberById(members,id);
+    if(!m)return null;
+    return h('span',{key:id,className:'avatar',style:{background:m.color},title:m.name},m.initials);
+  }));
+}
+
+function canEditTask(task,me,roles){
+  if(roles.tasksAdmin)return true;
+  if(!roles.tasksMember)return false;
+  return task.assignedToAll||task.assigneeIds.includes(me.id);
+}
+
+function TaskRow({task,me,roles,members,onToggleDone,onEdit,onAddToGoogleTasks,googleTasksReady,child,highlighted}){
+  const editable=canEditTask(task,me,roles);
+  return h('div',{id:'task-row-'+task.id,className:`task-row ${task.status==='done'?'done':''} ${child?'child':''} ${highlighted?'highlight':''}`},
+    h('input',{type:'checkbox',className:'task-check',checked:task.status==='done',disabled:!editable,onChange:()=>onToggleDone(task)}),
+    h('div',{style:{flex:1}},
+      h('div',{className:'task-title'},task.title,
+        h('span',{className:`badge badge-${task.priority}`},task.priority),
+        task.targetQuarter&&h('span',{className:'badge badge-quarter'},task.targetQuarter),
+        task.status==='done'&&task.completedAt&&h('span',{className:'muted',style:{marginLeft:6}},'Completed '+task.completedAt),
+        h('span',{style:{marginLeft:6}},h(AssigneeBadges,{task,members}))
+      ),
+      task.notes&&h('div',{className:'muted',style:{marginTop:3}},task.notes)
+    ),
+    h('div',{style:{display:'flex',gap:6,flexShrink:0}},
+      googleTasksReady&&h('button',{className:'btn btn-outline btn-sm',title:'Add to your Google Tasks',onClick:()=>onAddToGoogleTasks(task)},'📋 Google Tasks'),
+      editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onEdit(task)},'Edit')
+    )
+  );
+}
+
+function TaskFormModal({initial,categories,members,me,roles,onSave,onCancel,onDelete}){
+  const [title,setTitle]=useState(initial?.title||'');
+  const [categoryId,setCategoryId]=useState(initial?.categoryId||categories[0]?.id||'');
+  const [priority,setPriority]=useState(initial?.priority||'medium');
+  const [targetQuarter,setTargetQuarter]=useState(initial?.targetQuarter||'');
+  const [notes,setNotes]=useState(initial?.notes||'');
+  const [assignedToAll,setAssignedToAll]=useState(initial?.assignedToAll||false);
+  const [assigneeIds,setAssigneeIds]=useState(initial?.assigneeIds||(roles.tasksAdmin?[]:[me.id]));
+  const [completedAt,setCompletedAt]=useState(initial?.completedAt||'');
+  const [saving,setSaving]=useState(false);
+  function toggleAssignee(id){setAssigneeIds(list=>list.includes(id)?list.filter(x=>x!==id):[...list,id]);}
+  async function save(){
+    setSaving(true);
+    try{
+      await onSave({title,categoryId,priority,targetQuarter:targetQuarter||null,notes,assignedToAll,assigneeIds,completedAt:completedAt||null});
+    }finally{setSaving(false);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onCancel},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},initial?'Edit Task':'Add Task'),
+      h('label',{className:'form-label'},'Title'),
+      h('input',{className:'form-input',value:title,onChange:e=>setTitle(e.target.value),autoFocus:true}),
+      h('label',{className:'form-label'},'Category'),
+      h('select',{className:'form-select',value:categoryId,onChange:e=>setCategoryId(e.target.value),disabled:!roles.tasksAdmin},
+        categories.map(c=>h('option',{key:c.id,value:c.id},c.name))),
+      h('label',{className:'form-label'},'Priority'),
+      h('select',{className:'form-select',value:priority,onChange:e=>setPriority(e.target.value)},
+        h('option',{value:'high'},'High'),h('option',{value:'medium'},'Medium'),h('option',{value:'low'},'Low')),
+      h('label',{className:'form-label'},'Target quarter (e.g. 2026-Q3)'),
+      h('input',{className:'form-input',value:targetQuarter,onChange:e=>setTargetQuarter(e.target.value),placeholder:'2026-Q3'}),
+      h('label',{className:'form-label'},'Notes'),
+      h('textarea',{className:'form-textarea',value:notes,onChange:e=>setNotes(e.target.value)}),
+      h('label',{className:'form-label'},'Completion date'),
+      h('input',{className:'form-input',type:'date',value:completedAt,onChange:e=>setCompletedAt(e.target.value)}),
+      h('div',{className:'muted',style:{marginTop:-8,marginBottom:12}},completedAt?'Marked done on this date.':'Leave blank while still open — the row checkbox is a shortcut for "done today."'),
+      roles.tasksAdmin&&h('div',null,
+        h('label',{className:'form-label'},'Assigned to'),
+        h('label',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:8,fontSize:12}},
+          h('input',{type:'checkbox',checked:assignedToAll,onChange:e=>setAssignedToAll(e.target.checked)}),'All members'),
+        !assignedToAll&&h('div',{style:{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}},
+          members.map(m=>h('label',{key:m.id,style:{display:'flex',alignItems:'center',gap:4,fontSize:12}},
+            h('input',{type:'checkbox',checked:assigneeIds.includes(m.id),onChange:()=>toggleAssignee(m.id)}),m.name.split(' ')[0])))
+      ),
+      h('div',{style:{display:'flex',gap:8,justifyContent:'space-between',marginTop:8}},
+        h('div',null,initial&&roles.tasksAdmin&&h('button',{className:'btn btn-outline btn-sm',style:{color:'#991B1B'},onClick:()=>onDelete(initial.id)},'Delete')),
+        h('div',{style:{display:'flex',gap:8}},
+          h('button',{className:'btn btn-outline btn-sm',onClick:onCancel},'Cancel'),
+          h('button',{className:'btn btn-teal btn-sm',disabled:!title||saving,onClick:save},saving?'Saving…':'Save')))
+    )
+  );
+}
+
+function DigestSettingsModal({onClose}){
+  const [settings,setSettings]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState('');
+  const [testing,setTesting]=useState(false);
+  const [testResult,setTestResult]=useState(null);
+  useEffect(()=>{api.get('/api/admin/settings/task-digest').then(s=>setSettings({
+    enabled:s.task_digest_enabled==='1',cadence:s.task_digest_cadence,dayOfWeek:Number(s.task_digest_day_of_week),dayOfMonth:Number(s.task_digest_day_of_month),
+    hourLocal:Number(s.task_digest_hour_local),timezone:s.task_digest_timezone,
+  })).catch(e=>setError(e.message));},[]);
+  async function save(){
+    setSaving(true);setError('');
+    try{await api.put('/api/admin/settings/task-digest',settings);onClose();}
+    catch(e){setError(e.message);}finally{setSaving(false);}
+  }
+  async function sendTest(){
+    setTesting(true);setTestResult(null);setError('');
+    try{
+      const r=await api.post('/api/admin/settings/task-digest/test',{});
+      setTestResult(r.empty?'Sent — you have no open tasks right now, so it\'s a short one.':'Sent — check your inbox.');
+    }catch(e){setError(e.message);}finally{setTesting(false);}
+  }
+  if(!settings)return h('div',{className:'modal-overlay'},h('div',{className:'modal'},'Loading…'));
+  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Digest Email Settings'),
+      h('div',{className:'card',style:{background:'var(--gold-l)',border:'0.5px solid var(--gold)'}},
+        h('div',{style:{fontWeight:600,marginBottom:6}},'Try before you turn it on'),
+        h('div',{className:'muted',style:{marginBottom:10}},'Send yourself a copy of today\'s digest — using your current settings below — without affecting anyone else or the recurring schedule.'),
+        h('button',{className:'btn btn-outline btn-sm',disabled:testing,onClick:sendTest},testing?'Sending…':'Send test email to myself'),
+        testResult&&h('div',{style:{fontSize:12,color:'#065F46',marginTop:8}},testResult)
+      ),
+      h('label',{style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 12px',fontSize:13,fontWeight:600,color:'var(--navy)'}},
+        h('input',{type:'checkbox',checked:settings.enabled,onChange:e=>setSettings({...settings,enabled:e.target.checked})}),
+        'Send this automatically to every member on the schedule below'),
+      h('label',{className:'form-label'},'Cadence'),
+      h('select',{className:'form-select',value:settings.cadence,onChange:e=>setSettings({...settings,cadence:e.target.value})},
+        h('option',{value:'daily'},'Daily'),h('option',{value:'weekly'},'Weekly'),h('option',{value:'biweekly'},'Every 2 weeks'),h('option',{value:'monthly'},'Monthly')),
+      (settings.cadence==='weekly'||settings.cadence==='biweekly')&&h('div',null,
+        h('label',{className:'form-label'},'Day of week'),
+        h('select',{className:'form-select',value:settings.dayOfWeek,onChange:e=>setSettings({...settings,dayOfWeek:Number(e.target.value)})},
+          days.map((d,i)=>h('option',{key:i,value:i},d)))),
+      settings.cadence==='monthly'&&h('div',null,
+        h('label',{className:'form-label'},'Day of month'),
+        h('input',{className:'form-input',type:'number',min:1,max:28,value:settings.dayOfMonth,onChange:e=>setSettings({...settings,dayOfMonth:Number(e.target.value)})})),
+      h('label',{className:'form-label'},'Send hour (local, 0-23)'),
+      h('input',{className:'form-input',type:'number',min:0,max:23,value:settings.hourLocal,onChange:e=>setSettings({...settings,hourLocal:Number(e.target.value)})}),
+      h('label',{className:'form-label'},'Timezone (IANA name)'),
+      h('input',{className:'form-input',value:settings.timezone,onChange:e=>setSettings({...settings,timezone:e.target.value})}),
+      error&&h('div',{style:{fontSize:12,color:'#991B1B',marginBottom:10}},error),
+      h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end'}},
+        h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'),
+        h('button',{className:'btn btn-teal btn-sm',disabled:saving,onClick:save},saving?'Saving…':'Save'))
+    )
+  );
+}
+
+function TasksApp({me,roles}){
+  const [tasks,setTasks]=useState([]);
+  const [pillars,setPillars]=useState([]);
+  const [categories,setCategories]=useState([]);
+  const [members,setMembers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [showDigest,setShowDigest]=useState(false);
+  const [filterAssignee,setFilterAssignee]=useState('');
+  const [filterPriority,setFilterPriority]=useState('');
+  const [filterStatus,setFilterStatus]=useState('open');
+  const [filterQuarter,setFilterQuarter]=useState('');
+  const [focusTaskId]=useState(()=>new URLSearchParams(location.search).get('task'));
+  const [highlightedId,setHighlightedId]=useState(null);
+  const [googleClientId,setGoogleClientId]=useState(null);
+  const [toast,setToast]=useState('');
+
+  useEffect(()=>{api.get('/api/config').then(c=>setGoogleClientId(c.googleTasksClientId||null)).catch(()=>{});},[]);
+  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),5000);return ()=>clearTimeout(t);},[toast]);
+
+  const googleTasksReady=!!googleClientId;
+
+  function addToGoogleTasks(task){
+    if(!googleClientId)return;
+    function start(){
+      const tokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:googleClientId,
+        scope:'https://www.googleapis.com/auth/tasks',
+        callback:async(resp)=>{
+          if(resp.error){setToast('Google sign-in was cancelled or failed.');return;}
+          const noteLines=[];
+          if(task.notes)noteLines.push(task.notes);
+          if(task.targetQuarter)noteLines.push('Target quarter: '+task.targetQuarter);
+          noteLines.push('From the Robinson Family Office Task List: '+location.origin+'/tasks?task='+task.id);
+          const body={title:task.title,notes:noteLines.join('\n\n')};
+          if(task.targetDate)body.due=new Date(task.targetDate+'T00:00:00Z').toISOString();
+          try{
+            const r=await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks',{
+              method:'POST',
+              headers:{'Content-Type':'application/json',Authorization:'Bearer '+resp.access_token},
+              body:JSON.stringify(body),
+            });
+            if(!r.ok)throw new Error('Google Tasks API error ('+r.status+')');
+            setToast('Added "'+task.title+'" to your Google Tasks.');
+          }catch(e){setToast('Failed to add to Google Tasks: '+e.message);}
+        },
+      });
+      tokenClient.requestAccessToken();
+    }
+    if(window.google&&window.google.accounts&&window.google.accounts.oauth2)start();
+    else setToast('Still loading Google sign-in — try again in a moment.');
+  }
+
+  function load(){
+    setLoading(true);
+    Promise.all([api.get('/api/tasks'),api.get('/api/pillars-categories'),api.get('/api/members')])
+      .then(([t,pc,m])=>{setTasks(t);setPillars(pc.pillars);setCategories(pc.categories);setMembers(m);})
+      .finally(()=>setLoading(false));
+  }
+  useEffect(load,[]);
+
+  // Deep-link from a digest email ("/tasks?task=<id>"): make sure the target task is
+  // visible regardless of the current status filter, then scroll to and briefly
+  // highlight it.
+  useEffect(()=>{
+    if(!focusTaskId||tasks.length===0)return;
+    const target=tasks.find(t=>t.id===focusTaskId);
+    if(!target)return;
+    if(filterStatus&&target.status!==filterStatus){setFilterStatus('');return;}
+    setHighlightedId(focusTaskId);
+  },[tasks,filterStatus,focusTaskId]);
+
+  useEffect(()=>{
+    if(!highlightedId)return;
+    const scrollTimer=setTimeout(()=>{
+      const el=document.getElementById('task-row-'+highlightedId);
+      if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+    },50);
+    const clearTimer=setTimeout(()=>setHighlightedId(null),3000);
+    return ()=>{clearTimeout(scrollTimer);clearTimeout(clearTimer);};
+  },[highlightedId]);
+
+  async function toggleDone(task){
+    const updated=await api.put(`/api/tasks/${task.id}`,{status:task.status==='done'?'open':'done'});
+    setTasks(list=>list.map(t=>t.id===task.id?updated:t));
+  }
+  async function saveTask(payload){
+    if(editing){
+      const updated=await api.put(`/api/tasks/${editing.id}`,payload);
+      setTasks(list=>list.map(t=>t.id===editing.id?updated:t));
+      setEditing(null);
+    }else{
+      const created=await api.post('/api/tasks',{...payload,categoryId:payload.categoryId});
+      setTasks(list=>[...list,created]);
+      setShowAdd(false);
+    }
+  }
+  async function deleteTask(id){
+    if(!window.confirm('Delete this task permanently?'))return;
+    await api.del(`/api/tasks/${id}`);
+    setTasks(list=>list.filter(t=>t.id!==id));
+    setEditing(null);
+  }
+
+  const quarters=[...new Set(tasks.map(t=>t.targetQuarter).filter(Boolean))].sort();
+
+  const visible=tasks.filter(t=>{
+    if(filterStatus&&t.status!==filterStatus)return false;
+    if(filterPriority&&t.priority!==filterPriority)return false;
+    if(filterAssignee&&!(t.assignedToAll||t.assigneeIds.includes(filterAssignee)))return false;
+    if(filterQuarter&&!(filterQuarter==='__unscheduled__'?!t.targetQuarter:t.targetQuarter===filterQuarter))return false;
+    return true;
+  });
+  const byId=id=>visible.filter(t=>t.categoryId===id&&!t.parentTaskId);
+  const childrenOf=id=>visible.filter(t=>t.parentTaskId===id);
+
+  if(loading)return h('div',{className:'page'},'Loading…');
+
+  return h('div',{className:'page'},
+    toast&&h('div',{className:'card',style:{background:'var(--teal-l)',border:'0.5px solid var(--teal)'}},toast),
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
+      h('div',null,h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'Family Task List'),
+        h('div',{className:'muted'},'Robinson Family Office · Strategy · People · Core Business · Operations')),
+      h('div',{style:{display:'flex',gap:8}},
+        roles.tasksAdmin&&h('button',{className:'btn btn-outline',onClick:()=>setShowDigest(true)},'Digest Settings'),
+        roles.tasksMember&&h('button',{className:'btn btn-gold',onClick:()=>setShowAdd(true)},'+ Add Task'))
+    ),
+    h('div',{className:'filters'},
+      h('select',{value:filterStatus,onChange:e=>setFilterStatus(e.target.value)},
+        h('option',{value:'open'},'Open'),h('option',{value:'done'},'Done'),h('option',{value:''},'All statuses')),
+      h('select',{value:filterPriority,onChange:e=>setFilterPriority(e.target.value)},
+        h('option',{value:''},'All priorities'),h('option',{value:'high'},'High'),h('option',{value:'medium'},'Medium'),h('option',{value:'low'},'Low')),
+      h('select',{value:filterAssignee,onChange:e=>setFilterAssignee(e.target.value)},
+        h('option',{value:''},'Everyone'),members.map(m=>h('option',{key:m.id,value:m.id},m.name))),
+      h('select',{value:filterQuarter,onChange:e=>setFilterQuarter(e.target.value)},
+        h('option',{value:''},'All quarters'),quarters.map(q=>h('option',{key:q,value:q},q)),h('option',{value:'__unscheduled__'},'Unscheduled'))
+    ),
+    pillars.map(p=>h('div',{key:p.id},
+      h('div',{className:'pillar-title'},p.name),
+      categories.filter(c=>c.pillarId===p.id).map(c=>{
+        const rows=byId(c.id);
+        if(rows.length===0)return null;
+        return h('div',{key:c.id,className:'card'},
+          h('div',{className:'category-title'},c.name),
+          rows.map(t=>h(React.Fragment,{key:t.id},
+            h(TaskRow,{task:t,me,roles,members,onToggleDone:toggleDone,onEdit:setEditing,onAddToGoogleTasks:addToGoogleTasks,googleTasksReady,highlighted:t.id===highlightedId}),
+            childrenOf(t.id).map(child=>h(TaskRow,{key:child.id,task:child,me,roles,members,onToggleDone:toggleDone,onEdit:setEditing,onAddToGoogleTasks:addToGoogleTasks,googleTasksReady,child:true,highlighted:child.id===highlightedId}))
+          ))
+        );
+      })
+    )),
+    showAdd&&h(TaskFormModal,{categories,members,me,roles,onSave:saveTask,onCancel:()=>setShowAdd(false)}),
+    editing&&h(TaskFormModal,{initial:editing,categories,members,me,roles,onSave:saveTask,onCancel:()=>setEditing(null),onDelete:deleteTask}),
+    showDigest&&h(DigestSettingsModal,{onClose:()=>setShowDigest(false)})
+  );
+}
+
+function Shell(){
+  const [me,setMe]=useState(null);
+  const [checking,setChecking]=useState(true);
+  const [showMenu,setShowMenu]=useState(false);
+  useEffect(()=>{
+    api.get('/api/me').then(setMe).catch(()=>{
+      // Preserve the full path+query (e.g. "/tasks?task=<id>" from a digest email link)
+      // through the login round-trip, so an already-authenticated click lands right on
+      // the task, and a not-yet-authenticated one returns to it after signing in rather
+      // than dropping back to the generic list.
+      const target=location.pathname+location.search;
+      location.href='/due-diligence?returnTo='+encodeURIComponent(target);
+    }).finally(()=>setChecking(false));
+  },[]);
+  async function logout(){await api.post('/api/logout');location.href='/due-diligence';}
+  if(checking||!me)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  const roles={tasksAdmin:me.tasksAdmin,tasksMember:me.tasksAdmin||me.tasksRole==='member'};
+  return h('div',null,
+    h('nav',{className:'nav'},
+      h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Family Task List'),
+        h('a',{href:'/due-diligence',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'PQ Due Diligence →')),
+      h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},me.name.split(' ')[0]+(showMenu?'':'')),
+    ),
+    showMenu&&h('div',{style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:180,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
+      h('div',{style:{padding:'8px 10px',fontSize:13,fontWeight:600,color:'var(--navy)'}},me.name),
+      h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},roles.tasksAdmin?'Task List Admin':roles.tasksMember?'Task List Member':'Read-only'),
+      h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')
+    ),
+    h(TasksApp,{me,roles})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(Shell));
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Claude Code local session state — machine-specific, not shared project config.
+.claude/settings.local.json
+.claude/settings.local.json.tmp.*
+
+# Contain a live, plaintext Notion API token (see ic-app/README.md security notes).
+# Rotate that token before ever committing these.
+setup-rfo-notion.js
+setup-rfo-responses.js

@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — PQ Introduced Due Diligence</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="/finance.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--purple:#7C3AED;--purple-l:#EDE9FE;--red-l:#FEE2E2;--green-l:#D1FAE5;--amber-l:#FEF3C7;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.nav-brand span{color:var(--gold);margin-left:6px;font-size:11px;background:rgba(201,168,76,.18);padding:2px 9px;border-radius:10px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.nav-user:hover{background:rgba(255,255,255,.2)}
+.nav-badge{font-size:10px;background:var(--gold);color:var(--navy);padding:1px 6px;border-radius:8px;font-weight:600}
+.legend-bar{background:var(--navy);border-top:0.5px solid rgba(255,255,255,.1);padding:6px 20px;display:flex;align-items:center;gap:18px;font-size:11px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.7)}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.page{padding:20px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:12px}
+.cl-sticky{position:sticky;top:52px;z-index:100;background:var(--navy);color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.cl-fund{font-size:13px;font-weight:600}
+.cl-meta{font-size:11px;color:rgba(255,255,255,.65);margin-top:2px}
+.cl-progress-wrap{display:flex;align-items:center;gap:10px;font-size:11px;color:rgba(255,255,255,.8)}
+.cl-bar{height:4px;background:rgba(255,255,255,.2);border-radius:2px;width:100px}
+.cl-fill{height:100%;background:var(--gold);border-radius:2px;transition:width .3s}
+.research-panel{border-radius:var(--r);overflow:hidden;margin-bottom:4px;border:0.5px solid}
+.rp-manager{border-color:#C4B5FD;background:var(--purple-l)}
+.rp-industry{border-color:#99D6CE;background:var(--teal-l)}
+.rp-regulatory{border-color:#FCD34D;background:#FFFBEB}
+.rp-header{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.rp-header-left{display:flex;align-items:center;gap:10px}
+.rp-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.rp-icon-manager{background:var(--purple);color:#fff}
+.rp-icon-industry{background:var(--teal);color:#fff}
+.rp-icon-regulatory{background:#D97706;color:#fff}
+.rp-title{font-size:12px;font-weight:600;color:var(--navy)}
+.rp-subtitle{font-size:10px;color:var(--muted);margin-top:1px}
+.rp-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.rp-badge-ok{background:var(--green-l);color:#065F46}
+.rp-badge-warn{background:var(--red-l);color:#991B1B}
+.rp-badge-caution{background:var(--amber-l);color:#92400E}
+.rp-body{padding:14px 16px;border-top:0.5px solid rgba(0,0,0,.08)}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin .65s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rf-item{padding:8px 10px;background:#fff;border-radius:7px;border:0.5px solid var(--border);margin-bottom:5px;font-size:12px;line-height:1.6}
+.rf-item-flag{border-left:3px solid #DC2626}
+.rf-item-caution{border-left:3px solid #D97706}
+.rf-item-positive{border-left:3px solid #059669}
+.rf-item-neutral{border-left:3px solid #9CA3AF}
+.rf-headline{font-weight:500;color:var(--navy);margin-bottom:2px}
+.rf-detail{color:var(--muted);font-size:11px}
+.rf-source{font-size:10px;color:var(--purple);margin-top:3px;font-style:italic}
+.rf-summary-box{padding:9px 12px;background:rgba(0,0,0,.03);border-radius:7px;border:0.5px solid var(--border);font-size:12px;color:var(--navy);line-height:1.65;margin-bottom:10px}
+.rf-summary-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.rf-timestamp{font-size:10px;color:var(--muted);text-align:right;margin-top:8px;font-style:italic}
+.section-card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
+.section-header{padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;transition:background .12s}
+.section-header:hover{background:var(--bg)}
+.section-letter{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0;color:#fff}
+.section-title-wrap{flex:1}
+.section-title{font-size:14px;font-weight:600;color:var(--navy)}
+.section-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.section-stats{display:flex;gap:8px;align-items:center;font-size:11px}
+.section-body{border-top:0.5px solid var(--border)}
+.q-row{padding:14px 16px;border-bottom:0.5px solid var(--border)}
+.q-row:last-child{border-bottom:none}
+.q-row.auto-answered{background:#FAFFFE}
+.q-row.human-only{background:#FFFDFB}
+.source-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-bottom:8px}
+.src-auto{background:var(--purple-l);color:var(--purple)}
+.src-prefill{background:var(--teal-l);color:#085041}
+.src-human{background:var(--gold-l);color:#633806}
+.src-gating{background:var(--red-l);color:#991B1B}
+.claude-answer{background:var(--purple-l);border:0.5px solid #C4B5FD;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.claude-answer-header{font-size:10px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.claude-answer-value{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px}
+.claude-answer-rationale{font-size:11px;color:#5B21B6;line-height:1.6;white-space:pre-line}
+.claude-answer.prefill{background:var(--teal-l);border-color:#9FE1CB}
+.claude-answer.prefill .claude-answer-header,.claude-answer.prefill .claude-answer-rationale{color:#085041}
+.ctx-box{background:var(--navy-l);border:0.5px solid #C5CEDF;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11px;color:var(--navy);line-height:1.65;white-space:pre-line}
+.ctx-box-label{font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.q-id{font-size:10px;font-weight:600;color:var(--teal);margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.q-text{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:8px}
+.yn-wrap{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.yn-btn{padding:5px 14px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--border);background:#fff;color:var(--muted);transition:all .12s}
+.yn-btn:hover{border-color:var(--teal)}
+.yn-btn.sel-Yes,.yn-btn.sel-Adequate{background:var(--green-l);border-color:#059669;color:#065F46}
+.yn-btn.sel-No,.yn-btn.sel-Inadequate{background:var(--red-l);border-color:#DC2626;color:#991B1B}
+.yn-btn.sel-Partially,.yn-btn.sel-Uncertain{background:var(--amber-l);border-color:#D97706;color:#92400E}
+.rating-wrap{display:flex;gap:5px;margin-bottom:8px}
+.star-btn{width:34px;height:34px;border-radius:7px;border:0.5px solid var(--border);background:#fff;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:all .12s}
+.star-btn:hover,.star-btn.sel{background:var(--gold-l);border-color:var(--gold);color:#854F0B}
+.risk-wrap{display:flex;gap:6px;margin-bottom:8px}
+.risk-btn{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--border);background:#fff;color:var(--muted)}
+.risk-btn.sel-Low{background:var(--green-l);border-color:#059669;color:#065F46}
+.risk-btn.sel-Medium{background:var(--amber-l);border-color:#D97706;color:#92400E}
+.risk-btn.sel-High{background:var(--red-l);border-color:#DC2626;color:#991B1B}
+.textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 10px;font-size:12px;resize:vertical;min-height:56px;font-family:inherit;color:var(--text);margin-top:6px}
+.textarea:focus{outline:none;border-color:var(--teal)}
+.confirm-row{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:rgba(42,125,123,.05);border-radius:7px;border:0.5px solid rgba(42,125,123,.2);cursor:pointer;margin-bottom:8px;user-select:none}
+.confirm-row input{margin-top:1px;accent-color:var(--teal);cursor:pointer}
+.confirm-label{font-size:12px;color:var(--navy)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:#253a60}
+.btn-gold{background:var(--gold);color:#fff}.btn-gold:hover{background:#b8973f}
+.btn-teal{background:var(--teal);color:#fff}.btn-teal:hover{background:#236664}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}.btn-outline:hover{background:var(--bg)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.overall-wrap{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.overall-btn{padding:8px 18px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid var(--border);background:#fff;color:var(--muted);transition:all .15s}
+.overall-btn.sel-Approve{background:var(--green-l);border-color:#059669;color:#065F46;font-weight:600}
+.overall-btn.sel-Conditional{background:var(--amber-l);border-color:#D97706;color:#92400E;font-weight:600}
+.overall-btn.sel-Decline{background:var(--red-l);border-color:#DC2626;color:#991B1B;font-weight:600}
+.overall-btn.sel-Abstain{background:var(--navy-l);border-color:var(--navy);color:var(--navy);font-weight:600}
+.opp-card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px 20px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;cursor:pointer;transition:border-color .15s;margin-bottom:10px}
+.opp-card:hover{border-color:var(--teal)}
+.opp-card.bl-teal{border-left:3px solid var(--teal)}
+.opp-name{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:4px}
+.opp-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-open{background:var(--teal-l);color:#085041}
+.badge-ns{background:var(--red-l);color:#991B1B}
+.badge-draft{background:var(--amber-l);color:#8A5A00}
+.badge-sub{background:var(--green-l);color:#065F46}
+.prog-bar{height:5px;background:#E5E7EB;border-radius:3px;overflow:hidden;width:140px;margin-top:5px}
+.prog-fill{height:100%;background:var(--teal);border-radius:3px}
+.ips-bar-wrap{margin-bottom:10px}
+.ips-label-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+.ips-track{height:12px;background:#E5E7EB;border-radius:6px;position:relative;overflow:visible}
+.ips-fill-cur{height:100%;border-radius:6px;position:absolute;top:0;left:0;opacity:.45}
+.ips-fill-proj{height:100%;border-radius:6px;position:absolute;top:0;left:0;opacity:.85;border:1.5px dashed rgba(0,0,0,.15)}
+.ips-m-target{position:absolute;top:-3px;bottom:-3px;width:2.5px;background:#059669;border-radius:2px}
+.ips-m-max{position:absolute;top:-3px;bottom:-3px;width:2.5px;background:#DC2626;border-radius:2px}
+.ips-legend{display:flex;gap:14px;font-size:10px;color:var(--muted);margin-top:5px}
+.mini-table{width:100%;font-size:11px;border-collapse:collapse}
+.mini-table th{background:var(--navy-l);color:var(--navy);padding:5px 8px;text-align:left;font-weight:600;border-bottom:0.5px solid var(--border)}
+.mini-table td{padding:5px 8px;border-bottom:0.5px solid var(--border)}
+.mini-table tr:last-child td{border-bottom:none;font-weight:600;background:var(--teal-l)}
+.currency-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:0.5px solid var(--border);font-size:11px}
+.currency-row:last-child{border-bottom:none;font-weight:600}
+.currency-bar{height:7px;border-radius:4px;background:var(--teal);min-width:4px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;color:var(--navy);margin-bottom:16px}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select,.form-textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--teal)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-textarea{resize:vertical;min-height:60px}
+.upload-zone{border:1.5px dashed var(--border);border-radius:8px;padding:22px;text-align:center;cursor:pointer;background:var(--bg);transition:all .15s}
+.upload-zone:hover,.upload-zone.has-file{border-color:var(--teal);background:var(--teal-l)}
+.alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid;line-height:1.6}
+.alert-info{background:var(--teal-l);border-color:#9FE1CB;color:#085041}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-purple{background:var(--purple-l);border-color:#C4B5FD;color:#5B21B6}
+.alert-warn{background:var(--amber-l);border-color:#FCD34D;color:#92400E}
+.alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--teal-l);border-radius:10px;font-size:11px;color:#085041;margin:2px}
+.tag button{background:none;border:none;cursor:pointer;color:inherit;font-size:13px;line-height:1;padding:0}
+.warn-flag{margin-top:6px;padding:5px 8px;background:#FEE2E2;border-radius:5px;font-size:11px;color:#991B1B;font-weight:600}
+.activity-card{background:#fff;border:0.5px solid var(--border);border-left:3px solid var(--muted);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.activity-card.dir-outflow{border-left-color:#DC2626}
+.activity-card.dir-inflow{border-left-color:#059669}
+.activity-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.activity-desc{font-size:12px;font-weight:600;color:var(--navy)}
+.activity-amount{font-size:12px;font-weight:600;white-space:nowrap}
+.activity-amount.dir-outflow{color:#991B1B}
+.activity-amount.dir-inflow{color:#065F46}
+.activity-impact{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
+.activity-meta-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+.activity-status{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.activity-status-Considering{background:var(--amber-l);color:#92400E}
+.activity-status-Confirmed{background:var(--teal-l);color:#085041}
+.activity-status-Completed{background:var(--green-l);color:#065F46}
+.activity-actions{display:flex;gap:4px;flex-shrink:0}
+.activity-icon-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:12px;padding:2px 5px;border-radius:4px}
+.activity-icon-btn:hover{background:var(--bg);color:var(--navy)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef}=React;
+const h=React.createElement;
+const api={
+  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(url,body){return api.send('POST',url,body)},
+  put(url,body){return api.send('PUT',url,body)},
+  async del(url){const r=await fetch(url,{method:'DELETE',credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+};
+function activityLabel(a){
+  const amt=fmtCAD(a.amount*(ACTIVITY_FX[a.currency]||1));const from=a.decreaseClass||'External';const to=a.increaseClass||'External';
+  return `${a.description} (${from} → ${to}, ${amt})`;
+}
+const IC_MEMBERS=[{id:'reg',name:'Reg Robinson',role:'Required',initials:'RR',color:'#1B2A4A'},{id:'sd',name:'Sheri-Dawn Robinson',role:'Required',initials:'SD',color:'#2A7D7B'},{id:'ross',name:'Ross Robinson',role:'Required',initials:'ROS',color:'#C9A84C'},{id:'lucas',name:'Lucas Robinson',role:'Optional',initials:'LR',color:'#7C3AED'}];
+const ASSET_CLASSES=['Cash','Fixed Income','Public Equity','Private Equity','Private Credit','Diversifying Strategies','Real Assets','Monetary Hedge'];
+function fmtCAD(n){return new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0}).format(n)}
+function fmtMoney(n,c){return new Intl.NumberFormat('en-CA',{style:'currency',currency:(!c||c==='Other')?'CAD':c,maximumFractionDigits:0}).format(n)}
+function fmtDate(d){return new Date(d).toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'})}
+function pct(n){return n.toFixed(1)+'%'}
+
+function computeClaudeAnswers(opp,activities){
+  const p=opp.pqData||{};const cur=opp.currency;const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[cur]||1.35);const ac=opp.assetClass;const ips=PORT.ips[ac]||{min:0,target:10,max:20};
+  const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const nearAct=nonCompleted.filter(a=>NEAR_TERM_TIMINGS.includes(a.timing));const effAll=getEffectivePort(nonCompleted);const effNear=getEffectivePort(nonCompleted,{nearTermOnly:true});
+  const curPct=effAll.alloc[ac]||0;const projPct=curPct+(cadCommit/effAll.totalCAD)*100;const manPct=(cadCommit/effAll.totalCAD)*100;const totalUnf=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);const calls12=PORT.unfunded.filter(u=>u.call12m);const totCalls=calls12.reduce((a,u)=>a+u.unfundedCAD,0);const cash=effNear.allocCAD['Cash'];const oddR=p.oddRatings||{};const highF=Object.entries(oddR).filter(([,v])=>v==='High').map(([k])=>k);const medF=Object.entries(oddR).filter(([,v])=>v==='Medium').map(([k])=>k);const isOff=p.isOffshore||false;const govR=oddR.governance||'Low';const compR=oddR.compliance||'Low';const addUSD=cur==='USD';const usdAfter=addUSD?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const ans={};
+  ans.A1={value:ASSET_CLASSES.includes(ac)?'Yes':'No',display:ASSET_CLASSES.includes(ac)?'Yes — IPS approved':'No — not an approved class',rationale:`${ac} is ${ASSET_CLASSES.includes(ac)?'one of the eight IPS-approved asset classes.':'NOT on the IPS approved list.'}`,locked:true,warning:!ASSET_CLASSES.includes(ac)};
+  const aboveMax=projPct>ips.max;const underW=curPct<ips.target;
+  const adjNote=nonCompleted.length>0?` Adjusted for ${nonCompleted.length} pending family planning activit${nonCompleted.length===1?'y':'ies'} (raw PQ-reported ${ac} allocation is ${(PORT.alloc[ac]||0).toFixed(1)}%, before those activities).`:'';
+  ans.A2={value:aboveMax?'No':'Yes',display:`${aboveMax?'No — EXCEEDS IPS max':'Yes — within band'} (${curPct.toFixed(1)}% → ${projPct.toFixed(1)}%, range ${ips.min}–${ips.max}%, target ${ips.target}%)`,rationale:`Current: ${curPct.toFixed(1)}%. Post-commitment: ${projPct.toFixed(1)}%. IPS band: ${ips.min}–${ips.max}% (target ${ips.target}%).${adjNote}\n${aboveMax?'⚠ EXCEEDS IPS maximum — formal waiver required.':underW?'Portfolio is underweight — this commitment moves toward IPS target.':'Portfolio at or above target — adds marginal overweight.'}`,locked:true,warning:aboveMax};
+  ans.A3={value:manPct<=10?'Yes':'No',display:`${manPct<=10?'Yes — within limit':'No — exceeds limit'} (${manPct.toFixed(1)}% of portfolio)`,rationale:`Commitment: ${fmtCAD(cadCommit)} = ${manPct.toFixed(1)}% of portfolio (${fmtCAD(effAll.totalCAD)}${nonCompleted.length>0?', adjusted for pending family activities':''}). IPS single-manager cap: 10%.`,locked:true,warning:manPct>10};
+  const combined12m=totCalls+cadCommit;const coverageX=cash/combined12m;
+  const actLines=nearAct.length>0?`\nNear-term family planning activities factored into available cash: ${nearAct.map(a=>`${activityLabel(a)}, ${a.timing}`).join('; ')}.`:'';
+  ans.A4={value:null,locked:false,display:null,rationale:`Existing unfunded: ${fmtCAD(totalUnf)} across ${PORT.unfunded.length} funds.\nNear-term calls (12m): ${calls12.length===0?'None identified.':calls12.map(c=>`${c.fund} (~${fmtCAD(c.unfundedCAD)})`).join(', ')} — total ~${fmtCAD(totCalls)}.\n"Near-term" = PQ's disclosed Investment Period End date falls within 12 months of the report date. This is a proxy, not a confirmed call date — PQ notes some funds can call capital before period-end, or even after it for permitted "top-up" investments.\nCash: ${fmtCAD(cash)} (adjusted for near-term family planning activities below).${actLines}\nThis commitment adds ${fmtCAD(cadCommit)} (new unfunded total: ${fmtCAD(totalUnf+cadCommit)}).\nLiquidity check: near-term calls + this commitment ≈ ${fmtCAD(combined12m)} vs available cash ${fmtCAD(cash)} — ${coverageX.toFixed(1)}x coverage. ${coverageX>=1?'Cash comfortably covers this':'⚠ Cash does NOT fully cover this'} even under the conservative assumption that Arctos calls its full commitment within 12 months (real PE funds draw down gradually over their investment period, so actual near-term need is likely much lower).`};
+  ans.A5={value:null,locked:false,display:null,rationale:`FX: USD ${PORT.fx.USD.pct.toFixed(1)}%, CAD ${PORT.fx.CAD.pct.toFixed(1)}%, EUR ${PORT.fx.EUR.pct.toFixed(1)}%, GBP ${PORT.fx.GBP.pct.toFixed(1)}%.\n${addUSD?`USD exposure: ${PORT.fx.USD.pct.toFixed(1)}% → ~${usdAfter.toFixed(1)}% after commitment.`:`${cur} commitment — USD exposure unchanged.`}\nNo formal IPS currency ceiling.`};
+  ans.B1={value:p.thesisRating||4,display:`Claude suggests ${p.thesisRating||4}/5`,rationale:(p.thesisSummary||'Adjust based on your read of the PQ document.')+'\n\nTrack record: '+(p.hasTrackRecord?(p.trackRecordDetail||'per PQ report'):'Not cited — first-time fund or new strategy.'),locked:false,prefill:true};
+  ans.C1={value:govR==='Low'?'Yes':govR==='Medium'?'Uncertain':'No',display:`${govR==='Low'?'Yes — no concerns':'Uncertain — flagged'} (PQ ODD Governance: ${govR})`,rationale:`PQ ODD Governance: ${govR}. ${govR==='Low'?'No concerns.':govR==='Medium'?'⚠ Noteworthy item — see PQ ODD for details.':'⛔ High concern — must be resolved.'}${p.oddGovernanceNote?'\n\nPQ note: '+p.oddGovernanceNote:''}`,locked:true,warning:govR!=='Low'};
+  ans.C2={value:compR==='Low'?'Yes':'Uncertain',display:`${compR==='Low'?'Yes':'Uncertain'} (PQ ODD Compliance: ${compR})`,rationale:`PQ ODD Compliance: ${compR}. ${compR==='Low'?'No deficiencies.':'⚠ Compliance concern — see PQ ODD.'}`,locked:true,warning:compR!=='Low'};
+  const oddLines=Object.entries(oddR).map(([k,v])=>`• ${k}: ${v}`).join('\n')||'• All: Low';
+  ans.D1={value:highF.length>0?'No':medF.length>0?'Uncertain':'Yes',display:highF.length>0?`No — High: ${highF.join(', ')}`:medF.length>0?`Uncertain — Medium: ${medF.join(', ')}`:'Yes — all Low',rationale:`PQ ODD:\n${oddLines}\n\n${highF.length>0?`⛔ HIGH flags must be resolved: ${highF.join(', ')}`:medF.length>0?`⚠ Medium flags (${medF.join(', ')}) noted — IC should confirm acceptance.`:'ODD satisfactory.'}`,locked:true,warning:highF.length>0||medF.length>0};
+  ans.D2={value:isOff?'Yes':'No',display:isOff?'Yes — offshore structure, MLT Aikens review required':'No material Canadian-specific risks',rationale:`Vehicle: ${p.vehicleType||'not specified'}. ${isOff?'⚠ Offshore/Cayman — withholding tax, FAPI, and MLT Aikens review required.':'Standard structure. MLT Aikens review recommended for any unusual provisions.'}`,locked:true,warning:isOff};
+  const alignR=oddR.alignment||'Low';const alignConcern=alignR!=='Low';
+  ans.F1={value:(p.feesAboveNorm||alignConcern)?'Uncertain':p.feesBelowNorm?'Yes — below norm':'Yes',display:(p.feesAboveNorm||alignConcern)?'Uncertain — flagged':p.feesBelowNorm?'Yes — below norm (favourable)':'Yes — within market norm',rationale:`Market norm for ${ac}: ${PORT.feeNorms[ac]||'varies'}.\nThis fund: ${p.feesSummary||'see PQ report.'}${p.feesAboveNorm?'\n⚠ Above market norm.':p.feesBelowNorm?'\n✓ Favourable terms.':''}\n\nManagement compensation alignment (PQ ODD): ${alignR}. ${alignConcern?'⚠ Alignment flagged — confirm carry, co-invest, and clawback provisions reflect best practice before proceeding.':'No misalignment concerns — carry and co-invest terms appear standard.'}`,locked:true,warning:p.feesAboveNorm||alignConcern};
+  return ans;
+}
+
+async function fetchResearch(type,oppId,refresh){
+  const resp=await fetch(`/api/opportunities/${oppId}/research/${type}${refresh?'?refresh=true':''}`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin'});
+  if(resp.status===503)throw new Error('NOT_CONFIGURED');
+  if(!resp.ok){const b=await resp.json().catch(()=>({}));throw new Error(b.error||`Request failed (${resp.status})`);}
+  return resp.json();
+}
+
+function ResearchPanel({type,oppId,label,icon,colorClass}){
+  const [state,setState]=useState('idle');const [data,setData]=useState(null);const [open,setOpen]=useState(false);const [error,setError]=useState('');const fetched=useRef(false);
+  function load(refresh){setState('loading');fetchResearch(type,oppId,refresh).then(d=>{setData(d);setState('done');setOpen(true);}).catch(e=>{setError(e.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':e.message);setState('error');setOpen(true);});}
+  useEffect(()=>{if(fetched.current)return;fetched.current=true;load(false);},[]);
+  const sigBadge={GREEN:'rp-badge-ok',AMBER:'rp-badge-caution',RED:'rp-badge-warn'};
+  const sigLabel={GREEN:'No flags',AMBER:'Monitor',RED:'Flags raised'};
+  const iClass={FLAG:'rf-item-flag',CAUTION:'rf-item-caution',POSITIVE:'rf-item-positive',NEUTRAL:'rf-item-neutral'};
+  return h('div',{className:`research-panel rp-${colorClass}`},
+    h('div',{className:'rp-header',onClick:()=>open&&setOpen(!open)},
+      h('div',{className:'rp-header-left'},h('div',{className:`rp-icon rp-icon-${colorClass}`},icon),h('div',null,h('div',{className:'rp-title'},label),h('div',{className:'rp-subtitle'},state==='loading'?'Searching the web…':state==='error'?'Could not load — expand for detail':state==='done'?'Shared across all reviewers — click ↻ to re-run':''))),
+      state==='loading'&&h('span',null,h('span',{className:'spin'}),'Loading…'),
+      state==='done'&&data&&h('div',{style:{display:'flex',alignItems:'center',gap:8}},h('span',{className:`rp-badge ${sigBadge[data.overallSignal]||'rp-badge-caution'}`},sigLabel[data.overallSignal]||data.overallSignal),h('button',{className:'btn btn-outline btn-sm',title:'Re-run live research',onClick:(e)=>{e.stopPropagation();load(true);}},'↻'),h('span',{style:{fontSize:16,color:'var(--muted)'}},open?'▾':'▸')),
+      state==='error'&&h('span',{style:{fontSize:11,color:'#DC2626'}},error==='NOT_CONFIGURED'?'No Anthropic API key set':'Error — expand')
+    ),
+    open&&h('div',{className:'rp-body'},
+      state==='error'&&h('div',null,
+        error==='NOT_CONFIGURED'
+          ?h('div',{style:{padding:'10px 12px',background:'#FEF3C7',border:'0.5px solid #FCD34D',borderRadius:7,fontSize:12,color:'#92400E',lineHeight:1.7}},h('strong',null,'Live research is not configured. '),'The server has no ANTHROPIC_API_KEY set. Ask your admin to add one, or continue with manual entry below.')
+          :h('div',null,h('div',{style:{padding:'8px',background:'var(--red-l)',borderRadius:6,fontSize:12,color:'#991B1B',marginBottom:8}},'Error: '+error),h('button',{className:'btn btn-outline btn-sm',onClick:()=>load(false)},'↺ Retry'))
+      ),
+      state==='done'&&data&&h('div',null,
+        h('div',{className:'rf-summary-box'},h('div',{className:'rf-summary-label'},'Research summary'),data.summary),
+        data.findings&&data.findings.length>0&&data.findings.map((f,i)=>h('div',{key:i,className:`rf-item ${iClass[f.type]||'rf-item-neutral'}`},h('div',{className:'rf-headline'},[{FLAG:'🚩',CAUTION:'⚠',POSITIVE:'✓',NEUTRAL:'·'}[f.type]||'·'],' '+f.headline),h('div',{className:'rf-detail'},f.detail),f.source&&h('div',{className:'rf-source'},'Source: '+f.source))),
+        h('div',{className:'rf-timestamp'},'Searched '+data.searchedAt+' via Claude web search')
+      )
+    )
+  );
+}
+
+function ResearchPanelGroup({opp,sections}){
+  if(!sections)return null;
+  if(sections==='BC')return h('div',{style:{marginBottom:8}},h(ResearchPanel,{type:'manager',oppId:opp.id,label:'Manager Reputation & Red Flags',icon:'🔍',colorClass:'manager'}),h(ResearchPanel,{type:'industry',oppId:opp.id,label:'Industry & Macro Intelligence',icon:'📈',colorClass:'industry'}));
+  if(sections==='D')return h('div',{style:{marginBottom:8}},h(ResearchPanel,{type:'regulatory',oppId:opp.id,label:'Canadian Regulatory & Tax Environment',icon:'⚖',colorClass:'regulatory'}));
+  return null;
+}
+
+const SECTIONS=[
+  {id:'A',label:'IPS & Portfolio Fit',color:'#2A7D7B',researchGroup:null,purpose:'Claude auto-answers A1–A3 from IPS data. A4 and A5 give you the live liquidity and FX picture — you confirm.',questions:[
+    {id:'A1',text:'Does this investment fall within an IPS-approved asset class?',type:'yn',mode:'auto'},
+    {id:'A2',text:'Is the post-commitment allocation within the IPS band, and does it move toward target?',type:'yn',mode:'auto'},
+    {id:'A3',text:'Does the commitment respect the ≤10% single-manager concentration limit?',type:'yn',mode:'auto'},
+    {id:'A4',text:'Is the liquidity profile acceptable given existing unfunded commitments and near-term capital calls?',type:'yn3',mode:'auto_data',ctxKey:'A4',hint:'Review the table above. Confirm whether the additional obligation is manageable given current cash levels.'},
+    {id:'A5',text:'Is the additional currency exposure acceptable given current portfolio FX concentration?',type:'yn3',mode:'auto_data',ctxKey:'A5',hint:'Review the current portfolio FX exposure above and the derivation notes below, then confirm whether further concentration is within your comfort range.'},
+  ]},
+  {id:'B',label:'Strategy & Return',color:'#1B2A4A',researchGroup:'BC',purpose:'Live web research (above) covers industry dynamics. Claude pre-fills the thesis rating and summarizes PQ\'s downside scenarios. B2 is your judgment.',questions:[
+    {id:'B1',text:'How compelling is the investment thesis, and does the manager have a track record to support it?',type:'rating',mode:'prefill',hint:"Claude's rating is pre-filled from PQ. Adjust based on your own read and the industry research above."},
+    {id:'B2',text:"Is PQ's net return expectation realistic given current industry conditions and the track record?",type:'yn3',mode:'human',ctxKey:'B2',hint:'Factor in both the PQ data above and any industry headwinds or tailwinds surfaced by the live research.'},
+  ]},
+  {id:'C',label:'Manager & Governance',color:'#2A7D7B',researchGroup:null,purpose:'Live web research above covers reputational flags. Governance and compliance are auto-answered from PQ Operational Due Diligence (ODD). Compensation alignment is now assessed under F1.',questions:[
+    {id:'C1',text:"Does the manager's governance and ownership structure raise any concerns?",type:'yn',mode:'auto'},
+    {id:'C2',text:'Are compliance and legal controls adequate?',type:'yn',mode:'auto'},
+    {id:'C3',text:'Does the leadership team have the experience and depth needed for this strategy?',type:'rating',mode:'human',ctxKey:'C3',hint:'Rate 1–5. Factor in the PQ team overview summarized above and any people-related flags from the manager research above.'},
+  ]},
+  {id:'D',label:'Risk',color:'#1B2A4A',researchGroup:'D',purpose:'Live Canadian regulatory research (above) covers the tax and legal environment. ODD and vehicle risk are auto-answered.',questions:[
+    {id:'D1',text:"Is PQ's operational due diligence assessment satisfactory?",type:'yn',mode:'auto'},
+    {id:'D2',text:'Are there Canadian-specific regulatory, tax, or vehicle risks requiring attention?',type:'yn',mode:'auto'},
+    {id:'D3',text:'What is the most significant risk you see — including any downside scenarios PQ describes — and is it adequately mitigated or acceptable to the family?',type:'yn3',mode:'human',ctxKey:'B3',hint:"Name your primary risk and your view on mitigation in the comments below. Factor in the plausible loss scenario summarized above, the family's total exposure to this asset class, and the regulatory research above."},
+    {id:'D4',text:'Does the risk-adjusted return justify commitment given all risks identified?',type:'yn3',mode:'human',hint:'Your final risk-return call. A Yes here is the clearest single input into your overall recommendation.'},
+  ]},
+  {id:'E',label:'Values',color:'#059669',researchGroup:null,purpose:"All human judgment. This is where the family's values govern — the manager reputation research in Section B is relevant here too.",questions:[
+    {id:'E1',text:"Considering the underlying portfolio activities, sectors, and geographies, does this investment align with the Robinson Family's values and the spirit of the IPS — and are you comfortable associating the family name with this fund and its leadership?",type:'yn',mode:'human',gating:true,hint:'Gating question. Factor in any conflicts from the underlying activities, sectors, or geographies named above, and the manager reputation research from Section B. A No overrides all other positive factors.'},
+  ]},
+  {id:'F',label:'Terms & Vehicle',color:'#1B2A4A',researchGroup:null,purpose:"Fees and management compensation alignment are auto-answered from PQ data. F2 is your review of LP rights.",questions:[
+    {id:'F1',text:'Are the management fees, carried interest, and compensation structure within acceptable market norms and aligned with investor outcomes?',type:'yn3',mode:'auto'},
+    {id:'F2',text:'Are the LP rights adequate (LP Advisory Committee (LPAC) access, co-investment, key-person clause, reporting)?',type:'lpac',mode:'human',ctxKey:'F2',hint:"PQ's terms summary is shown above. Flag any deficiency as a condition before commitment."},
+  ]},
+];
+
+function getCtxSummary(ctxKey,opp,activities){
+  const p=opp.pqData||{};const oddR=p.oddRatings||{};const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[opp.currency]||1.35);const assetTargets={'Private Equity':'15–20% net IRR','Private Credit':'8–12%','Real Assets':'10–15% net IRR','Diversifying Strategies':'8–12%','Public Equity':'Market + 2–3%'};
+  switch(ctxKey){
+    case'A4':{const c12=PORT.unfunded.filter(u=>u.call12m);const tot=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const nearAct=nonCompleted.filter(a=>NEAR_TERM_TIMINGS.includes(a.timing));const effNear=getEffectivePort(nonCompleted,{nearTermOnly:true});const cash=effNear.allocCAD['Cash'];const c12Tot=c12.reduce((a,u)=>a+u.unfundedCAD,0);const need=c12Tot+cadCommit;const cov=cash/need;const actNote=nearAct.length>0?` Cash reflects ${nearAct.length} near-term family activit${nearAct.length===1?'y':'ies'}: ${nearAct.map(a=>activityLabel(a)).join(', ')}.`:'';const rec=`Recommendation: cash covers this ${cov.toFixed(1)}x over${cov<1?' — NOT fully — consider timing or a sale':' — no need to sell any other position'}.`;return c12.length===0?`No imminent capital calls across existing ${PORT.unfunded.length} commitments. Total unfunded: ${fmtCAD(tot)}. Cash: ${fmtCAD(cash)}.${actNote} New commitment adds ${fmtCAD(cadCommit)}.\n${rec}`:`Near-term calls: ${c12.map(c=>c.fund+' (~'+fmtCAD(c.unfundedCAD)+')').join(' and ')} — total ~${fmtCAD(c12Tot)}. Total unfunded: ${fmtCAD(tot)}. Cash: ${fmtCAD(cash)}.${actNote} New commitment adds ${fmtCAD(cadCommit)}.\n${rec}`;}
+    case'A5':{const aU=opp.currency==='USD';const uA=aU?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const derivation=`Derivation: PQ's "Currency Composition" chart (Robinson Family Portfolio report, as of ${PORT.asOf}) states CAD ${PORT.fx.CAD.pct.toFixed(1)}% / USD ${PORT.fx.USD.pct.toFixed(1)}% of total portfolio ${fmtCAD(PORT.totalCAD)}. Cross-checked against PQ's own CAD Position Detail (~C$15.28M) and USD Position Detail (~US$11.86M × 1.3775 CAD/USD ≈ C$16.34M) — both independently confirm the same ~${PORT.fx.CAD.pct.toFixed(0)}/${PORT.fx.USD.pct.toFixed(0)} split, within rounding. EUR and GBP are currently 0% — no exposure held.`;return aU?`Portfolio is ${PORT.fx.USD.pct.toFixed(1)}% USD (${fmtCAD(PORT.fx.USD.val)}). This USD commitment would increase USD to ~${uA.toFixed(1)}%. CAD: ${PORT.fx.CAD.pct.toFixed(1)}%.\n\n${derivation}`:`${opp.currency} commitment — USD exposure stays at ${PORT.fx.USD.pct.toFixed(1)}%.\n\n${derivation}`;}
+    case'B2':return `PQ target: ${p.returnTarget||'see PQ doc'}. IPS target for ${opp.assetClass}: ${assetTargets[opp.assetClass]||'see IPS'}. Track record: ${p.hasTrackRecord?(p.trackRecordDetail||'per PQ'):'Not cited — first-time fund'}.`;
+    case'B3':return p.downsideScenarios||'See PQ downside/risk scenarios section.';
+    case'C3':return p.teamSummary||'See PQ team overview section.';
+    case'F2':return `PQ Terms: ${p.termsSummary||p.feesSummary||'see PQ Terms section'}. ${p.lpRightsNote||''}`;
+    default:return null;
+  }
+}
+
+function ModeTag({mode,gating}){
+  if(gating)return h('span',{className:'source-tag src-gating'},'⛔ Gating');
+  if(mode==='auto')return h('span',{className:'source-tag src-auto'},'✦ Claude auto');
+  if(mode==='auto_data')return h('span',{className:'source-tag src-prefill'},'✦ Claude data — confirm');
+  if(mode==='prefill')return h('span',{className:'source-tag src-prefill'},'✦ Claude suggests');
+  return h('span',{className:'source-tag src-human'},'◎ Your judgment');
+}
+function ClaudeBox({ca,isPrefill}){if(!ca)return null;return h('div',{className:`claude-answer${isPrefill?' prefill':''}`},h('div',{className:'claude-answer-header'},isPrefill?'✦ Claude pre-fill':'✦ Claude auto-answer'),ca.display&&h('div',{className:'claude-answer-value'},ca.display),h('div',{className:'claude-answer-rationale'},ca.rationale),ca.warning&&h('div',{className:'warn-flag'},'⚠ Flag — IC must discuss before proceeding'));}
+function CtxBox({text}){if(!text)return null;return h('div',{className:'ctx-box'},h('div',{className:'ctx-box-label'},'Context from PQ & portfolio data'),text);}
+function YNInput({value,onChange,options,disabled}){return h('div',{className:'yn-wrap'},(options||['Yes','No']).map(o=>h('button',{key:o,className:`yn-btn sel-${value===o?o.replace(/ /g,'-'):''}`,onClick:()=>!disabled&&onChange(o),style:{opacity:disabled?.5:1,cursor:disabled?'not-allowed':'pointer'}},o)));}
+function RatingInput({value,onChange,disabled}){return h('div',{className:'rating-wrap'},[1,2,3,4,5].map(n=>h('button',{key:n,className:`star-btn${value===n?' sel':''}`,onClick:()=>!disabled&&onChange(n),style:{opacity:disabled?.5:1,cursor:disabled?'not-allowed':'pointer'}},n)));}
+function QuestionRow({q,ca,response,onChange,opp,readOnly,activities}){
+  const r=response||{};const isLocked=ca?.locked||false;const isPrefill=q.mode==='prefill';const isAutoData=q.mode==='auto_data';const effV=r.v!=null?r.v:(isLocked?ca?.value:isPrefill?ca?.value:undefined);const ctx=q.ctxKey?getCtxSummary(q.ctxKey,opp,activities):null;
+  function upd(f,v){if(readOnly)return;onChange(q.id,{...r,[f]:v})}
+  return h('div',{className:`q-row${ca&&isLocked?' auto-answered':q.mode==='human'?' human-only':''}`},
+    h('div',{className:'q-id'},q.id,h(ModeTag,{mode:q.mode,gating:q.gating})),
+    h('div',{className:'q-text'},q.text),
+    ca&&(q.mode==='auto'||isAutoData)&&h(ClaudeBox,{ca,isPrefill:isAutoData}),
+    ca&&isPrefill&&h(ClaudeBox,{ca,isPrefill:true}),
+    ctx&&h(CtxBox,{text:ctx}),
+    isLocked?h('div',{style:{fontSize:11,color:'var(--purple)',fontWeight:600,opacity:.6,paddingTop:4}},'Locked — no input required')
+    :h('div',null,
+      q.type==='yn'&&h(YNInput,{value:effV,onChange:v=>upd('v',v),disabled:readOnly}),
+      q.type==='yn3'&&h(YNInput,{value:effV,onChange:v=>upd('v',v),options:['Yes','No','Partially','Uncertain'],disabled:readOnly}),
+      q.type==='rating'&&h(RatingInput,{value:effV,onChange:v=>upd('v',v),disabled:readOnly}),
+      q.type==='text'&&h('textarea',{className:'textarea',placeholder:'Your view — be specific…',value:r.v||'',disabled:readOnly,onChange:e=>upd('v',e.target.value)}),
+      q.type==='lpac'&&h(YNInput,{value:effV,onChange:v=>upd('v',v),options:['Adequate','Inadequate','Uncertain'],disabled:readOnly}),
+      q.hint&&h('div',{style:{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginTop:6,lineHeight:1.5}},q.hint),
+      q.mode!=='auto'&&h('textarea',{className:'textarea',style:{minHeight:40},placeholder:q.type==='text'?'':'Comments…',value:r.c||'',disabled:readOnly,onChange:e=>upd('c',e.target.value)})
+    )
+  );
+}
+
+function SectionAPanel({opp,activities}){
+  const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[opp.currency]||1.35);const ips=PORT.ips[opp.assetClass]||{min:0,target:10,max:20};
+  const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const effAll=getEffectivePort(nonCompleted);
+  const cur=effAll.alloc[opp.assetClass]||0;const proj=Math.min(cur+(cadCommit/effAll.totalCAD)*100,ips.max+5);const scale=Math.max(ips.max*1.3,proj*1.1,20);const total=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);
+  return h('div',{style:{padding:'12px 16px',background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},
+    nonCompleted.length>0&&h('div',{className:'ctx-box',style:{marginBottom:12}},h('div',{className:'ctx-box-label'},'Adjusted for pending family planning activities'),`${nonCompleted.length} activit${nonCompleted.length===1?'y':'ies'} below shift the baseline used here — see raw PQ-reported figures in each question's Claude box.`),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:14}},
+      h('div',null,h('div',{className:'card-title',style:{fontSize:12,marginBottom:8}},'Allocation Impact'),h('div',{className:'ips-bar-wrap'},h('div',{className:'ips-label-row'},h('span',null,opp.assetClass),h('span',null,pct(cur)+' → '+pct(cur+(cadCommit/effAll.totalCAD)*100))),h('div',{className:'ips-track'},h('div',{className:'ips-fill-cur',style:{width:`${(cur/scale)*100}%`,background:'#2A7D7B'}}),h('div',{className:'ips-fill-proj',style:{width:`${(proj/scale)*100}%`,background:'#2A7D7B'}}),h('div',{className:'ips-m-target',style:{left:`${(ips.target/scale)*100}%`}}),h('div',{className:'ips-m-max',style:{left:`${(ips.max/scale)*100}%`}})),h('div',{className:'ips-legend'},h('span',null,'Min '+ips.min+'%'),h('span',{style:{color:'#059669'}},'Target '+ips.target+'%'),h('span',{style:{color:'#DC2626'}},'Max '+ips.max+'%')))),
+      h('div',null,h('div',{className:'card-title',style:{fontSize:12,marginBottom:8}},'Portfolio FX Exposure'),Object.entries(PORT.fx).map(([c,d])=>h('div',{key:c,className:'currency-row'},h('span',{style:{minWidth:32,fontWeight:600,fontSize:12,color:'var(--navy)'}},c),h('div',{className:'currency-bar',style:{width:`${d.pct*1.8}px`}}),h('span',{style:{minWidth:38,fontSize:12}},pct(d.pct)),h('span',{style:{fontSize:11,color:'var(--muted)'}},fmtCAD(d.val)))))
+    ),
+    h('div',{className:'card-title',style:{fontSize:12,marginBottom:6}},'Unfunded Commitments — Near-term Capital Call Exposure'),
+    h('table',{className:'mini-table'},h('thead',null,h('tr',null,h('th',null,'Fund'),h('th',null,'Class'),h('th',null,'Unfunded (CAD)'),h('th',null,'Call within 12m?'))),h('tbody',null,PORT.unfunded.map(u=>h('tr',{key:u.fund},h('td',null,u.fund),h('td',null,u.class),h('td',null,fmtCAD(u.unfundedCAD)),h('td',{style:{color:u.call12m?'#DC2626':'var(--muted)',fontWeight:u.call12m?600:400}},u.call12m?'⚠ Yes':'No'))),h('tr',null,h('td',{colSpan:2},'TOTAL'),h('td',null,fmtCAD(total)),h('td',null,PORT.unfunded.filter(u=>u.call12m).length>0?'⚠ '+fmtCAD(PORT.unfunded.filter(u=>u.call12m).reduce((a,u)=>a+u.unfundedCAD,0))+' near-term':'None imminent'))))
+  );
+}
+
+function SectionCard({section,responses,claudeAnswers,onChange,initialOpen,opp,readOnly,activities}){
+  const [open,setOpen]=useState(!!initialOpen);const autoQ=section.questions.filter(q=>q.mode==='auto').length;const humanQ=section.questions.filter(q=>q.mode!=='auto');const answered=humanQ.filter(q=>responses[q.id]?.v!=null).length;
+  return h('div',{className:'section-card'},
+    h('div',{className:'section-header',onClick:()=>setOpen(!open)},h('div',{className:'section-letter',style:{background:section.color}},section.id),h('div',{className:'section-title-wrap'},h('div',{className:'section-title'},section.label),h('div',{className:'section-sub'},section.purpose)),h('div',{className:'section-stats'},autoQ>0&&h('span',{style:{fontSize:10,color:'var(--purple)',background:'var(--purple-l)',padding:'2px 7px',borderRadius:8,fontWeight:600}},autoQ+' auto'),h('span',{style:{fontSize:11,color:'var(--muted)'}},answered+'/'+humanQ.length+' yours'),h('span',{style:{fontSize:16,color:'var(--muted)',marginLeft:4}},open?'▾':'▸'))),
+    open&&h('div',{className:'section-body'},section.id==='A'&&h(SectionAPanel,{opp,activities}),section.researchGroup&&h(ResearchPanelGroup,{opp,sections:section.researchGroup}),section.questions.map(q=>h(QuestionRow,{key:q.id,q,ca:claudeAnswers[q.id],response:responses[q.id],onChange,opp,readOnly,activities})))
+  );
+}
+
+function ActivityForm({initial,onSave,onCancel}){
+  const [description,setDescription]=useState(initial?.description||'');const [amount,setAmount]=useState(initial?.amount||'');const [currency,setCurrency]=useState(initial?.currency||'CAD');const [decreaseClass,setDecreaseClass]=useState(initial?.decreaseClass||'');const [increaseClass,setIncreaseClass]=useState(initial?.increaseClass||'');const [impact,setImpact]=useState(initial?.impact||'');const [status,setStatus]=useState(initial?.status||'Considering');const [timing,setTiming]=useState(initial?.timing||'Uncertain');const [saving,setSaving]=useState(false);
+  async function submit(){if(!description.trim()){alert('Description is required.');return;}if(!decreaseClass&&!increaseClass){alert('Select at least one of decreasing / increasing asset class.');return;}setSaving(true);await onSave({description:description.trim(),amount:parseFloat(amount)||0,currency,decreaseClass:decreaseClass||null,increaseClass:increaseClass||null,impact,status,timing});setSaving(false);}
+  const classOptions=[{value:'',label:'External (outside portfolio)'},...ASSET_CLASSES.map(c=>({value:c,label:c}))];
+  return h('div',{className:'activity-card',style:{borderLeftColor:'var(--teal)'}},
+    h('div',{className:'form-group'},h('label',{className:'form-label'},'Description'),h('input',{className:'form-input',value:description,onChange:e=>setDescription(e.target.value),placeholder:'e.g. Lucas Robinson — house purchase',autoFocus:true})),
+    h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Amount'),h('input',{className:'form-input',type:'number',value:amount,onChange:e=>setAmount(e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Currency'),h('select',{className:'form-select',value:currency,onChange:e=>setCurrency(e.target.value)},['CAD','USD','EUR','GBP'].map(c=>h('option',{key:c,value:c},c))))),
+    h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Decreasing (source)'),h('select',{className:'form-select',value:decreaseClass,onChange:e=>setDecreaseClass(e.target.value)},classOptions.map(o=>h('option',{key:o.value,value:o.value},o.label)))),h('div',{className:'form-group'},h('label',{className:'form-label'},'Increasing (destination)'),h('select',{className:'form-select',value:increaseClass,onChange:e=>setIncreaseClass(e.target.value)},classOptions.map(o=>h('option',{key:o.value,value:o.value},o.label))))),
+    h('div',{style:{fontSize:10,color:'var(--muted)',marginTop:-6,marginBottom:10,lineHeight:1.5}},decreaseClass&&increaseClass?`Modeled as a reallocation: ${decreaseClass} decreases, ${increaseClass} increases — total portfolio size unchanged.`:decreaseClass?`Modeled as money leaving the tracked portfolio from ${decreaseClass} (reduces total portfolio size).`:increaseClass?`Modeled as money entering the tracked portfolio into ${increaseClass} (increases total portfolio size).`:'Select at least one side.'),
+    h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Expected timing'),h('select',{className:'form-select',value:timing,onChange:e=>setTiming(e.target.value)},ACTIVITY_TIMINGS.map(t=>h('option',{key:t,value:t},t)))),h('div',{className:'form-group'},h('label',{className:'form-label'},'Status'),h('select',{className:'form-select',value:status,onChange:e=>setStatus(e.target.value)},['Considering','Confirmed','Completed'].map(s=>h('option',{key:s,value:s},s))))),
+    h('div',{className:'form-group'},h('label',{className:'form-label'},'Impact on portfolio'),h('textarea',{className:'form-textarea',style:{minHeight:50},value:impact,onChange:e=>setImpact(e.target.value),placeholder:'How does this affect liquidity or allocation for pending opportunities?'})),
+    h('div',{style:{display:'flex',gap:8}},h('button',{className:'btn btn-outline btn-sm',onClick:onCancel,disabled:saving},'Cancel'),h('button',{className:'btn btn-teal btn-sm',onClick:submit,disabled:saving},saving?'Saving…':(initial?'Save Changes':'Add Activity')))
+  );
+}
+
+function ActivityCard({activity,onEdit,onDelete}){
+  const cashDir=activity.decreaseClass==='Cash'?'outflow':activity.increaseClass==='Cash'?'inflow':null;
+  return h('div',{className:`activity-card${cashDir?' dir-'+cashDir:''}`},
+    h('div',{className:'activity-top'},
+      h('div',null,h('div',{className:'activity-desc'},activity.description),activity.impact&&h('div',{className:'activity-impact'},activity.impact)),
+      h('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}},
+        h('div',{className:'activity-amount',style:{color:cashDir==='outflow'?'#991B1B':cashDir==='inflow'?'#065F46':'var(--navy)'}},fmtMoney(activity.amount,activity.currency)),
+        h('div',{className:'activity-actions'},h('button',{className:'activity-icon-btn',onClick:onEdit,title:'Edit'},'✎'),h('button',{className:'activity-icon-btn',onClick:onDelete,title:'Delete'},'🗑'))
+      )
+    ),
+    h('div',{className:'activity-meta-row'},h('span',{className:`activity-status activity-status-${activity.status}`},activity.status),h('span',{style:{fontSize:10,color:'var(--muted)'}},activity.timing),h('span',{style:{fontSize:10,color:'var(--muted)'}},(activity.decreaseClass||'External')+' → '+(activity.increaseClass||'External')))
+  );
+}
+
+function FamilyActivitiesPanel({activities,onCreate,onUpdate,onDelete}){
+  const [open,setOpen]=useState(true);const [adding,setAdding]=useState(false);const [editingId,setEditingId]=useState(null);
+  async function handleCreate(data){await onCreate(data);setAdding(false);}
+  async function handleUpdate(id,data){await onUpdate(id,data);setEditingId(null);}
+  async function handleDelete(id){if(!window.confirm('Remove this activity?'))return;await onDelete(id);}
+  return h('div',{className:'research-panel rp-regulatory',style:{marginBottom:14}},
+    h('div',{className:'rp-header',onClick:()=>setOpen(!open)},
+      h('div',{className:'rp-header-left'},h('div',{className:'rp-icon rp-icon-regulatory'},'🏠'),h('div',null,h('div',{className:'rp-title'},'Family Planning Activities'),h('div',{className:'rp-subtitle'},'Forecasted family liquidity events — shared across all opportunities'))),
+      h('div',{style:{display:'flex',alignItems:'center',gap:8}},h('span',{style:{fontSize:11,color:'var(--muted)'}},activities.length+' item'+(activities.length===1?'':'s')),h('span',{style:{fontSize:16,color:'var(--muted)'}},open?'▾':'▸'))
+    ),
+    open&&h('div',{className:'rp-body'},
+      activities.length===0&&!adding&&h('div',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'No planned activities yet.'),
+      activities.map(act=>editingId===act.id
+        ?h(ActivityForm,{key:act.id,initial:act,onSave:d=>handleUpdate(act.id,d),onCancel:()=>setEditingId(null)})
+        :h(ActivityCard,{key:act.id,activity:act,onEdit:()=>setEditingId(act.id),onDelete:()=>handleDelete(act.id)})
+      ),
+      adding?h(ActivityForm,{onSave:handleCreate,onCancel:()=>setAdding(false)})
+        :h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(true)},'+ Add Activity')
+    )
+  );
+}
+
+function ChecklistPage({opp,currentUser,onSave,onSubmit,onBack,activities,onCreateActivity,onUpdateActivity,onDeleteActivity,onUpdateOpportunity,onToggleStatus,onViewReport,onSendTo}){
+  const myR=opp.responses[currentUser.id]||{submitted:false,responses:{}};const [responses,setResponses]=useState(myR.responses||{});const [rec,setRec]=useState(myR.recommendation||null);const [comments,setComments]=useState(myR.overall||'');const [followUp,setFollowUp]=useState(myR.followUp||[]);const [newFU,setNewFU]=useState('');const [saving,setSaving]=useState(false);const [submitted,setSubmitted]=useState(myR.submitted||false);const [showEdit,setShowEdit]=useState(false);const ca=computeClaudeAnswers(opp,activities);const humanQs=SECTIONS.flatMap(s=>s.questions).filter(q=>q.mode!=='auto');const answered=humanQs.filter(q=>responses[q.id]?.v!=null).length;const closed=opp.status==='closed';const canEdit=!closed&&(currentUser.ddAdmin||currentUser.id===opp.initiatedBy);const isDraft=opp.status==='draft';const canPublish=isDraft&&(opp.initiatedBy===currentUser.id||currentUser.ddAdmin);
+  function publish(){if(!window.confirm('Publish this opportunity? It becomes active, and you can then send it to each family member individually, on your own schedule.'))return;onToggleStatus(opp.id,'open');}
+  function upd(qid,val){if(closed)return;setResponses(r=>({...r,[qid]:val}))}
+  async function save(){if(closed)return;setSaving(true);await onSave(currentUser.id,{responses,recommendation:rec,overall:comments,followUp,submitted});setSaving(false);}
+  async function submit(){if(closed)return;if(!rec){alert('Select a recommendation first.');return;}if(!window.confirm(submitted?'Update your submitted recommendation?':'Submit your checklist?'))return;setSaving(true);await onSubmit(currentUser.id,{responses,recommendation:rec,overall:comments,followUp,submitted:true});setSubmitted(true);setSaving(false);}
+  function addFU(){if(closed)return;if(newFU.trim()){setFollowUp(f=>[...f,newFU.trim()]);setNewFU('');}}
+  async function saveEdit(payload){await onUpdateOpportunity(opp.id,payload);setShowEdit(false);}
+  const pctDone=Math.round((answered/humanQs.length)*100);
+  return h('div',null,
+    h('div',{className:'cl-sticky'},h('div',null,h('div',{className:'cl-fund'},opp.title),h('div',{className:'cl-meta'},opp.assetClass+' · '+fmtMoney(opp.commitment,opp.currency)+' · Due '+fmtDate(opp.deadline))),h('div',{className:'cl-progress-wrap'},h('span',null,currentUser.name),h('div',{className:'cl-bar'},h('div',{className:'cl-fill',style:{width:pctDone+'%'}})),h('span',null,answered+'/'+humanQs.length+' questions'))),
+    h('div',{className:'page'},
+      h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'PQ Due Diligence Review — '+opp.title),isDraft&&h('span',{className:'badge badge-draft'},'✎ Draft — only visible to you'),canPublish&&h('button',{className:'btn btn-gold btn-sm',onClick:publish},'Publish →'),h('button',{className:'btn btn-outline btn-sm',onClick:onViewReport},'📄 View Report'),canEdit&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setShowEdit(true)},'✎ Edit Details')),
+      showEdit&&h(EditOpportunityModal,{opp,onClose:()=>setShowEdit(false),onSave:saveEdit}),
+      closed&&h('div',{className:'alert',style:{background:'#F3F4F6',borderColor:'#D1D5DB',color:'#374151'}},'🔒 ',h('strong',null,'This opportunity is closed. '),'Responses are read-only. Ask an admin to reopen it if changes are needed.'),
+      !closed&&submitted&&h('div',{className:'alert alert-success'},'✓ ',h('strong',null,'You submitted this review'),' — recommendation: ',h('strong',null,rec),'. You can still update your answers and re-submit until this opportunity is closed.'),
+      !closed&&h('div',{className:'alert alert-purple'},'✦ ',h('strong',null,'Live intelligence: '),'Web research fires automatically in Sections B (manager + industry) and D (Canadian regulatory) as you scroll down.'),
+      h(SharingPanel,{opp,currentUser,onSend:onSendTo}),
+      h(FamilyActivitiesPanel,{activities,onCreate:onCreateActivity,onUpdate:onUpdateActivity,onDelete:onDeleteActivity}),
+      SECTIONS.map((s,i)=>h(SectionCard,{key:s.id,section:s,responses,claudeAnswers:ca,onChange:upd,initialOpen:i===0,opp,readOnly:closed,activities})),
+      h('div',{className:'card'},h('div',{className:'card-title'},'Your Overall Recommendation'),h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'Anchor in D4 (risk-return) and E1 (values). Factor in any red flags from the live research.'),h('div',{className:'overall-wrap'},['Approve','Conditional Approval','Decline','Abstain'].map(r=>h('button',{key:r,className:`overall-btn sel-${rec===r?r.replace(' ','-'):''}`,disabled:closed,onClick:()=>!closed&&setRec(r)},r))),
+        h('div',{style:{marginTop:14}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Overall comments'),h('textarea',{className:'textarea',style:{minHeight:80},placeholder:'Key reasons for your recommendation…',value:comments,disabled:closed,onChange:e=>setComments(e.target.value)})),
+        h('div',{style:{marginTop:14}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Conditions / Follow-up items'),followUp.length>0&&h('div',{style:{marginBottom:8}},followUp.map((fu,i)=>h('span',{key:i,className:'tag'},fu,!closed&&h('button',{onClick:()=>setFollowUp(f=>f.filter((_,j)=>j!==i))},'×')))),!closed&&h('div',{style:{display:'flex',gap:8}},h('input',{className:'form-input',style:{fontSize:12},placeholder:'Add a condition…',value:newFU,onChange:e=>setNewFU(e.target.value),onKeyDown:e=>e.key==='Enter'&&addFU()}),h('button',{className:'btn btn-outline btn-sm',onClick:addFU},'Add')))),
+      !closed&&h('div',{style:{display:'flex',gap:10,marginBottom:40}},h('button',{className:'btn btn-outline',onClick:save,disabled:saving},saving?'Saving…':'Save Draft'),h('button',{className:'btn btn-teal',style:{flex:1},onClick:submit,disabled:saving},submitted?'Update My Submission →':'Submit My Review →'))
+    )
+  );
+}
+
+async function extractFromPDF(base64Data){
+  const resp=await fetch('/api/claude/extract-pdf',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({base64:base64Data})});
+  if(resp.status===503)throw new Error('NOT_CONFIGURED');
+  if(!resp.ok){const b=await resp.json().catch(()=>({}));throw new Error(b.error||'API error '+resp.status);}
+  return resp.json();
+}
+
+function blankPqData(){return{thesisSummary:'',thesisRating:4,returnTarget:'',hasTrackRecord:true,trackRecordDetail:'',teamSummary:'',downsideScenarios:'',esgProgramme:'Developing',esgApproach:'Opportunistic',esgNote:'',oddRatings:{governance:'Low',compliance:'Low',operations:'Low',alignment:'Low',reporting:'Low'},oddGovernanceNote:'',feesSummary:'',termsSummary:'',lpRightsNote:'',isOffshore:false,vehicleType:'',mltaRequired:false,feesAboveNorm:false,feesBelowNorm:false};}
+
+const RECOMMENDATION_STYLE={
+  'APPROVE':{alert:'alert-success',label:'✓ Approve'},
+  'CONDITIONAL APPROVAL':{alert:'alert-warn',label:'◐ Conditional Approval'},
+  'DECLINE':{alert:'alert-danger',label:'✕ Decline'},
+  'DEFER PENDING INFORMATION':{alert:'alert-purple',label:'⏸ Defer Pending Information'},
+};
+
+function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,roster}){
+  const [loading,setLoading]=useState(false);const [error,setError]=useState('');
+  const report=opp.report;
+  const ca=computeClaudeAnswers(opp,activities);
+  const allQuestions=SECTIONS.flatMap(s=>s.questions);
+  const submittedCount=IC_MEMBERS.filter(m=>opp.responses[m.id]?.submitted).length;
+  const pending=IC_MEMBERS.filter(m=>!opp.responses[m.id]?.submitted).map(m=>m.name.split(' ')[0]);
+  const requiredMembers=(roster||IC_MEMBERS).filter(m=>m.role==='Required');
+  const reqSubmitted=requiredMembers.filter(m=>opp.responses[m.id]?.submitted).length;
+  const quorumMet=reqSubmitted>=quorumThreshold;
+
+  async function generate(){
+    setLoading(true);setError('');
+    try{
+      const autoAnswers={};
+      allQuestions.filter(q=>q.mode!=='human').forEach(q=>{const a=ca[q.id];if(a)autoAnswers[q.id]={display:a.display,rationale:a.rationale};});
+      const questions=allQuestions.map(q=>({id:q.id,text:q.text}));
+      const members=IC_MEMBERS.map(m=>{
+        const r=opp.responses[m.id]||{};
+        return{name:m.name,submitted:!!r.submitted,recommendation:r.recommendation,overall:r.overall,followUp:r.followUp,responses:r.responses};
+      });
+      await onGenerateReport(opp.id,{questions,autoAnswers,members,totalCAD:PORT.totalCAD});
+    }catch(err){setError(err.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':err.message||'Failed to generate report');}
+    finally{setLoading(false);}
+  }
+
+  const recStyle=report&&RECOMMENDATION_STYLE[report.recommendation]||{alert:'alert-info',label:report?.recommendation||''};
+
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'IC Summary Report — '+opp.title)),
+    h('div',{style:{fontSize:12,color:'var(--muted)',marginBottom:4}},submittedCount+'/'+IC_MEMBERS.length+' members submitted'+(pending.length?' · Awaiting: '+pending.join(', '):'')),
+    h('div',{style:{fontSize:12,fontWeight:600,marginBottom:16,color:quorumMet?'var(--teal)':'var(--gold)'}},(quorumMet?'✓ Quorum reached — ':'⏳ Quorum not yet reached — ')+reqSubmitted+'/'+quorumThreshold+' required members submitted'),
+
+    error==='NOT_CONFIGURED'&&h('div',{className:'alert alert-warn'},h('strong',null,'Report generation is not configured. '),'The server has no ANTHROPIC_API_KEY set. Ask your admin to add one.'),
+    error&&error!=='NOT_CONFIGURED'&&h('div',{className:'alert alert-danger'},'Error: '+error),
+
+    !report&&h('div',{className:'card',style:{textAlign:'center',padding:28}},
+      h('div',{style:{fontSize:13,color:'var(--muted)',marginBottom:14}},'No report has been generated yet. You can generate one at any time — even before every member has submitted.'),
+      h('button',{className:'btn btn-gold',disabled:loading,onClick:generate},loading?'Generating…':'✦ Generate Report')
+    ),
+
+    report&&h('div',null,
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+        h('div',{style:{fontSize:11,color:'var(--muted)'}},'Generated '+new Date(report.generatedAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' · '+report.submittedCount+'/'+report.memberCount+' submitted at that time'),
+        h('button',{className:'btn btn-outline btn-sm',disabled:loading,onClick:generate},loading?'Regenerating…':'↻ Regenerate')
+      ),
+      h('div',{className:`alert ${recStyle.alert}`,style:{fontSize:14,fontWeight:600,marginBottom:16}},recStyle.label),
+      h('div',{className:'card'},h('div',{className:'card-title'},'Executive Summary'),h('p',{style:{fontSize:13,lineHeight:1.7,color:'var(--text)'}},report.executiveSummary)),
+      report.keyStrengths?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Key Strengths'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.keyStrengths.map((s,i)=>h('li',{key:i},s)))),
+      report.keyRisks?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Key Risks & Concerns'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.keyRisks.map((s,i)=>h('li',{key:i},s)))),
+      report.memberSentiment?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'IC Member Sentiment'),report.memberSentiment.map((m,i)=>h('div',{key:i,style:{fontSize:13,marginBottom:6}},h('strong',null,m.member+': '),m.sentence))),
+      report.unresolvedItems?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Unresolved Items'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.unresolvedItems.map((s,i)=>h('li',{key:i},s)))),
+      h('div',{className:'card'},h('div',{className:'card-title'},'Rationale'),report.rationale.split('\n').filter(Boolean).map((p,i)=>h('p',{key:i,style:{fontSize:13,lineHeight:1.7,color:'var(--text)',marginBottom:8}},p))),
+      report.requiredActions?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Required Actions Before Commitment'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.requiredActions.map((s,i)=>h('li',{key:i},s))))
+    )
+  );
+}
+
+const AUDIT_ACTION_LABELS={
+  'member.setup_completed':'Completed account setup',
+  'login.success':'Logged in',
+  'admin.reset_auth':'Reset a member’s login',
+  'admin.role_granted':'Granted admin access',
+  'admin.role_revoked':'Removed admin access',
+  'admin.member_role_updated':'Changed a member’s Required/Optional status',
+  'admin.member_email_updated':'Updated a member’s email address',
+  'admin.quorum_updated':'Updated decision quorum threshold',
+  'opportunity.created':'Created opportunity',
+  'opportunity.published':'Published opportunity',
+  'opportunity.sent_to_member':'Sent opportunity to a member',
+  'opportunity.deleted':'Deleted opportunity',
+  'opportunity.closed':'Closed opportunity',
+  'opportunity.reopened':'Reopened opportunity',
+  'response.submitted':'Submitted checklist response',
+  'report.generated':'Generated IC summary report',
+  'activity.created':'Added family planning activity',
+  'activity.updated':'Updated family planning activity',
+  'activity.deleted':'Deleted family planning activity',
+};
+
+function AuditLogPage({onBack}){
+  const [entries,setEntries]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+  useEffect(()=>{api.get('/api/admin/audit-log').then(setEntries).catch(e=>setError(e.message||'Failed to load audit log')).finally(()=>setLoading(false));},[]);
+  function memberName(id){const m=IC_MEMBERS.find(x=>x.id===id);return m?m.name:(id||'—');}
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Audit Log')),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    !loading&&!error&&h('div',{className:'card',style:{padding:0,overflow:'hidden'}},
+      h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+        h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['When','Who','Action','Details'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+        h('tbody',null,entries.map(e=>h('tr',{key:e.id,style:{borderBottom:'0.5px solid var(--border)'}},
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(e.at).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
+          h('td',{style:{padding:'8px 12px',fontWeight:600,color:'var(--navy)',whiteSpace:'nowrap'}},memberName(e.userId)),
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},AUDIT_ACTION_LABELS[e.action]||e.action),
+          h('td',{style:{padding:'8px 12px',color:'var(--muted)',fontSize:11}},Object.keys(e.details||{}).length?JSON.stringify(e.details):'')
+        )))
+      )),
+      entries.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No activity recorded yet.')
+    )
+  );
+}
+
+function UsagePage({onBack}){
+  const [data,setData]=useState(null);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+  useEffect(()=>{api.get('/api/admin/usage').then(setData).catch(e=>setError(e.message||'Failed to load usage')).finally(()=>setLoading(false));},[]);
+  function memberName(id){const m=IC_MEMBERS.find(x=>x.id===id);return m?m.name.split(' ')[0]:(id||'—');}
+  function fmtUsd(n){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:4}).format(n||0);}
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Claude API Usage')),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    data&&h('div',null,
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}},
+        h('div',{className:'card',style:{textAlign:'center'}},h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:4}},'Total Estimated Spend'),h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)'}},fmtUsd(data.totals.costUsd))),
+        h('div',{className:'card',style:{textAlign:'center'}},h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:4}},'Total Calls'),h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)'}},data.totals.calls)),
+        h('div',{className:'card',style:{textAlign:'center'}},h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:4}},'Total Tokens'),h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)'}},(data.totals.inputTokens+data.totals.outputTokens).toLocaleString()))
+      ),
+      h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Estimates use standard Claude Sonnet 5 pricing ($3/$15 per million input/output tokens) — actual invoiced cost may differ slightly, e.g. during Anthropic promotional pricing windows.'),
+      h('div',{className:'card-title',style:{marginBottom:8}},'By Call Type'),
+      h('div',{className:'card',style:{padding:0,overflow:'hidden',marginBottom:16}},h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+        h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['Call Type','Calls','Input Tokens','Output Tokens','Est. Cost'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+        h('tbody',null,data.byCallType.map(r=>h('tr',{key:r.callType,style:{borderBottom:'0.5px solid var(--border)'}},
+          h('td',{style:{padding:'8px 12px'}},r.callType),
+          h('td',{style:{padding:'8px 12px'}},r.calls),
+          h('td',{style:{padding:'8px 12px'}},r.inputTokens.toLocaleString()),
+          h('td',{style:{padding:'8px 12px'}},r.outputTokens.toLocaleString()),
+          h('td',{style:{padding:'8px 12px',fontWeight:600}},fmtUsd(r.costUsd))
+        )))
+      ))),
+      data.byCallType.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13,marginBottom:16}},'No API calls recorded yet.'),
+      h('div',{className:'card-title',style:{marginBottom:8}},'Recent Calls'),
+      h('div',{className:'card',style:{padding:0,overflow:'hidden'}},h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+        h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['When','Who','Call Type','Tokens','Cost'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+        h('tbody',null,data.recent.map(r=>h('tr',{key:r.id,style:{borderBottom:'0.5px solid var(--border)'}},
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(r.at).toLocaleString('en-CA',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},memberName(r.userId)),
+          h('td',{style:{padding:'8px 12px'}},r.callType),
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},(r.inputTokens+r.outputTokens).toLocaleString()),
+          h('td',{style:{padding:'8px 12px'}},fmtUsd(r.costUsd))
+        )))
+      ))),
+      data.recent.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No API calls recorded yet.')
+    )
+  );
+}
+
+function BackupsPage({onBack}){
+  const [backups,setBackups]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [backingUp,setBackingUp]=useState(false);
+  function load(){setLoading(true);api.get('/api/admin/backups').then(setBackups).catch(e=>setError(e.message||'Failed to load backups')).finally(()=>setLoading(false));}
+  useEffect(()=>{load();},[]);
+  async function backupNow(){setBackingUp(true);setError('');try{await api.post('/api/admin/backups',{});load();}catch(e){setError(e.message||'Backup failed');}finally{setBackingUp(false);}}
+  function fmtSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';return (bytes/1024/1024).toFixed(1)+' MB';}
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Database Backups'),h('button',{className:'btn btn-gold btn-sm',disabled:backingUp,onClick:backupNow},backingUp?'Backing up…':'✦ Backup Now')),
+    h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Automatic backups run at startup and every 24 hours — the last 14 are kept.'),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    !loading&&h('div',{className:'card',style:{padding:0,overflow:'hidden'}},h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+      h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Created',''].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+      h('tbody',null,backups.map(b=>h('tr',{key:b.filename,style:{borderBottom:'0.5px solid var(--border)'}},
+        h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},b.filename),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtSize(b.sizeBytes)),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(b.createdAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
+        h('td',{style:{padding:'8px 12px'}},h('a',{href:'/api/admin/backups/'+encodeURIComponent(b.filename),className:'btn btn-outline btn-sm',style:{textDecoration:'none'}},'Download'))
+      )))
+    ))),
+    !loading&&backups.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No backups yet.')
+  );
+}
+
+// Lets the initiator/admin control exactly when each family member gains access to a
+// published opportunity, instead of publishing making it visible to everyone at once.
+function SharingPanel({opp,currentUser,onSend}){
+  const canManage=currentUser.ddAdmin||currentUser.id===opp.initiatedBy;
+  const [sending,setSending]=useState(null);
+  const [lastResult,setLastResult]=useState({});
+  if(!canManage||opp.status==='draft')return null;
+  const others=IC_MEMBERS.filter(m=>m.id!==opp.initiatedBy);
+  async function send(uid){setSending(uid);try{const res=await onSend(opp.id,uid);setLastResult(r=>({...r,[uid]:res}));}finally{setSending(null);}}
+  return h('div',{className:'card'},
+    h('div',{className:'card-title'},'Sharing'),
+    h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'Send this opportunity to each family member individually, whenever you’re ready — publishing doesn’t share it with anyone automatically.'),
+    h('div',null,others.map(m=>{
+      const sentAt=opp.responses[m.id]?.sentAt;
+      const result=lastResult[m.id];
+      const emailNote=result?.emailSent?' · ✉️ emailed':result?.emailError?' · ⚠ email failed':'';
+      return h('div',{key:m.id,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}},
+        h('div',{style:{width:24,height:24,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),
+        h('span',{style:{fontSize:12,color:'var(--navy)',flex:1}},m.name),
+        sentAt&&h('span',{style:{fontSize:11,color:'var(--muted)'}},'Sent '+new Date(sentAt).toLocaleDateString('en-CA',{month:'short',day:'numeric'})+emailNote),
+        h('button',{className:'btn btn-outline btn-sm',disabled:sending===m.id,onClick:()=>send(m.id)},sending===m.id?'Sending…':(sentAt?'Resend →':'Send →'))
+      );
+    }))
+  );
+}
+
+// Email is what makes "Send →" in the Sharing panel actually notify someone, rather than
+// just granting silent in-app access — kept as its own small component so each row can
+// hold its own draft-text state without the parent re-rendering every keystroke.
+function MemberEmailRow({member,onSaved}){
+  const [value,setValue]=useState(member.email||'');
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState('');
+  const dirty=value.trim()!==(member.email||'');
+  async function save(){
+    setSaving(true);setErr('');
+    try{const updated=await api.put(`/api/admin/members/${member.id}/email`,{email:value.trim()});onSaved(updated);}
+    catch(e){setErr(e.message||'Failed to save');}
+    finally{setSaving(false);}
+  }
+  return h('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+    h('input',{className:'form-input',style:{fontSize:12,padding:'4px 8px',maxWidth:260},type:'email',placeholder:'Email address for notifications…',value,onChange:e=>setValue(e.target.value)}),
+    dirty&&h('button',{className:'btn btn-outline btn-sm',disabled:saving,onClick:save},saving?'Saving…':'Save'),
+    err&&h('span',{style:{fontSize:11,color:'#991B1B'}},err)
+  );
+}
+
+function MembersPage({onBack,currentUser,onQuorumChange,onMemberUpdated}){
+  const [members,setMembers]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+  const [resetting,setResetting]=useState(null);const [resetCode,setResetCode]=useState(null);
+  const [adminBusy,setAdminBusy]=useState(null);const [typeBusy,setTypeBusy]=useState(null);
+  const [quorum,setQuorum]=useState(null);const [quorumInput,setQuorumInput]=useState('');const [quorumSaving,setQuorumSaving]=useState(false);const [quorumError,setQuorumError]=useState('');
+  function load(){setLoading(true);api.get('/api/admin/members?_='+Date.now()).then(setMembers).catch(e=>setError(e.message||'Failed to load members')).finally(()=>setLoading(false));}
+  useEffect(()=>{load();api.get('/api/settings').then(s=>{setQuorum(s.quorumThreshold);setQuorumInput(String(s.quorumThreshold));}).catch(()=>{});},[]);
+  const requiredCount=members.filter(m=>m.role==='Required').length;
+  async function resetAuth(m){if(!window.confirm(`Generate a new setup code for ${m.name}? This replaces their password and 2FA.`))return;setResetting(m.id);setResetCode(null);try{const res=await api.post(`/api/admin/reset-auth/${m.id}`,{});setResetCode({name:m.name,code:res.setupCode});}catch(e){alert(e.message||'Failed to reset');}finally{setResetting(null);}}
+  async function toggleAdmin(m){
+    const makingAdmin=!m.isAdmin;
+    const msg=makingAdmin?`Make ${m.name} an admin? They'll be able to close/reopen opportunities, reset logins, and manage other members' roles.`:`Remove admin access from ${m.name}?`;
+    if(!window.confirm(msg))return;
+    setAdminBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/admin`,{isAdmin:makingAdmin});setMembers(list=>list.map(x=>x.id===m.id?updated:x));onMemberUpdated&&onMemberUpdated(updated);}
+    catch(e){alert(e.message||'Failed to update admin status');}
+    finally{setAdminBusy(null);}
+  }
+  async function toggleMemberType(m){
+    const makingOptional=m.role==='Required';
+    const msg=makingOptional?`Make ${m.name} Optional? They'll no longer count toward the required quorum.`:`Make ${m.name} Required?`;
+    if(!window.confirm(msg))return;
+    setTypeBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/role`,{role:makingOptional?'Optional':'Required'});setMembers(list=>list.map(x=>x.id===m.id?updated:x));onMemberUpdated&&onMemberUpdated(updated);}
+    catch(e){alert(e.message||'Failed to update member type');}
+    finally{setTypeBusy(null);}
+  }
+  async function saveQuorum(){
+    setQuorumSaving(true);setQuorumError('');
+    try{const res=await api.put('/api/admin/settings/quorum',{quorumThreshold:Number(quorumInput)});setQuorum(res.quorumThreshold);onQuorumChange&&onQuorumChange(res.quorumThreshold);}
+    catch(e){setQuorumError(e.message||'Failed to update quorum threshold');}
+    finally{setQuorumSaving(false);}
+  }
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Manage Members')),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    !loading&&!error&&h('div',{className:'card',style:{padding:0,overflow:'hidden',marginBottom:16}},
+      members.map((m,i)=>h('div',{key:m.id,style:{padding:'12px 16px',borderBottom:i<members.length-1?'0.5px solid var(--border)':'none'}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',marginBottom:8}},
+          h('div',{style:{width:30,height:30,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),
+          h('div',{style:{flex:1,minWidth:120}},h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)'}},m.name+(m.id===currentUser.id?' (you)':'')),h('div',{style:{fontSize:11,color:'var(--muted)'}},m.role+(m.needsSetup?' · Not yet set up':''))),
+          h('span',{className:'badge',style:m.isAdmin?{background:'var(--teal-l)',color:'var(--teal)'}:{background:'var(--bg)',color:'var(--muted)'}},m.isAdmin?'Admin':'Member'),
+          h('button',{className:'btn btn-outline btn-sm',disabled:typeBusy===m.id,onClick:()=>toggleMemberType(m)},typeBusy===m.id?'…':(m.role==='Required'?'Make Optional':'Make Required')),
+          h('button',{className:'btn btn-outline btn-sm',disabled:adminBusy===m.id,onClick:()=>toggleAdmin(m)},adminBusy===m.id?'…':(m.isAdmin?'Remove Admin':'Make Admin')),
+          h('button',{className:'btn btn-outline btn-sm',disabled:resetting===m.id,onClick:()=>resetAuth(m)},resetting===m.id?'…':'Reset Login')
+        ),
+        h(MemberEmailRow,{member:m,onSaved:updated=>{setMembers(list=>list.map(x=>x.id===m.id?updated:x));onMemberUpdated&&onMemberUpdated(updated);}})
+      ))
+    ),
+    resetCode&&h('div',{className:'alert alert-success',style:{marginTop:-4,marginBottom:16}},'New one-time code for ',h('strong',null,resetCode.name),': ',h('code',{style:{fontSize:13}},resetCode.code),h('div',{style:{color:'var(--muted)',marginTop:4,fontSize:11}},'Share this with them — it replaces their password and 2FA.')),
+    !loading&&!error&&h('div',{className:'card'},
+      h('div',{className:'card-title'},'Decision Quorum'),
+      h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'How many Required members must submit their review before an opportunity has quorum for decision-making. Currently '+requiredCount+' member'+(requiredCount===1?'':'s')+' '+(requiredCount===1?'is':'are')+' Required.'),
+      h('div',{style:{display:'flex',gap:8,alignItems:'center'}},
+        h('input',{className:'form-input',type:'number',min:1,max:requiredCount,style:{width:80},value:quorumInput,onChange:e=>setQuorumInput(e.target.value)}),
+        h('span',{style:{fontSize:12,color:'var(--muted)'}},'of '+requiredCount+' Required members'),
+        h('button',{className:'btn btn-outline btn-sm',disabled:quorumSaving||Number(quorumInput)===quorum,onClick:saveQuorum},quorumSaving?'Saving…':'Save')
+      ),
+      quorum!=null&&h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:8}},'Current threshold: '+quorum),
+      quorumError&&h('div',{style:{fontSize:12,color:'#991B1B',marginTop:8}},quorumError)
+    )
+  );
+}
+
+function NewOpportunityModal({onClose,onSubmit,currentUser}){
+  const [step,setStep]=useState(1);const [fileName,setFileName]=useState('');const [fileB64,setFileB64]=useState('');const [extracting,setExtracting]=useState(false);const [extractError,setExtractError]=useState('');const [form,setForm]=useState(null);const [deadline,setDeadline]=useState(new Date(Date.now()+5*86400000).toISOString().slice(0,10));const [notifyLucas,setNotifyLucas]=useState(true);const [additionalContext,setAdditionalContext]=useState('');
+  function upd(k,v){setForm(f=>({...f,[k]:v}))}function updPQ(k,v){setForm(f=>({...f,pqData:{...f.pqData,[k]:v}}))}function updODD(k,v){setForm(f=>({...f,pqData:{...f.pqData,oddRatings:{...f.pqData.oddRatings,[k]:v}}}))}
+  function handleFile(e){const f=e.target.files?.[0];if(!f)return;if(f.type!=='application/pdf'){alert('PDF only.');return;}setFileName(f.name);const r=new FileReader();r.onload=ev=>setFileB64(ev.target.result.split(',')[1]);r.readAsDataURL(f);}
+  async function handleExtract(){if(!fileB64){alert('Select a PDF first.');return;}setExtracting(true);setExtractError('');try{const x=await extractFromPDF(fileB64);setForm({title:x.title||'',assetClass:x.assetClass||'',commitment:x.commitment||'',currency:x.currency||'USD',pqData:{thesisSummary:x.thesisSummary||'',thesisRating:x.thesisRating||4,returnTarget:x.returnTarget||'',hasTrackRecord:x.hasTrackRecord!==false,trackRecordDetail:x.trackRecordDetail||'',teamSummary:x.teamSummary||'',downsideScenarios:x.downsideScenarios||'',esgProgramme:x.esgProgramme||'Developing',esgApproach:x.esgApproach||'Opportunistic',esgNote:x.esgNote||'',oddRatings:{governance:x.oddRatings?.governance||'Low',compliance:x.oddRatings?.compliance||'Low',operations:x.oddRatings?.operations||'Low',alignment:x.oddRatings?.alignment||'Low',reporting:x.oddRatings?.reporting||'Low'},oddGovernanceNote:x.oddGovernanceNote||'',feesSummary:x.feesSummary||'',termsSummary:x.termsSummary||'',lpRightsNote:x.lpRightsNote||'',isOffshore:x.isOffshore||false,vehicleType:x.vehicleType||'',mltaRequired:x.isOffshore||false,feesAboveNorm:x.feesAboveNorm||false,feesBelowNorm:x.feesBelowNorm||false}});setAdditionalContext(x.additionalContext||'');setStep(3);}catch(err){setExtractError(err.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':err.message||'Extraction failed');}finally{setExtracting(false);}}
+  function handleSubmit(){if(!form?.title||!form?.assetClass){alert('Fund name and asset class required.');return;}onSubmit({title:form.title,assetClass:form.assetClass,commitment:parseFloat(form.commitment)||0,currency:form.currency,deadline:deadline+'T23:59:00Z',additionalContext,notifyLucas,pqSummary:form.pqData.thesisSummary||'PQ research uploaded.',pqData:form.pqData});}
+  const oddDims=['governance','compliance','operations','alignment','reporting'];
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',style:{maxWidth:600},onClick:e=>e.stopPropagation()},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},h('div',{className:'modal-title'},'Initiate New IC Review'),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'✕')),
+    h('div',{style:{display:'flex',gap:0,borderBottom:'0.5px solid var(--border)',marginBottom:18}},[{n:1,l:'1 · Upload PQ Document'},{n:2,l:'2 · Claude Reads'},{n:3,l:'3 · Confirm & Create Draft'}].map(t=>h('div',{key:t.n,style:{padding:'6px 14px',fontSize:12,borderBottom:`2px solid ${step===t.n?'var(--teal)':'transparent'}`,color:step===t.n?'var(--navy)':'var(--muted)',fontWeight:step===t.n?600:400,cursor:step>t.n?'pointer':'default'},onClick:()=>step>t.n&&setStep(t.n)},t.l))),
+    step===1&&h('div',null,
+      h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ Upload the PQ research PDF — Claude reads it and pre-populates every field. You only confirm what it cannot know.'),
+      h('label',{className:`upload-zone${fileB64?' has-file':''}`,style:{marginBottom:16,display:'block'}},fileB64?h('div',null,h('div',{style:{fontSize:24,marginBottom:6}},'📄'),h('div',{style:{fontWeight:600,color:'var(--teal)',fontSize:13}},fileName),h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:4}},'Click to replace')):h('div',null,h('div',{style:{fontSize:32,marginBottom:8}},'☁'),h('div',{style:{fontWeight:600,color:'var(--navy)',fontSize:14}},'Upload PQ Research PDF'),h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:4}},'PDF only · max 50 MB · Claude extracts all data automatically')),h('input',{type:'file',accept:'.pdf',style:{display:'none'},onChange:handleFile})),
+      extractError==='NOT_CONFIGURED'&&h('div',{style:{marginBottom:14}},h('div',{style:{padding:'12px 16px',background:'#FEF3C7',border:'0.5px solid #FCD34D',borderRadius:8,fontSize:12,color:'#92400E',marginBottom:10,lineHeight:1.7}},h('strong',null,'PDF extraction is not configured. '),'The server has no ANTHROPIC_API_KEY set. Ask your admin to add one, or use manual entry below.'),h('button',{className:'btn btn-teal',style:{width:'100%',padding:'10px',fontSize:13},onClick:()=>{setForm({title:'',assetClass:'',commitment:'',currency:'USD',pqData:blankPqData()});setExtractError('');setStep(3);}},'Enter Details Manually →')),
+      extractError&&extractError!=='NOT_CONFIGURED'&&h('div',{style:{marginBottom:14}},h('div',{style:{padding:'12px 16px',background:'#FEE2E2',border:'0.5px solid #FCA5A5',borderRadius:8,fontSize:12,color:'#991B1B',marginBottom:10}},h('strong',null,'Extraction failed: '),extractError),h('button',{className:'btn btn-teal',style:{width:'100%',padding:'10px',fontSize:13},onClick:()=>{setForm({title:'',assetClass:'',commitment:'',currency:'USD',pqData:blankPqData()});setExtractError('');setStep(3);}},'Enter Details Manually Instead →')),
+      h('button',{className:'btn btn-gold',style:{width:'100%',padding:'10px',fontSize:13},onClick:handleExtract,disabled:!fileB64||extracting},extracting?h('span',null,h('span',{className:'spin',style:{width:14,height:14,borderWidth:2,display:'inline-block',verticalAlign:'middle',marginRight:8}}),'Reading PQ document…'):'✦ Read Document & Pre-populate Fields →'),
+      !extractError&&h('div',{style:{textAlign:'center',marginTop:12,fontSize:11,color:'var(--muted)'}},'No PDF? ',h('span',{style:{color:'var(--teal)',cursor:'pointer',textDecoration:'underline'},onClick:()=>{setForm({title:'',assetClass:'',commitment:'',currency:'USD',pqData:blankPqData()});setStep(3);}},'Skip to manual entry'))
+    ),
+    step===2&&h('div',{style:{textAlign:'center',padding:'40px 20px'}},h('span',{className:'spin',style:{width:36,height:36,borderWidth:3,display:'inline-block',marginBottom:16}}),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Reading PQ document…'),h('div',{style:{fontSize:12,color:'var(--muted)'}},'Extracting fund details, Operational Due Diligence (ODD) ratings, fees, team data, and ESG information.')),
+    step===3&&form&&h('div',null,
+      h('div',{className:'alert alert-success',style:{marginBottom:14}},'✦ ',h('strong',null,'Pre-populated from PQ document. '),'Review, correct anything wrong, then complete the fields at the bottom Claude cannot determine.'),
+      h('div',{style:{background:'var(--purple-l)',border:'0.5px solid #C4B5FD',borderRadius:10,padding:'14px 16px',marginBottom:14}},
+        h('div',{style:{fontSize:11,fontWeight:700,color:'var(--purple)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},'✦ Extracted from PQ document — edit if needed'),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Fund / Manager Name'),h('input',{className:'form-input',value:form.title,onChange:e=>upd('title',e.target.value)})),
+        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Asset Class'),h('select',{className:'form-select',value:form.assetClass,onChange:e=>upd('assetClass',e.target.value)},h('option',{value:''},'Select if not detected…'),ASSET_CLASSES.map(a=>h('option',{key:a,value:a},a)))),h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Commitment'),h('input',{className:'form-input',type:'number',placeholder:'0 if not in doc',value:form.commitment,onChange:e=>upd('commitment',e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Currency'),h('select',{className:'form-select',value:form.currency,onChange:e=>upd('currency',e.target.value)},['CAD','USD','EUR','GBP','Other'].map(c=>h('option',{key:c,value:c},c)))))),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Thesis Summary'),h('textarea',{className:'form-textarea',style:{minHeight:56},value:form.pqData.thesisSummary,onChange:e=>updPQ('thesisSummary',e.target.value)})),
+        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Return Target'),h('input',{className:'form-input',value:form.pqData.returnTarget,onChange:e=>updPQ('returnTarget',e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Track Record'),h('input',{className:'form-input',value:form.pqData.trackRecordDetail,onChange:e=>updPQ('trackRecordDetail',e.target.value)}))),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Team Summary'),h('input',{className:'form-input',value:form.pqData.teamSummary,onChange:e=>updPQ('teamSummary',e.target.value)})),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Downside Scenarios'),h('textarea',{className:'form-textarea',style:{minHeight:56},value:form.pqData.downsideScenarios,onChange:e=>updPQ('downsideScenarios',e.target.value)})),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'PQ ODD Ratings'),h('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}},oddDims.map(dim=>h('div',{key:dim},h('div',{style:{fontSize:10,fontWeight:600,color:'var(--muted)',marginBottom:3,textTransform:'capitalize'}},dim),h('select',{className:'form-select',style:{fontSize:11},value:form.pqData.oddRatings[dim],onChange:e=>updODD(dim,e.target.value)},['Low','Medium','High'].map(r=>h('option',{key:r,value:r},r))))))),
+        form.pqData.oddRatings.governance!=='Low'&&h('div',{className:'form-group'},h('label',{className:'form-label'},'Governance ODD Note'),h('input',{className:'form-input',value:form.pqData.oddGovernanceNote,onChange:e=>updPQ('oddGovernanceNote',e.target.value)})),
+        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Fees Summary'),h('input',{className:'form-input',value:form.pqData.feesSummary,onChange:e=>updPQ('feesSummary',e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Terms / LP Rights'),h('input',{className:'form-input',value:form.pqData.termsSummary,onChange:e=>updPQ('termsSummary',e.target.value)}))),
+        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'ESG Programme'),h('select',{className:'form-select',value:form.pqData.esgProgramme,onChange:e=>updPQ('esgProgramme',e.target.value)},['Mature','Developing','Nascent','None'].map(v=>h('option',{key:v,value:v},v)))),h('div',{className:'form-group'},h('label',{className:'form-label'},'ESG Approach'),h('select',{className:'form-select',value:form.pqData.esgApproach,onChange:e=>updPQ('esgApproach',e.target.value)},['Impact','Integrated','ESG Aware','Opportunistic','None'].map(v=>h('option',{key:v,value:v},v))))),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'ESG Note'),h('input',{className:'form-input',value:form.pqData.esgNote,onChange:e=>updPQ('esgNote',e.target.value)})),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.isOffshore,onChange:e=>updPQ('isOffshore',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Offshore / Cayman structure')),
+          h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.feesBelowNorm,onChange:e=>updPQ('feesBelowNorm',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Fees below market norm')),
+          h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.mltaRequired,onChange:e=>updPQ('mltaRequired',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'MLT Aikens review required')),
+          h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.feesAboveNorm,onChange:e=>updPQ('feesAboveNorm',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Fees above market norm'))
+        )
+      ),
+      h('div',{style:{background:'var(--gold-l)',border:'0.5px solid #e8d5a0',borderRadius:10,padding:'14px 16px',marginBottom:14}},
+        h('div',{style:{fontSize:11,fontWeight:700,color:'#633806',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},"◎ Your input required — Claude can't determine these"),
+        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Response Deadline'),h('input',{className:'form-input',type:'date',value:deadline,onChange:e=>setDeadline(e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Proposed Commitment (if not in doc)'),h('input',{className:'form-input',type:'number',placeholder:'Enter if Claude left blank',value:form.commitment,onChange:e=>upd('commitment',e.target.value)}))),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Additional Context'),h('textarea',{className:'form-textarea',placeholder:'Verbal context from PQ not in the document — prior fund relationship, call notes, special terms discussed…',value:additionalContext,onChange:e=>setAdditionalContext(e.target.value)})),
+        h('label',{style:{display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,padding:'10px 0'}},h('input',{type:'checkbox',checked:notifyLucas,onChange:e=>setNotifyLucas(e.target.checked),style:{width:16,height:16,accentColor:'var(--teal)',cursor:'pointer'}}),h('div',null,h('div',{style:{fontWeight:600,color:'var(--navy)'}},'Notify Lucas Robinson'),h('div',{style:{fontSize:11,color:'var(--muted)'}},'Optional IC member — included in report if submitted before generation')))
+      ),
+      h('div',{style:{display:'flex',gap:8}},h('button',{className:'btn btn-outline',onClick:()=>setStep(1)},'← Re-upload'),h('button',{className:'btn btn-gold',style:{flex:1,padding:'10px'},onClick:handleSubmit},'Create Draft →'))
+    )
+  ));
+}
+
+function EditOpportunityModal({opp,onClose,onSave}){
+  const [form,setForm]=useState({title:opp.title,assetClass:opp.assetClass,commitment:opp.commitment,currency:opp.currency,pqData:{...blankPqData(),...opp.pqData}});
+  const [deadline,setDeadline]=useState((opp.deadline||'').slice(0,10));const [additionalContext,setAdditionalContext]=useState(opp.additionalContext||'');const [notifyLucas,setNotifyLucas]=useState(!!opp.notifyLucas);const [saving,setSaving]=useState(false);
+  function upd(k,v){setForm(f=>({...f,[k]:v}))}function updPQ(k,v){setForm(f=>({...f,pqData:{...f.pqData,[k]:v}}))}function updODD(k,v){setForm(f=>({...f,pqData:{...f.pqData,oddRatings:{...f.pqData.oddRatings,[k]:v}}}))}
+  async function handleSave(){if(!form.title||!form.assetClass){alert('Fund name and asset class required.');return;}setSaving(true);await onSave({title:form.title,assetClass:form.assetClass,commitment:parseFloat(form.commitment)||0,currency:form.currency,deadline:deadline?deadline+'T23:59:00Z':opp.deadline,additionalContext,notifyLucas,pqSummary:form.pqData.thesisSummary||opp.pqSummary,pqData:form.pqData});setSaving(false);}
+  const oddDims=['governance','compliance','operations','alignment','reporting'];
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',style:{maxWidth:600},onClick:e=>e.stopPropagation()},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},h('div',{className:'modal-title'},'Edit Opportunity Details'),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'✕')),
+    h('div',{style:{background:'var(--purple-l)',border:'0.5px solid #C4B5FD',borderRadius:10,padding:'14px 16px',marginBottom:14}},
+      h('div',{className:'form-group'},h('label',{className:'form-label'},'Fund / Manager Name'),h('input',{className:'form-input',value:form.title,onChange:e=>upd('title',e.target.value)})),
+      h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Asset Class'),h('select',{className:'form-select',value:form.assetClass,onChange:e=>upd('assetClass',e.target.value)},ASSET_CLASSES.map(a=>h('option',{key:a,value:a},a)))),h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Commitment'),h('input',{className:'form-input',type:'number',value:form.commitment,onChange:e=>upd('commitment',e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Currency'),h('select',{className:'form-select',value:form.currency,onChange:e=>upd('currency',e.target.value)},['CAD','USD','EUR','GBP','Other'].map(c=>h('option',{key:c,value:c},c)))))),
+      h('div',{className:'form-group'},h('label',{className:'form-label'},'Thesis Summary'),h('textarea',{className:'form-textarea',style:{minHeight:56},value:form.pqData.thesisSummary,onChange:e=>updPQ('thesisSummary',e.target.value)})),
+      h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Return Target'),h('input',{className:'form-input',value:form.pqData.returnTarget,onChange:e=>updPQ('returnTarget',e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Track Record'),h('input',{className:'form-input',value:form.pqData.trackRecordDetail,onChange:e=>updPQ('trackRecordDetail',e.target.value)}))),
+      h('div',{className:'form-group'},h('label',{className:'form-label'},'Team Summary'),h('input',{className:'form-input',value:form.pqData.teamSummary,onChange:e=>updPQ('teamSummary',e.target.value)})),
+      h('div',{className:'form-group'},h('label',{className:'form-label'},'Downside Scenarios'),h('textarea',{className:'form-textarea',style:{minHeight:56},value:form.pqData.downsideScenarios,onChange:e=>updPQ('downsideScenarios',e.target.value)})),
+      h('div',{className:'form-group'},h('label',{className:'form-label'},'PQ Operational Due Diligence (ODD) Ratings'),h('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}},oddDims.map(dim=>h('div',{key:dim},h('div',{style:{fontSize:10,fontWeight:600,color:'var(--muted)',marginBottom:3,textTransform:'capitalize'}},dim),h('select',{className:'form-select',style:{fontSize:11},value:form.pqData.oddRatings[dim],onChange:e=>updODD(dim,e.target.value)},['Low','Medium','High'].map(r=>h('option',{key:r,value:r},r))))))),
+      h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Fees Summary'),h('input',{className:'form-input',value:form.pqData.feesSummary,onChange:e=>updPQ('feesSummary',e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Terms / LP Rights'),h('input',{className:'form-input',value:form.pqData.termsSummary,onChange:e=>updPQ('termsSummary',e.target.value)}))),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.isOffshore,onChange:e=>updPQ('isOffshore',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Offshore / Cayman structure')),
+        h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.feesBelowNorm,onChange:e=>updPQ('feesBelowNorm',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Fees below market norm')),
+        h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.mltaRequired,onChange:e=>updPQ('mltaRequired',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'MLT Aikens review required')),
+        h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.feesAboveNorm,onChange:e=>updPQ('feesAboveNorm',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Fees above market norm'))
+      )
+    ),
+    h('div',{style:{background:'var(--gold-l)',border:'0.5px solid #e8d5a0',borderRadius:10,padding:'14px 16px',marginBottom:14}},
+      h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Response Deadline'),h('input',{className:'form-input',type:'date',value:deadline,onChange:e=>setDeadline(e.target.value)})),h('div',{className:'form-group'})),
+      h('div',{className:'form-group'},h('label',{className:'form-label'},'Additional Context'),h('textarea',{className:'form-textarea',value:additionalContext,onChange:e=>setAdditionalContext(e.target.value)})),
+      h('label',{style:{display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,padding:'10px 0'}},h('input',{type:'checkbox',checked:notifyLucas,onChange:e=>setNotifyLucas(e.target.checked),style:{width:16,height:16,accentColor:'var(--teal)',cursor:'pointer'}}),h('div',null,h('div',{style:{fontWeight:600,color:'var(--navy)'}},'Notify Lucas Robinson')))
+    ),
+    h('div',{style:{display:'flex',gap:8}},h('button',{className:'btn btn-outline',onClick:onClose,disabled:saving},'Cancel'),h('button',{className:'btn btn-gold',style:{flex:1,padding:10},onClick:handleSave,disabled:saving},saving?'Saving…':'Save Changes'))
+  ));
+}
+
+function OppCard({opp,currentUser,setPage,setActiveOpp,onToggleStatus,onDelete,quorumThreshold,roster}){
+  const myR=opp.responses[currentUser.id];const started=Object.keys(myR?.responses||{}).length>0;const myStatus=myR?.submitted?'Submitted':started?'In Progress':'Not Started';const myBadge={Submitted:'badge-sub','In Progress':'badge-ip','Not Started':'badge-ns'};const requiredMembers=(roster||IC_MEMBERS).filter(m=>m.role==='Required');const reqSub=requiredMembers.filter(m=>opp.responses[m.id]?.submitted).length;const quorumMet=reqSub>=quorumThreshold;const closed=opp.status==='closed';const isDraft=opp.status==='draft';const canManage=opp.initiatedBy===currentUser.id||currentUser.ddAdmin;const canPublish=isDraft&&canManage;
+  const others=IC_MEMBERS.filter(m=>m.id!==opp.initiatedBy);const sentCount=others.filter(m=>opp.responses[m.id]?.sentAt).length;
+  function publish(){if(!window.confirm('Publish this opportunity? It becomes active, and you can then send it to each family member individually, on your own schedule.'))return;onToggleStatus(opp.id,'open');}
+  function toggle(){const next=closed?'open':'closed';if(!window.confirm(closed?'Reopen this opportunity for editing?':'Close this opportunity? Responses become read-only for everyone until reopened.'))return;onToggleStatus(opp.id,next);}
+  function del(){if(!window.confirm(`Permanently delete "${opp.title}"? This removes it and everyone's responses. This cannot be undone.`))return;onDelete(opp.id);}
+  return h('div',{className:`opp-card ${closed?'bl-teal':'bl-teal'}`,style:closed?{opacity:.75}:null},h('div',null,h('div',{className:'opp-name'},opp.title),h('div',{className:'opp-meta'},h('span',{className:`badge ${isDraft?'badge-draft':closed?'badge-ns':'badge-open'}`},isDraft?'✎ Draft':closed?'🔒 Closed':'Open'),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,opp.assetClass),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,fmtMoney(opp.commitment,opp.currency)),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,'Due '+fmtDate(opp.deadline))),isDraft?h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:3}},'Only visible to you until you publish it.'):h(React.Fragment,null,h('div',{className:'prog-bar'},h('div',{className:'prog-fill',style:{width:`${(reqSub/requiredMembers.length)*100}%`}})),h('div',{style:{fontSize:11,color:quorumMet?'var(--teal)':'var(--muted)',marginTop:3,fontWeight:quorumMet?600:400}},reqSub+'/'+requiredMembers.length+' required members submitted'+(quorumMet?' · Quorum reached ✓':' · Quorum: '+quorumThreshold)),canManage&&h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:2}},'Shared with '+sentCount+'/'+others.length+' family members'))),h('div',{style:{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-end'}},!isDraft&&h('span',{className:`badge ${myBadge[myStatus]}`},myStatus),h('button',{className:'btn btn-teal btn-sm',onClick:()=>{setActiveOpp(opp);setPage('checklist')}},closed?'View →':isDraft?'Continue Draft →':'Start Review →'),canPublish&&h('button',{className:'btn btn-gold btn-sm',onClick:publish},'Publish →'),!isDraft&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>{setActiveOpp(opp);setPage('report')}},'📄 View Report'),!isDraft&&currentUser.ddAdmin&&h('button',{className:'btn btn-outline btn-sm',onClick:toggle},closed?'Reopen':'Close'),currentUser.ddAdmin&&h('button',{className:'btn btn-outline btn-sm',style:{color:'#991B1B',borderColor:'#F3D6D6'},onClick:del},'🗑 Delete')));
+}
+
+function Dashboard({currentUser,opportunities,loading,setPage,setActiveOpp,openNewModal,onToggleStatus,onDelete,quorumThreshold,roster}){
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20}},h('div',null,h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'PQ Introduced Due Diligence'),h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:2}},'Robinson Family Office \u00b7 23 questions \u00b7 Live web research')),h('button',{className:'btn btn-gold',onClick:openNewModal},'+ Initiate New Opportunity')),
+    h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ ',h('strong',null,'Live Intelligence: '),'When you open a checklist, Claude automatically searches the web for manager reputation, industry dynamics (e.g. sports valuation reset), and the Canadian regulatory environment. Results load in the relevant sections.'),
+    loading&&h('div',{style:{textAlign:'center',padding:'30px',color:'var(--muted)'}},h('span',{className:'spin'}),'Loading opportunities…'),
+    !loading&&opportunities.length===0&&h('div',{style:{textAlign:'center',padding:'30px',color:'var(--muted)',fontSize:13}},'No opportunities yet. Click "+ Initiate New Opportunity" to start one.'),
+    !loading&&opportunities.map(opp=>h(OppCard,{key:opp.id,opp,currentUser,setPage,setActiveOpp,onToggleStatus,onDelete,quorumThreshold,roster}))
+  );
+}
+
+function Login({onLogin}){
+  const [members,setMembers]=useState([]);
+  const [userId,setUserId]=useState(null);
+  const [step,setStep]=useState('select'); // select | password | totp | setup-claim | setup-qr
+  const [password,setPassword]=useState('');
+  const [newPassword,setNewPassword]=useState('');
+  const [confirmPassword,setConfirmPassword]=useState('');
+  const [setupCode,setSetupCode]=useState('');
+  const [totpCode,setTotpCode]=useState('');
+  const [qrInfo,setQrInfo]=useState(null);
+  const [error,setError]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{api.get('/api/members?_='+Date.now()).then(setMembers).catch(()=>{});},[]);
+
+  const selected=members.find(m=>m.id===userId);
+
+  function networkOrMessage(err,fallback){const isNetwork=err.name==='TypeError'||(err.message||'').toLowerCase().includes('fetch');return isNetwork?'Can’t reach the server. Make sure it’s running, then try again.':(err.message||fallback);}
+
+  function selectMember(m){setUserId(m.id);setError('');setStep(m.needsSetup?'setup-claim':'password');}
+
+  function backToSelect(){setStep('select');setUserId(null);setPassword('');setNewPassword('');setConfirmPassword('');setSetupCode('');setTotpCode('');setQrInfo(null);setError('');}
+
+  async function submitPassword(e){
+    e.preventDefault();if(!password)return;setLoading(true);setError('');
+    try{
+      const res=await api.post('/api/login',{userId,password});
+      if(res.needsTotp){setTotpCode('');setStep('totp');}
+      else if(res.needsTotpSetup){const info=await api.post('/api/auth/totp-setup-info',{});setQrInfo(info);setTotpCode('');setStep('setup-qr');}
+    }catch(err){
+      if(err.message==='NEEDS_SETUP'){setError('This account needs to be set up first — use your one-time setup code.');setStep('setup-claim');}
+      else setError(networkOrMessage(err,'Incorrect password. Try again.'));
+    }finally{setLoading(false);}
+  }
+
+  async function submitTotp(e){
+    e.preventDefault();if(totpCode.length!==6)return;setLoading(true);setError('');
+    try{const u=await api.post('/api/login/verify-totp',{code:totpCode});onLogin(u);}
+    catch(err){setTotpCode('');setError(networkOrMessage(err,'Incorrect code.'));}
+    finally{setLoading(false);}
+  }
+
+  async function submitClaim(e){
+    e.preventDefault();
+    if(!setupCode||!newPassword)return;
+    if(newPassword.length<10){setError('Password must be at least 10 characters.');return;}
+    if(newPassword!==confirmPassword){setError('Passwords do not match.');return;}
+    setLoading(true);setError('');
+    try{const info=await api.post('/api/auth/claim-account',{userId,setupCode,newPassword});setQrInfo(info);setTotpCode('');setStep('setup-qr');}
+    catch(err){setError(networkOrMessage(err,'Invalid setup code.'));}
+    finally{setLoading(false);}
+  }
+
+  async function submitConfirmTotp(e){
+    e.preventDefault();if(totpCode.length!==6)return;setLoading(true);setError('');
+    try{const u=await api.post('/api/auth/confirm-totp-setup',{code:totpCode});onLogin(u);}
+    catch(err){setTotpCode('');setError(networkOrMessage(err,'Incorrect code.'));}
+    finally{setLoading(false);}
+  }
+
+  return h('div',{style:{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)'}},
+    h('div',{style:{background:'#fff',border:'0.5px solid var(--border)',borderRadius:12,padding:32,width:380}},
+      h('div',{style:{fontSize:16,fontWeight:600,color:'var(--navy)',marginBottom:4}},'Robinson Family Office'),
+      h('div',{style:{fontSize:12,color:'var(--muted)',marginBottom:20}},'PQ Introduced Due Diligence Portal'),
+
+      step==='select'&&h('div',null,
+        h('div',{className:'form-label',style:{marginBottom:6}},'Who are you?'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:6}},members.map(m=>h('button',{key:m.id,type:'button',onClick:()=>selectMember(m),style:{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:7,border:'0.5px solid var(--border)',cursor:'pointer',background:'#fff',textAlign:'left'}},h('div',{style:{width:26,height:26,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),h('span',{style:{fontSize:13,color:'var(--navy)',flex:1}},m.name),m.needsSetup&&h('span',{style:{fontSize:10,color:'var(--gold)',fontWeight:600}},'SET UP'))))
+      ),
+
+      step==='password'&&h('form',{onSubmit:submitPassword},
+        h('button',{type:'button',onClick:backToSelect,style:{background:'none',border:'none',color:'var(--teal)',fontSize:11,cursor:'pointer',padding:0,marginBottom:10}},'← Not '+(selected?selected.name.split(' ')[0]:'')+'?'),
+        h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)',marginBottom:12}},'Welcome back'+(selected?', '+selected.name.split(' ')[0]:'')),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Password'),h('input',{className:'form-input',type:'password',value:password,onChange:e=>setPassword(e.target.value),autoFocus:true})),
+        error&&h('div',{style:{fontSize:12,color:'#991B1B',marginBottom:10}},error),
+        h('button',{className:'btn btn-teal',type:'submit',style:{width:'100%',padding:10,justifyContent:'center'},disabled:!password||loading},loading?'Checking…':'Sign in')
+      ),
+
+      step==='totp'&&h('form',{onSubmit:submitTotp},
+        h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Enter your 2FA code'),
+        h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:12}},'Open your authenticator app and enter the current 6-digit code.'),
+        h('input',{className:'form-input',inputMode:'numeric',maxLength:6,value:totpCode,onChange:e=>setTotpCode(e.target.value.replace(/\D/g,'').slice(0,6)),autoFocus:true,style:{textAlign:'center',fontSize:20,letterSpacing:4}}),
+        error&&h('div',{style:{fontSize:12,color:'#991B1B',margin:'10px 0 0'}},error),
+        h('button',{className:'btn btn-teal',type:'submit',style:{width:'100%',padding:10,justifyContent:'center',marginTop:10},disabled:totpCode.length!==6||loading},loading?'Checking…':'Verify')
+      ),
+
+      step==='setup-claim'&&h('form',{onSubmit:submitClaim},
+        h('button',{type:'button',onClick:backToSelect,style:{background:'none',border:'none',color:'var(--teal)',fontSize:11,cursor:'pointer',padding:0,marginBottom:10}},'← Not '+(selected?selected.name.split(' ')[0]:'')+'?'),
+        h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)',marginBottom:2}},'Set up your account'),
+        h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:12}},'Enter the one-time setup code you were given, then choose a password.'),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Setup code'),h('input',{className:'form-input',value:setupCode,onChange:e=>setSetupCode(e.target.value),autoFocus:true})),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'New password (min 10 characters)'),h('input',{className:'form-input',type:'password',value:newPassword,onChange:e=>setNewPassword(e.target.value)})),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Confirm password'),h('input',{className:'form-input',type:'password',value:confirmPassword,onChange:e=>setConfirmPassword(e.target.value)})),
+        error&&h('div',{style:{fontSize:12,color:'#991B1B',marginBottom:10}},error),
+        h('button',{className:'btn btn-gold',type:'submit',style:{width:'100%',padding:10,justifyContent:'center'},disabled:!setupCode||!newPassword||loading},loading?'Setting up…':'Continue →')
+      ),
+
+      step==='setup-qr'&&h('form',{onSubmit:submitConfirmTotp},
+        h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Set up two-factor authentication'),
+        h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:12,lineHeight:1.6}},'Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.), then enter the 6-digit code it shows.'),
+        qrInfo&&h('div',{style:{textAlign:'center',marginBottom:12}},h('img',{src:qrInfo.qrDataUrl,alt:'2FA QR code',style:{width:180,height:180}})),
+        qrInfo&&h('div',{style:{fontSize:10,color:'var(--muted)',textAlign:'center',marginBottom:12,wordBreak:'break-all'}},'Can’t scan? Enter manually: ',h('code',null,qrInfo.secret)),
+        h('input',{className:'form-input',inputMode:'numeric',maxLength:6,placeholder:'6-digit code',value:totpCode,onChange:e=>setTotpCode(e.target.value.replace(/\D/g,'').slice(0,6)),autoFocus:true,style:{textAlign:'center',fontSize:20,letterSpacing:4}}),
+        error&&h('div',{style:{fontSize:12,color:'#991B1B',margin:'10px 0 0'}},error),
+        h('button',{className:'btn btn-teal',type:'submit',style:{width:'100%',padding:10,justifyContent:'center',marginTop:10},disabled:totpCode.length!==6||loading},loading?'Confirming…':'Confirm & Finish')
+      )
+    )
+  );
+}
+
+function App(){
+  const [user,setUser]=useState(null);const [checkingAuth,setCheckingAuth]=useState(true);const [page,setPage]=useState('dashboard');const [opp,setOpp]=useState(null);const [opportunities,setOpportunities]=useState([]);const [loadingOpps,setLoadingOpps]=useState(false);const [activities,setActivities]=useState([]);const [showNew,setShowNew]=useState(false);const [showMenu,setShowMenu]=useState(false);const [quorumThreshold,setQuorumThreshold]=useState(3);const [roster,setRoster]=useState(IC_MEMBERS);
+  useEffect(()=>{api.get('/api/me').then(setUser).catch(()=>setUser(null)).finally(()=>setCheckingAuth(false));},[]);
+  function loadOpportunities(){setLoadingOpps(true);api.get('/api/opportunities').then(setOpportunities).catch(()=>{}).finally(()=>setLoadingOpps(false));}
+  function loadActivities(){api.get('/api/activities').then(setActivities).catch(()=>{});}
+  // roster mirrors IC_MEMBERS but with live role/isAdmin from the server — the static
+  // constant only has the fixed shape (id/name/color/initials) baked in at build time, so
+  // Required/Optional changes made on the Manage Members page wouldn't otherwise show up
+  // in quorum calculations elsewhere without a full page reload.
+  useEffect(()=>{if(user){loadOpportunities();loadActivities();api.get('/api/settings').then(s=>setQuorumThreshold(s.quorumThreshold)).catch(()=>{});api.get('/api/members?_='+Date.now()).then(setRoster).catch(()=>{});}},[user]);
+  async function sendToMember(oppId,userId){const res=await api.post(`/api/opportunities/${oppId}/send/${userId}`,{});const patch=o=>o&&o.id===oppId?{...o,responses:{...o.responses,[userId]:{...o.responses[userId],sentAt:res.sentAt}}}:o;setOpportunities(list=>list.map(patch));setOpp(patch);return res;}
+  async function createActivity(data){const created=await api.post('/api/activities',data);setActivities(list=>[created,...list]);}
+  async function updateActivity(id,data){const updated=await api.put(`/api/activities/${id}`,data);setActivities(list=>list.map(a=>a.id===id?updated:a));}
+  async function deleteActivity(id){await api.del(`/api/activities/${id}`);setActivities(list=>list.filter(a=>a.id!==id));}
+  async function save(uid,data){const updated=await api.put(`/api/opportunities/${opp.id}/responses/${uid}`,data);setOpp(o=>o?{...o,responses:{...o.responses,[uid]:updated}}:o);}
+  async function submit(uid,data){await save(uid,data);setPage('dashboard');loadOpportunities();}
+  async function logout(){await api.post('/api/logout');setUser(null);setOpp(null);setPage('dashboard');}
+  async function createOpportunity(payload){const created=await api.post('/api/opportunities',payload);setOpportunities(list=>[created,...list]);setOpp(created);setShowNew(false);setPage('checklist');}
+  async function toggleStatus(id,status){const updated=await api.put(`/api/opportunities/${id}/status`,{status});setOpportunities(list=>list.map(o=>o.id===id?{...o,status:updated.status}:o));setOpp(o=>o&&o.id===id?{...o,status:updated.status}:o);}
+  async function updateOpportunity(id,payload){const updated=await api.put(`/api/opportunities/${id}`,payload);setOpportunities(list=>list.map(o=>o.id===id?updated:o));setOpp(o=>o&&o.id===id?updated:o);}
+  async function deleteOpportunity(id){await api.del(`/api/opportunities/${id}`);setOpportunities(list=>list.filter(o=>o.id!==id));setOpp(o=>o&&o.id===id?null:o);}
+  async function generateReport(id,payload){const report=await api.post(`/api/opportunities/${id}/report`,payload);setOpportunities(list=>list.map(o=>o.id===id?{...o,report}:o));setOpp(o=>o&&o.id===id?{...o,report}:o);return report;}
+  function handleLogin(u){setUser(u);const returnTo=new URLSearchParams(location.search).get('returnTo');if(returnTo&&returnTo.startsWith('/'))location.href=returnTo;}
+  if(checkingAuth)return h('div',{style:{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--muted)'}},'Loading…');
+  if(!user)return h(Login,{onLogin:handleLogin});
+  return h('div',null,
+    h('nav',{className:'nav'},h('div',{className:'nav-brand'},h('a',{href:'/',style:{color:'#fff',textDecoration:'none'}},'Robinson Family Office'),h('span',null,'PQ Due Diligence'),h('a',{href:'/tasks',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Family Task List →')),h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},user.name.split(' ')[0],' ',h('span',{className:'nav-badge'},user.role)),
+      showMenu&&h('div',{style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:230,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},h('div',{style:{padding:'8px 10px 2px',fontSize:13,fontWeight:600,color:'var(--navy)'}},user.name),h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},user.role+(user.isAdmin?' · Admin':'')),
+        user.isAdmin&&h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('members');setShowMenu(false);}},'👥 Manage Members'),
+        user.isAdmin&&h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('audit-log');setShowMenu(false);}},'📋 View Audit Log'),
+        user.isAdmin&&h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('usage');setShowMenu(false);}},'💰 API Usage'),
+        user.isAdmin&&h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('backups');setShowMenu(false);}},'🗄 Backups'),
+        h('a',{href:'/',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'🏠 RFO Home'),
+        h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out'))
+    ),
+    h('div',{className:'legend-bar'},h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)'}}),h('span',null,'Claude auto-answered')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--teal)'}}),h('span',null,'Claude data / suggests')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--gold)'}}),h('span',null,'Your judgment')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'#DC2626'}}),h('span',null,'Gating')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)',opacity:.5}}),h('span',null,'🔍 Live web research'))),
+    h('div',{onClick:()=>showMenu&&setShowMenu(false)},page==='dashboard'&&h(Dashboard,{currentUser:user,opportunities,loading:loadingOpps,setPage,setActiveOpp:setOpp,openNewModal:()=>setShowNew(true),onToggleStatus:toggleStatus,onDelete:deleteOpportunity,quorumThreshold,roster}),page==='checklist'&&opp&&h(ChecklistPage,{opp,currentUser:user,onSave:save,onSubmit:submit,onBack:()=>setPage('dashboard'),activities,onCreateActivity:createActivity,onUpdateActivity:updateActivity,onDeleteActivity:deleteActivity,onUpdateOpportunity:updateOpportunity,onToggleStatus:toggleStatus,onViewReport:()=>setPage('report'),onSendTo:sendToMember}),page==='report'&&opp&&h(ReportPage,{opp,activities,onBack:()=>setPage('dashboard'),onGenerateReport:generateReport,quorumThreshold,roster}),page==='audit-log'&&h(AuditLogPage,{onBack:()=>setPage('dashboard')}),page==='usage'&&h(UsagePage,{onBack:()=>setPage('dashboard')}),page==='backups'&&h(BackupsPage,{onBack:()=>setPage('dashboard')}),page==='members'&&h(MembersPage,{onBack:()=>setPage('dashboard'),currentUser:user,onQuorumChange:setQuorumThreshold,onMemberUpdated:u=>setRoster(list=>list.map(x=>x.id===u.id?u:x))})),
+    showNew&&h(NewOpportunityModal,{onClose:()=>setShowNew(false),onSubmit:createOpportunity,currentUser:user})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

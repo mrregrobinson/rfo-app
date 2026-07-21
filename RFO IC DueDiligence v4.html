@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — IC Due Diligence v4</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;
+  --navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;
+  --purple:#7C3AED;--purple-l:#EDE9FE;
+  --red-l:#FEE2E2;--green-l:#D1FAE5;--amber-l:#FEF3C7;
+  --indigo:#3730A3;--indigo-l:#E0E7FF;
+  --text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;
+  --bg:#F9FAFB;--card:#fff;--r:10px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+
+/* NAV */
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.nav-brand span{color:var(--gold);margin-left:6px;font-size:11px;background:rgba(201,168,76,.18);padding:2px 9px;border-radius:10px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.nav-user:hover{background:rgba(255,255,255,.2)}
+.nav-badge{font-size:10px;background:var(--gold);color:var(--navy);padding:1px 6px;border-radius:8px;font-weight:600}
+.legend-bar{background:var(--navy);border-top:0.5px solid rgba(255,255,255,.1);padding:6px 20px;display:flex;align-items:center;gap:18px;font-size:11px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.7)}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+
+/* LAYOUT */
+.page{padding:20px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:12px}
+
+/* STICKY HEADER */
+.cl-sticky{position:sticky;top:52px;z-index:100;background:var(--navy);color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.cl-fund{font-size:13px;font-weight:600}
+.cl-meta{font-size:11px;color:rgba(255,255,255,.65);margin-top:2px}
+.cl-progress-wrap{display:flex;align-items:center;gap:10px;font-size:11px;color:rgba(255,255,255,.8)}
+.cl-bar{height:4px;background:rgba(255,255,255,.2);border-radius:2px;width:100px}
+.cl-fill{height:100%;background:var(--gold);border-radius:2px;transition:width .3s}
+
+/* ── RESEARCH PANEL ── */
+.research-panel{border-radius:var(--r);overflow:hidden;margin-bottom:4px;border:0.5px solid}
+.rp-manager{border-color:#C4B5FD;background:var(--purple-l)}
+.rp-industry{border-color:#99D6CE;background:var(--teal-l)}
+.rp-regulatory{border-color:#FCD34D;background:#FFFBEB}
+.rp-header{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.rp-header-left{display:flex;align-items:center;gap:10px}
+.rp-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.rp-icon-manager{background:var(--purple);color:#fff}
+.rp-icon-industry{background:var(--teal);color:#fff}
+.rp-icon-regulatory{background:#D97706;color:#fff}
+.rp-title{font-size:12px;font-weight:600;color:var(--navy)}
+.rp-subtitle{font-size:10px;color:var(--muted);margin-top:1px}
+.rp-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.rp-badge-loading{background:rgba(107,114,128,.15);color:var(--muted)}
+.rp-badge-ok{background:var(--green-l);color:#065F46}
+.rp-badge-warn{background:var(--red-l);color:#991B1B}
+.rp-badge-caution{background:var(--amber-l);color:#92400E}
+.rp-body{padding:14px 16px;border-top:0.5px solid rgba(0,0,0,.08)}
+/* Spinner */
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin .65s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Research findings */
+.rf-section{margin-bottom:12px}
+.rf-section:last-child{margin-bottom:0}
+.rf-section-title{font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.rf-item{padding:8px 10px;background:#fff;border-radius:7px;border:0.5px solid var(--border);margin-bottom:5px;font-size:12px;line-height:1.6}
+.rf-item-flag{border-left:3px solid #DC2626}
+.rf-item-caution{border-left:3px solid #D97706}
+.rf-item-positive{border-left:3px solid #059669}
+.rf-item-neutral{border-left:3px solid #9CA3AF}
+.rf-headline{font-weight:500;color:var(--navy);margin-bottom:2px}
+.rf-detail{color:var(--muted);font-size:11px}
+.rf-source{font-size:10px;color:var(--purple);margin-top:3px;font-style:italic}
+.rf-summary-box{padding:9px 12px;background:rgba(0,0,0,.03);border-radius:7px;border:0.5px solid var(--border);font-size:12px;color:var(--navy);line-height:1.65;margin-bottom:10px}
+.rf-summary-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.rf-timestamp{font-size:10px;color:var(--muted);text-align:right;margin-top:8px;font-style:italic}
+.rf-error{font-size:12px;color:#991B1B;padding:8px;background:var(--red-l);border-radius:6px}
+
+/* SECTION CARDS */
+.section-card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
+.section-header{padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;transition:background .12s}
+.section-header:hover{background:var(--bg)}
+.section-letter{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0;color:#fff}
+.section-title-wrap{flex:1}
+.section-title{font-size:14px;font-weight:600;color:var(--navy)}
+.section-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.section-stats{display:flex;gap:8px;align-items:center;font-size:11px}
+.section-body{border-top:0.5px solid var(--border)}
+
+/* QUESTIONS */
+.q-row{padding:14px 16px;border-bottom:0.5px solid var(--border)}
+.q-row:last-child{border-bottom:none}
+.q-row.auto-answered{background:#FAFFFE}
+.q-row.human-only{background:#FFFDFB}
+.source-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-bottom:8px}
+.src-auto{background:var(--purple-l);color:var(--purple)}
+.src-prefill{background:var(--teal-l);color:#085041}
+.src-human{background:var(--gold-l);color:#633806}
+.src-gating{background:var(--red-l);color:#991B1B}
+.claude-answer{background:var(--purple-l);border:0.5px solid #C4B5FD;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.claude-answer-header{font-size:10px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.claude-answer-value{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px}
+.claude-answer-rationale{font-size:11px;color:#5B21B6;line-height:1.6;white-space:pre-line}
+.claude-answer.prefill{background:var(--teal-l);border-color:#9FE1CB}
+.claude-answer.prefill .claude-answer-header,.claude-answer.prefill .claude-answer-rationale{color:#085041}
+.ctx-box{background:var(--navy-l);border:0.5px solid #C5CEDF;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11px;color:var(--navy);line-height:1.65}
+.ctx-box-label{font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.q-id{font-size:10px;font-weight:600;color:var(--teal);margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.q-text{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:8px}
+.yn-wrap{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.yn-btn{padding:5px 14px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--border);background:#fff;color:var(--muted);transition:all .12s}
+.yn-btn:hover{border-color:var(--teal)}
+.yn-btn.sel-Yes,.yn-btn.sel-Adequate{background:var(--green-l);border-color:#059669;color:#065F46}
+.yn-btn.sel-No,.yn-btn.sel-Inadequate{background:var(--red-l);border-color:#DC2626;color:#991B1B}
+.yn-btn.sel-Partially,.yn-btn.sel-Uncertain{background:var(--amber-l);border-color:#D97706;color:#92400E}
+.rating-wrap{display:flex;gap:5px;margin-bottom:8px}
+.star-btn{width:34px;height:34px;border-radius:7px;border:0.5px solid var(--border);background:#fff;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:all .12s}
+.star-btn:hover,.star-btn.sel{background:var(--gold-l);border-color:var(--gold);color:#854F0B}
+.risk-wrap{display:flex;gap:6px;margin-bottom:8px}
+.risk-btn{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--border);background:#fff;color:var(--muted)}
+.risk-btn.sel-Low{background:var(--green-l);border-color:#059669;color:#065F46}
+.risk-btn.sel-Medium{background:var(--amber-l);border-color:#D97706;color:#92400E}
+.risk-btn.sel-High{background:var(--red-l);border-color:#DC2626;color:#991B1B}
+.textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 10px;font-size:12px;resize:vertical;min-height:56px;font-family:inherit;color:var(--text);margin-top:6px}
+.textarea:focus{outline:none;border-color:var(--teal)}
+.confirm-row{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:rgba(42,125,123,.05);border-radius:7px;border:0.5px solid rgba(42,125,123,.2);cursor:pointer;margin-bottom:8px;user-select:none}
+.confirm-row input{margin-top:1px;accent-color:var(--teal);cursor:pointer}
+.confirm-label{font-size:12px;color:var(--navy)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:#253a60}
+.btn-gold{background:var(--gold);color:#fff}.btn-gold:hover{background:#b8973f}
+.btn-teal{background:var(--teal);color:#fff}.btn-teal:hover{background:#236664}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}.btn-outline:hover{background:var(--bg)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.overall-wrap{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.overall-btn{padding:8px 18px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid var(--border);background:#fff;color:var(--muted);transition:all .15s}
+.overall-btn.sel-Approve{background:var(--green-l);border-color:#059669;color:#065F46;font-weight:600}
+.overall-btn.sel-Conditional{background:var(--amber-l);border-color:#D97706;color:#92400E;font-weight:600}
+.overall-btn.sel-Decline{background:var(--red-l);border-color:#DC2626;color:#991B1B;font-weight:600}
+.overall-btn.sel-Abstain{background:var(--navy-l);border-color:var(--navy);color:var(--navy);font-weight:600}
+.opp-card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px 20px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;cursor:pointer;transition:border-color .15s;margin-bottom:10px}
+.opp-card:hover{border-color:var(--teal)}
+.opp-card.bl-teal{border-left:3px solid var(--teal)}
+.opp-name{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:4px}
+.opp-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-open{background:var(--teal-l);color:#085041}
+.badge-ns{background:var(--red-l);color:#991B1B}
+.badge-sub{background:var(--green-l);color:#065F46}
+.prog-bar{height:5px;background:#E5E7EB;border-radius:3px;overflow:hidden;width:140px;margin-top:5px}
+.prog-fill{height:100%;background:var(--teal);border-radius:3px}
+.ips-bar-wrap{margin-bottom:10px}
+.ips-label-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+.ips-track{height:12px;background:#E5E7EB;border-radius:6px;position:relative;overflow:visible}
+.ips-fill-cur{height:100%;border-radius:6px;position:absolute;top:0;left:0;opacity:.45}
+.ips-fill-proj{height:100%;border-radius:6px;position:absolute;top:0;left:0;opacity:.85;border:1.5px dashed rgba(0,0,0,.15)}
+.ips-m-target{position:absolute;top:-3px;bottom:-3px;width:2.5px;background:#059669;border-radius:2px}
+.ips-m-max{position:absolute;top:-3px;bottom:-3px;width:2.5px;background:#DC2626;border-radius:2px}
+.ips-legend{display:flex;gap:14px;font-size:10px;color:var(--muted);margin-top:5px}
+.mini-table{width:100%;font-size:11px;border-collapse:collapse}
+.mini-table th{background:var(--navy-l);color:var(--navy);padding:5px 8px;text-align:left;font-weight:600;border-bottom:0.5px solid var(--border)}
+.mini-table td{padding:5px 8px;border-bottom:0.5px solid var(--border)}
+.mini-table tr:last-child td{border-bottom:none;font-weight:600;background:var(--teal-l)}
+.currency-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:0.5px solid var(--border);font-size:11px}
+.currency-row:last-child{border-bottom:none;font-weight:600}
+.currency-bar{height:7px;border-radius:4px;background:var(--teal);min-width:4px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;color:var(--navy);margin-bottom:16px}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select,.form-textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--teal)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-textarea{resize:vertical;min-height:60px}
+.upload-zone{border:1.5px dashed var(--border);border-radius:8px;padding:22px;text-align:center;cursor:pointer;background:var(--bg);transition:all .15s}
+.upload-zone:hover,.upload-zone.has-file{border-color:var(--teal);background:var(--teal-l)}
+.req{color:#DC2626;margin-left:2px}
+.alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid;line-height:1.6}
+.alert-info{background:var(--teal-l);border-color:#9FE1CB;color:#085041}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-purple{background:var(--purple-l);border-color:#C4B5FD;color:#5B21B6}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--teal-l);border-radius:10px;font-size:11px;color:#085041;margin:2px}
+.tag button{background:none;border:none;cursor:pointer;color:inherit;font-size:13px;line-height:1;padding:0}
+.warn-flag{margin-top:6px;padding:5px 8px;background:#FEE2E2;border-radius:5px;font-size:11px;color:#991B1B;font-weight:600}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef}=React;
+const h=React.createElement;
+
+// ─── PORTFOLIO DATA ───────────────────────────────────────────────────────
+const PORT={
+  totalCAD:30746220,
+  alloc:{'Cash':9.8,'Fixed Income':17.1,'Public Equity':26.7,'Private Credit':17.3,'Diversifying Strategies':5.6,'Real Assets':10.0,'Private Equity':13.5,'Monetary Hedge':0},
+  ips:{'Cash':{min:0,target:3,max:54},'Fixed Income':{min:0,target:3,max:13},'Public Equity':{min:13,target:23,max:33},'Private Credit':{min:18,target:28,max:38},'Diversifying Strategies':{min:0,target:8,max:18},'Real Assets':{min:5,target:15,max:25},'Private Equity':{min:10,target:20,max:30},'Monetary Hedge':{min:0,target:3,max:5}},
+  unfunded:[
+    {fund:'Fortress Private Lending',class:'Private Credit',unfundedCAD:224194,call12m:false},
+    {fund:'CarVal Clean Energy Fund II',class:'Private Credit',unfundedCAD:84360,call12m:true},
+    {fund:'iCap Millennium International',class:'Diversifying Strategies',unfundedCAD:246208,call12m:false},
+    {fund:'Blackstone SP Infrastructure IV',class:'Real Assets',unfundedCAD:691157,call12m:true},
+    {fund:'Dalfen Last Mile Industrial V',class:'Real Assets',unfundedCAD:153271,call12m:false},
+    {fund:'PQ SPVR 2022 LP',class:'Real Assets',unfundedCAD:229703,call12m:false},
+    {fund:'Blue Owl GP Stakes VI',class:'Private Equity',unfundedCAD:1214973,call12m:false},
+    {fund:'Genstar Capital Partners XI',class:'Private Equity',unfundedCAD:1159380,call12m:false},
+    {fund:'Khosla Ventures Opp. II',class:'Private Equity',unfundedCAD:60669,call12m:false},
+    {fund:'Khosla Ventures VIII',class:'Private Equity',unfundedCAD:186108,call12m:false},
+    {fund:'Velocity Fund II',class:'Private Equity',unfundedCAD:334608,call12m:false},
+    {fund:'Vista Equity Partners VIII-A',class:'Private Equity',unfundedCAD:235323,call12m:false},
+  ],
+  fx:{'CAD':{pct:18.4,val:5657000},'USD':{pct:79.2,val:24371000},'EUR':{pct:1.4,val:430000},'GBP':{pct:1.0,val:308000}},
+  feeNorms:{'Private Equity':'1.5–2.0% mgmt / 20% carry / 8% hurdle','Private Credit':'1.0–1.5% mgmt / 15–20% carry / 6–8% hurdle','Real Assets':'1.25–1.75% mgmt / 20% carry / 8% hurdle','Diversifying Strategies':'1.0–2.0% mgmt / 10–20% carry / varies','Public Equity':'0.5–1.0% mgmt / varies','Fixed Income':'0.3–0.75% mgmt','Cash':'<0.3% mgmt','Monetary Hedge':'varies'},
+};
+const IC_MEMBERS=[
+  {id:'reg',name:'Reg Robinson',role:'Required',initials:'RR',color:'#1B2A4A',isAdmin:true},
+  {id:'sd',name:'Sheri-Dawn Robinson',role:'Required',initials:'SD',color:'#2A7D7B'},
+  {id:'ross',name:'Ross Robinson',role:'Required',initials:'ROS',color:'#C9A84C'},
+  {id:'lucas',name:'Lucas Robinson',role:'Optional',initials:'LR',color:'#7C3AED'},
+];
+const ASSET_CLASSES=['Cash','Fixed Income','Public Equity','Private Equity','Private Credit','Diversifying Strategies','Real Assets','Monetary Hedge'];
+
+// ─── CLAUDE AUTO-ANSWER ENGINE ────────────────────────────────────────────
+function computeClaudeAnswers(opp){
+  const p=opp.pqData||{};
+  const cur=opp.currency;
+  const cadFx={CAD:1,USD:1.35,EUR:1.48,GBP:1.72};
+  const cadCommit=opp.commitment*(cadFx[cur]||1.35);
+  const ac=opp.assetClass;
+  const ips=PORT.ips[ac]||{min:0,target:10,max:20};
+  const curPct=PORT.alloc[ac]||0;
+  const projPct=curPct+(cadCommit/PORT.totalCAD)*100;
+  const manPct=(cadCommit/PORT.totalCAD)*100;
+  const totalUnf=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);
+  const calls12=PORT.unfunded.filter(u=>u.call12m);
+  const totCalls=calls12.reduce((a,u)=>a+u.unfundedCAD,0);
+  const cash=(PORT.alloc['Cash']/100)*PORT.totalCAD;
+  const oddR=p.oddRatings||{};
+  const highF=Object.entries(oddR).filter(([,v])=>v==='High').map(([k])=>k);
+  const medF=Object.entries(oddR).filter(([,v])=>v==='Medium').map(([k])=>k);
+  const isOff=p.isOffshore||false;
+  const govR=oddR.governance||'Low';
+  const compR=oddR.compliance||'Low';
+  const addUSD=cur==='USD';
+  const usdAfter=addUSD?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;
+  const ans={};
+
+  ans.A1={value:ASSET_CLASSES.includes(ac)?'Yes':'No',display:`${ASSET_CLASSES.includes(ac)?'Yes — IPS approved':'No — not an approved class'}`,rationale:`${ac} is ${ASSET_CLASSES.includes(ac)?'one of the eight IPS-approved asset classes.':'NOT on the IPS approved list.'}`,locked:true,warning:!ASSET_CLASSES.includes(ac)};
+
+  const aboveMax=projPct>ips.max;
+  const underW=curPct<ips.target;
+  ans.A2={value:aboveMax?'No':'Yes',display:`${aboveMax?'No — EXCEEDS IPS max':'Yes — within band'} (${curPct.toFixed(1)}% → ${projPct.toFixed(1)}%, range ${ips.min}–${ips.max}%, target ${ips.target}%)`,
+    rationale:`Current: ${curPct.toFixed(1)}%. Post-commitment: ${projPct.toFixed(1)}%. IPS band: ${ips.min}–${ips.max}% (target ${ips.target}%).\n${aboveMax?'⚠ EXCEEDS IPS maximum — formal waiver required.':underW?'Portfolio is underweight — this commitment moves toward IPS target.':'Portfolio at or above target — adds marginal overweight.'}`,locked:true,warning:aboveMax};
+
+  ans.A3={value:manPct<=10?'Yes':'No',display:`${manPct<=10?'Yes — within limit':'No — exceeds limit'} (${manPct.toFixed(1)}% of portfolio)`,rationale:`Commitment: ${fmtCAD(cadCommit)} = ${manPct.toFixed(1)}% of portfolio (${fmtCAD(PORT.totalCAD)}). IPS single-manager cap: 10%.`,locked:true,warning:manPct>10};
+
+  ans.A4={value:null,locked:false,display:null,rationale:`Existing unfunded: ${fmtCAD(totalUnf)} across ${PORT.unfunded.length} funds.\nNear-term calls (12m): ${calls12.length===0?'None identified.':calls12.map(c=>`${c.fund} (~${fmtCAD(c.unfundedCAD)})`).join(', ')} — total ~${fmtCAD(totCalls)}.\nCash: ${fmtCAD(cash)} (${PORT.alloc['Cash'].toFixed(1)}%). This adds ${fmtCAD(cadCommit)} (new total: ${fmtCAD(totalUnf+cadCommit)}).`};
+
+  ans.A5={value:null,locked:false,display:null,rationale:`FX: USD ${PORT.fx.USD.pct.toFixed(1)}%, CAD ${PORT.fx.CAD.pct.toFixed(1)}%, EUR ${PORT.fx.EUR.pct.toFixed(1)}%, GBP ${PORT.fx.GBP.pct.toFixed(1)}%.\n${addUSD?`USD exposure: ${PORT.fx.USD.pct.toFixed(1)}% → ~${usdAfter.toFixed(1)}% after commitment.`:`${cur} commitment — USD exposure unchanged.`}\nNo formal IPS currency ceiling.`};
+
+  ans.B1={value:p.thesisRating||4,display:`Claude suggests ${p.thesisRating||4}/5`,rationale:(p.thesisSummary||'Adjust based on your read of the PQ document.')+'\n\nTrack record: '+(p.hasTrackRecord?(p.trackRecordDetail||'per PQ report'):'Not cited — first-time fund or new strategy.'),locked:false,prefill:true};
+
+  ans.C1={value:govR==='Low'?'Yes':govR==='Medium'?'Uncertain':'No',display:`${govR==='Low'?'Yes — no concerns':'Uncertain — flagged'} (PQ ODD Governance: ${govR})`,rationale:`PQ ODD Governance: ${govR}. ${govR==='Low'?'No concerns.':govR==='Medium'?'⚠ Noteworthy item — see PQ ODD for details.':'⛔ High concern — must be resolved.'}${p.oddGovernanceNote?'\n\nPQ note: '+p.oddGovernanceNote:''}`,locked:true,warning:govR!=='Low'};
+
+  ans.C2={value:compR==='Low'?'Yes':'Uncertain',display:`${compR==='Low'?'Yes':'Uncertain'} (PQ ODD Compliance: ${compR})`,rationale:`PQ ODD Compliance: ${compR}. ${compR==='Low'?'No deficiencies.':'⚠ Compliance concern — see PQ ODD.'}`,locked:true,warning:compR!=='Low'};
+
+  const oddLines=Object.entries(oddR).map(([k,v])=>`• ${k}: ${v}`).join('\n')||'• All: Low';
+  ans.D1={value:highF.length>0?'No':medF.length>0?'Uncertain':'Yes',display:highF.length>0?`No — High: ${highF.join(', ')}`:medF.length>0?`Uncertain — Medium: ${medF.join(', ')}`:'Yes — all Low',rationale:`PQ ODD:\n${oddLines}\n\n${highF.length>0?`⛔ HIGH flags must be resolved: ${highF.join(', ')}`:medF.length>0?`⚠ Medium flags (${medF.join(', ')}) noted — IC should confirm acceptance.`:'ODD satisfactory.'}`,locked:true,warning:highF.length>0||medF.length>0};
+
+  ans.D2={value:isOff?'Yes':'No',display:isOff?'Yes — offshore structure, MLTA review required':'No material Canadian-specific risks',rationale:`Vehicle: ${p.vehicleType||'not specified'}. ${isOff?'⚠ Offshore/Cayman — withholding tax, FAPI, and MLTA review required.':'Standard structure. MLTA review recommended for any unusual provisions.'}`,locked:true,warning:isOff};
+
+  ans.F1={value:p.feesAboveNorm?'Uncertain':p.feesBelowNorm?'Yes — below norm':'Yes',display:p.feesAboveNorm?'Uncertain — above market norm':p.feesBelowNorm?'Yes — below norm (favourable)':'Yes — within market norm',rationale:`Market norm for ${ac}: ${PORT.feeNorms[ac]||'varies'}.\nThis fund: ${p.feesSummary||'see PQ report.'}${p.feesAboveNorm?'\n⚠ Above market norm.':p.feesBelowNorm?'\n✓ Favourable terms.':''}`,locked:true};
+
+  return ans;
+}
+
+// ─── RESEARCH PANEL — live web search via Anthropic API ──────────────────
+// Uses the artifact-native API endpoint (no API key needed inside claude.ai).
+// When running as a standalone HTML file, falls back to the public endpoint
+// with the Authorization header omitted — the server will return 401 which
+// is caught and shown as a clear "open in Claude.ai" message.
+async function fetchResearch(type,opp){
+  const manager=opp.title;
+  const assetClass=opp.assetClass;
+  const today=new Date().toLocaleDateString('en-CA',{year:'numeric',month:'long',day:'numeric'});
+
+  const systemPrompt=`You are conducting investment due diligence for a Canadian family office (Robinson Family Office, Ontario-based, ~CAD $30M AUM). Your role is to search the web for current, factual information and return a structured JSON object. Be concise, factual, and flag anything that would materially affect an investment decision. Today is ${today}.`;
+
+  const userPrompts={
+    manager:`Search the web for current information about the investment manager "${manager}" for due diligence purposes.
+
+Search for:
+1. Any litigation, regulatory actions, SEC/FINRA/OSC enforcement, or legal disputes involving ${manager} or its principals in the last 3 years
+2. Any negative press, controversies, reputational incidents, or ethical concerns
+3. Any recent key-person departures, ownership changes, or organisational instability
+4. Any positive recent news: new fund closes, awards, notable LP endorsements, strong performance reports
+
+Return ONLY a valid JSON object, no markdown, no preamble:
+{"summary":"2-3 sentence plain-English summary of overall reputation and any flags","overallSignal":"GREEN","findings":[{"type":"POSITIVE","headline":"example","detail":"detail here","source":"source name"}],"searchedAt":"${today}"}
+
+overallSignal must be exactly GREEN, AMBER, or RED. type must be FLAG, CAUTION, POSITIVE, or NEUTRAL.`,
+
+    industry:`Search the web for current industry dynamics relevant to a ${assetClass} investment in "${manager}".
+
+Search for:
+1. Current macro or sector trends affecting the investment thesis (tailwinds and headwinds)
+2. Industry-specific valuation or return phenomena — e.g. the "blue dot" reset in professional sports franchise valuations, secondary market discounts in PE, cap rate shifts in real assets, credit spread movements
+3. Recent comparable fund performance data or vintage-year concerns for ${assetClass}
+4. Regulatory, legislative, or competitive changes affecting this industry in the last 12 months
+
+Return ONLY a valid JSON object, no markdown, no preamble:
+{"summary":"2-3 sentence summary of the most important industry dynamics for this investment decision","overallSignal":"GREEN","findings":[{"type":"CAUTION","headline":"example","detail":"detail here","source":"source name"}],"searchedAt":"${today}"}
+
+overallSignal must be exactly GREEN, AMBER, or RED. type must be FLAG, CAUTION, POSITIVE, or NEUTRAL.`,
+
+    regulatory:`Search the web for current Canadian regulatory and tax considerations relevant to a Canadian family office LP investment in a ${assetClass} fund (${manager}).
+
+Search for:
+1. Recent Canadian federal budget measures or CRA guidance affecting LP investments in alternative funds
+2. OSC or OSFI guidance relevant to family office or high-net-worth investors in ${assetClass}
+3. Any Canadian foreign investment, FAPI, or anti-avoidance rules recently updated or clarified
+4. Ontario-specific investor protection or tax considerations
+
+Return ONLY a valid JSON object, no markdown, no preamble:
+{"summary":"2-3 sentence summary of the most relevant Canadian regulatory considerations","overallSignal":"GREEN","findings":[{"type":"NEUTRAL","headline":"example","detail":"detail here","source":"source name"}],"searchedAt":"${today}"}
+
+overallSignal must be exactly GREEN, AMBER, or RED. type must be FLAG, CAUTION, POSITIVE, or NEUTRAL.`
+  };
+
+  // Use the artifact-native API (available inside claude.ai artifacts with no key needed)
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1200,
+      system: systemPrompt,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{ role: 'user', content: userPrompts[type] }]
+    })
+  });
+
+  // Handle non-artifact environments gracefully
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error('STANDALONE_FILE');
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`API error ${resp.status}${body ? ': ' + body.slice(0, 120) : ''}`);
+  }
+
+  const data = await resp.json();
+
+  // Content may contain tool_use and tool_result blocks before the final text
+  const textBlocks = (data.content || []).filter(b => b.type === 'text');
+  const raw = textBlocks.map(b => b.text).join('');
+
+  if (!raw.trim()) throw new Error('Empty response from API');
+
+  // Strip markdown fences and extract JSON object
+  const clean = raw.replace(/```json|```/gi, '').trim();
+  const match = clean.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON found in response');
+
+  return JSON.parse(match[0]);
+}
+
+// ─── RESEARCH PANEL COMPONENT ─────────────────────────────────────────────
+function ResearchPanel({type,opp,label,icon,colorClass}){
+  const [state,setState]=useState('idle'); // idle | loading | done | error
+  const [data,setData]=useState(null);
+  const [open,setOpen]=useState(false);
+  const [error,setError]=useState('');
+  const hasFetched=useRef(false);
+
+  useEffect(()=>{
+    if(hasFetched.current)return;
+    hasFetched.current=true;
+    setState('loading');
+    fetchResearch(type,opp)
+      .then(d=>{setData(d);setState('done');setOpen(true);})
+      .catch(e=>{setError(e.message);setState('error');setOpen(true);});
+  },[]);
+
+  const signalBadge={GREEN:'rp-badge-ok',AMBER:'rp-badge-caution',RED:'rp-badge-warn'};
+  const signalLabel={GREEN:'No flags',AMBER:'Monitor',RED:'Flags raised'};
+  const itemClass={FLAG:'rf-item-flag',CAUTION:'rf-item-caution',POSITIVE:'rf-item-positive',NEUTRAL:'rf-item-neutral'};
+
+  return h('div',{className:`research-panel rp-${colorClass}`},
+    h('div',{className:'rp-header',onClick:()=>open&&setOpen(!open)},
+      h('div',{className:'rp-header-left'},
+        h('div',{className:`rp-icon rp-icon-${colorClass}`},icon),
+        h('div',null,
+          h('div',{className:'rp-title'},label),
+          h('div',{className:'rp-subtitle'},state==='loading'?'Searching the web…':state==='error'?'Search failed — retry below':state==='done'?'Live research as of today':'Click to load')
+        )
+      ),
+      state==='loading'&&h('span',null,h('span',{className:'spin'}),h('span',{style:{fontSize:11,color:'var(--muted)'}},'Loading…')),
+      state==='done'&&data&&h('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        h('span',{className:`rp-badge ${signalBadge[data.overallSignal]||'rp-badge-caution'}`},signalLabel[data.overallSignal]||data.overallSignal),
+        h('span',{style:{fontSize:16,color:'var(--muted)'}},open?'▾':'▸')
+      ),
+      state==='error'&&h('span',{style:{fontSize:11,color:'#DC2626'}},'Error — expand for detail')
+    ),
+    open&&h('div',{className:'rp-body'},
+      state==='error'&&h('div',null,
+        error==='STANDALONE_FILE'
+          ? h('div',null,
+              h('div',{style:{padding:'10px 12px',background:'#FEF3C7',border:'0.5px solid #FCD34D',borderRadius:7,fontSize:12,color:'#92400E',lineHeight:1.7,marginBottom:8}},
+                h('strong',null,'Live research requires claude.ai. '),
+                'This file is running outside the Claude artifact environment, so web search is unavailable. ',
+                h('br',null),
+                'To use live research: open this checklist inside a Claude conversation — paste the HTML into an artifact, or use the IC Due Diligence app directly in claude.ai.'
+              )
+            )
+          : h('div',null,
+              h('div',{className:'rf-error'},'Search error: '+error),
+              h('button',{className:'btn btn-outline btn-sm',style:{marginTop:8},onClick:()=>{
+                hasFetched.current=false;
+                setState('loading');
+                fetchResearch(type,opp)
+                  .then(d=>{setData(d);setState('done');})
+                  .catch(e=>{setError(e.message);setState('error');});
+              }},'↺ Retry search')
+            )
+      ),
+      state==='done'&&data&&h('div',null,
+        h('div',{className:'rf-summary-box'},
+          h('div',{className:'rf-summary-label'},'Research summary'),
+          data.summary
+        ),
+        data.findings&&data.findings.length>0&&h('div',null,
+          data.findings.map((f,i)=>h('div',{key:i,className:`rf-item ${itemClass[f.type]||'rf-item-neutral'}`},
+            h('div',{className:'rf-headline'},[{FLAG:'🚩',CAUTION:'⚠',POSITIVE:'✓',NEUTRAL:'·'}[f.type]||'·'],' '+f.headline),
+            h('div',{className:'rf-detail'},f.detail),
+            f.source&&h('div',{className:'rf-source'},'Source: '+f.source)
+          ))
+        ),
+        h('div',{className:'rf-timestamp'},'Searched '+data.searchedAt+' via Claude web search')
+      )
+    )
+  );
+}
+
+function ResearchPanelGroup({opp,sections}){
+  // Show manager + industry above Section B; regulatory above Section D
+  if(!sections)return null;
+  if(sections==='BC')return h('div',{style:{marginBottom:8}},
+    h(ResearchPanel,{type:'manager',opp,label:'Manager Reputation & Red Flags',icon:'🔍',colorClass:'manager'}),
+    h(ResearchPanel,{type:'industry',opp,label:'Industry & Macro Intelligence',icon:'📈',colorClass:'industry'})
+  );
+  if(sections==='D')return h('div',{style:{marginBottom:8}},
+    h(ResearchPanel,{type:'regulatory',opp,label:'Canadian Regulatory & Tax Environment',icon:'⚖',colorClass:'regulatory'})
+  );
+  return null;
+}
+
+// ─── QUESTION DEFINITIONS (23 questions) ─────────────────────────────────
+const SECTIONS=[
+  {id:'A',label:'IPS & Portfolio Fit',color:'#2A7D7B',researchGroup:null,
+   purpose:'Claude auto-answers A1–A3 from IPS data. A4 and A5 give you the live liquidity and FX picture — you confirm.',
+   questions:[
+    {id:'A1',text:'Does this investment fall within an IPS-approved asset class?',type:'yn',mode:'auto'},
+    {id:'A2',text:'Is the post-commitment allocation within the IPS band, and does it move toward target?',type:'yn',mode:'auto'},
+    {id:'A3',text:'Does the commitment respect the ≤10% single-manager concentration limit?',type:'yn',mode:'auto'},
+    {id:'A4',text:'Is the liquidity profile acceptable given existing unfunded commitments and near-term capital calls?',type:'yn3',mode:'auto_data',ctxKey:'A4',hint:'Review the table above. Confirm whether the additional obligation is manageable given current cash levels.'},
+    {id:'A5',text:'Is the additional currency exposure acceptable given current portfolio FX concentration?',type:'yn3',mode:'auto_data',ctxKey:'A5',hint:'The portfolio is already 79% USD. Confirm whether further concentration is within your comfort range.'},
+  ]},
+  {id:'B',label:'Strategy & Return',color:'#1B2A4A',researchGroup:'BC',
+   purpose:'Live web research (above) covers industry dynamics and comparable fund performance. Claude pre-fills the thesis rating. B2 and B3 are your judgment.',
+   questions:[
+    {id:'B1',text:'How compelling is the investment thesis, and does the manager have a track record to support it?',type:'rating',mode:'prefill',hint:'Claude\'s rating is pre-filled from PQ. Adjust based on your own read and the industry research above.'},
+    {id:'B2',text:'Is PQ\'s net return expectation realistic given current industry conditions and the track record?',type:'yn3',mode:'human',ctxKey:'B2',hint:'Factor in both the PQ data above and any industry headwinds or tailwinds surfaced by the live research.'},
+    {id:'B3',text:'Are the downside scenarios described by PQ acceptable to the family?',type:'yn3',mode:'human',hint:'Consider the plausible loss scenario and the family\'s total exposure to this asset class.'},
+  ]},
+  {id:'C',label:'Manager & Governance',color:'#2A7D7B',researchGroup:null,
+   purpose:'Live web research above covers reputational flags and red flags. Governance and compliance are auto-answered from PQ ODD.',
+   questions:[
+    {id:'C1',text:'Does the manager\'s governance and ownership structure raise any concerns?',type:'yn',mode:'auto'},
+    {id:'C2',text:'Are compliance and legal controls adequate?',type:'yn',mode:'auto'},
+    {id:'C3',text:'Does the leadership team have the experience and depth needed for this strategy?',type:'rating',mode:'human',ctxKey:'C3',hint:'Rate 1–5. Factor in both the PQ team overview and any people-related flags from the manager research above.'},
+    {id:'C4',text:'Is the management compensation structure aligned with investor outcomes?',type:'yn3',mode:'human',ctxKey:'C4',hint:'Confirm whether carry, co-invest, and clawback provisions reflect best practice.'},
+  ]},
+  {id:'D',label:'Risk',color:'#1B2A4A',researchGroup:'D',
+   purpose:'Live Canadian regulatory research (above) covers tax and legal environment. ODD and vehicle risk are auto-answered. D3 and D4 are your judgment.',
+   questions:[
+    {id:'D1',text:'Is PQ\'s operational due diligence assessment satisfactory?',type:'yn',mode:'auto'},
+    {id:'D2',text:'Are there Canadian-specific regulatory, tax, or vehicle risks requiring attention?',type:'yn',mode:'auto'},
+    {id:'D3',text:'What is the most significant risk you see, and do you consider it adequately mitigated?',type:'text',mode:'human',hint:'Name your primary risk and your view on mitigation. Factor in both PQ\'s analysis and the regulatory research above. This should be your independent judgment.'},
+    {id:'D4',text:'Does the risk-adjusted return justify commitment given all risks identified?',type:'yn3',mode:'human',hint:'Your final risk-return call. A Yes here is the clearest single input into your overall recommendation.'},
+  ]},
+  {id:'E',label:'Values & ESG',color:'#059669',researchGroup:null,
+   purpose:'All human judgment. This is where the family\'s values govern — the manager reputation research in Section B is relevant here too.',
+   questions:[
+    {id:'E1',text:'Does the manager\'s ESG programme meet the family\'s minimum acceptable standard?',type:'yn3',mode:'human',ctxKey:'E1',hint:'PQ\'s ESG assessment is shown above. A "None" or "Nascent" programme requires a clear explanation of why it is acceptable.'},
+    {id:'E2',text:'Do the underlying portfolio activities, sectors, or geographies conflict with the family\'s values?',type:'yn',mode:'human',hint:'A Yes does not automatically mean Decline — but it should be named and discussed.'},
+    {id:'E3',text:'Are you comfortable associating the Robinson Family name with this fund and its leadership?',type:'yn3',mode:'human',hint:'Factor in the manager reputation research from Section B as well as your own knowledge of the manager.'},
+    {id:'E4',text:'Does this investment align with the Robinson Family\'s values and the spirit of the IPS?',type:'yn',mode:'human',gating:true,hint:'Gating question. A No overrides all other positive factors.'},
+  ]},
+  {id:'F',label:'Terms & Vehicle',color:'#1B2A4A',researchGroup:null,
+   purpose:'Fees are auto-answered from PQ data. F2 and F3 are your review of LP rights and overall terms.',
+   questions:[
+    {id:'F1',text:'Are the management fees and carried interest within acceptable market norms?',type:'yn3',mode:'auto'},
+    {id:'F2',text:'Are the LP rights adequate (LPAC access, co-investment, key-person clause, reporting)?',type:'lpac',mode:'human',ctxKey:'F2',hint:'PQ\'s terms summary is shown above. Flag any deficiency as a condition before commitment.'},
+    {id:'F3',text:'Overall, are the terms and vehicle structure acceptable for the family\'s purposes?',type:'yn3',mode:'human',hint:'Factor in fees, LP rights, and vehicle compatibility with R&R Keys Corp and 101120445 SK Ltd.'},
+  ]},
+];
+
+// ─── CONTEXT SUMMARIES (inline) ───────────────────────────────────────────
+function getCtxSummary(ctxKey,opp){
+  const p=opp.pqData||{};
+  const oddR=p.oddRatings||{};
+  const cadFx={CAD:1,USD:1.35,EUR:1.48,GBP:1.72};
+  const cadCommit=opp.commitment*(cadFx[opp.currency]||1.35);
+  const assetTargets={'Private Equity':'15–20% net IRR','Private Credit':'8–12%','Real Assets':'10–15% net IRR','Diversifying Strategies':'8–12%','Public Equity':'Market + 2–3%'};
+  switch(ctxKey){
+    case'A4':{const c12=PORT.unfunded.filter(u=>u.call12m);const tot=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);const cash=(PORT.alloc['Cash']/100)*PORT.totalCAD;return c12.length===0?`No imminent capital calls across existing ${PORT.unfunded.length} commitments. Total unfunded: ${fmtCAD(tot)}. Cash: ${fmtCAD(cash)}. New commitment adds ${fmtCAD(cadCommit)}.`:`Near-term calls: ${c12.map(c=>c.fund+' (~'+fmtCAD(c.unfundedCAD)+')').join(' and ')} — total ~${fmtCAD(c12.reduce((a,u)=>a+u.unfundedCAD,0))}. Total unfunded: ${fmtCAD(tot)}. Cash: ${fmtCAD(cash)}. New commitment adds ${fmtCAD(cadCommit)}.`;}
+    case'A5':{const aU=opp.currency==='USD';const uA=aU?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;return aU?`Portfolio is 79.2% USD (${fmtCAD(PORT.fx.USD.val)}). This USD commitment would increase USD to ~${uA.toFixed(1)}%. CAD: 18.4%, EUR: 1.4%, GBP: 1.0%.`:`${opp.currency} commitment — USD exposure stays at 79.2%. CAD: 18.4%, EUR: 1.4%, GBP: 1.0%.`;}
+    case'B2':{return `PQ target: ${p.returnTarget||'see PQ doc'}. IPS target return for ${opp.assetClass}: ${assetTargets[opp.assetClass]||'see IPS Schedule 2'}. Track record: ${p.hasTrackRecord?(p.trackRecordDetail||'per PQ'):'Not cited — first-time fund'}.`;}
+    case'C3':return p.teamSummary||'See PQ team overview section.';
+    case'C4':{const aR=oddR.alignment||'Low';return `PQ ODD Alignment: ${aR}. Fund terms: ${p.feesSummary||'see PQ'}. ${aR==='Low'?'No misalignment concerns.':'⚠ Alignment flagged — review carry and co-invest carefully.'}`;}
+    case'E1':return `PQ ESG — Programme: ${p.esgProgramme||'not specified'}; Approach: ${p.esgApproach||'not specified'}. ${p.esgNote||''}`;
+    case'F2':return `PQ Terms: ${p.termsSummary||p.feesSummary||'see PQ Terms section'}. ${p.lpRightsNote||''}`;
+    default:return null;
+  }
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────
+function fmtCAD(n){return new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0}).format(n)}
+function fmtMoney(n,c){return new Intl.NumberFormat('en-CA',{style:'currency',currency:(!c||c==='Other')?'CAD':c,maximumFractionDigits:0}).format(n)}
+function fmtDate(d){return new Date(d).toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'})}
+function pct(n){return n.toFixed(1)+'%'}
+
+// ─── UI COMPONENTS ────────────────────────────────────────────────────────
+function ModeTag({mode,gating}){
+  if(gating)return h('span',{className:'source-tag src-gating'},'⛔ Gating');
+  if(mode==='auto')return h('span',{className:'source-tag src-auto'},'✦ Claude auto');
+  if(mode==='auto_data')return h('span',{className:'source-tag src-prefill'},'✦ Claude data — confirm');
+  if(mode==='prefill')return h('span',{className:'source-tag src-prefill'},'✦ Claude suggests');
+  return h('span',{className:'source-tag src-human'},'◎ Your judgment');
+}
+function ClaudeBox({ca,isPrefill}){
+  if(!ca)return null;
+  return h('div',{className:`claude-answer${isPrefill?' prefill':''}`},
+    h('div',{className:'claude-answer-header'},isPrefill?'✦ Claude pre-fill':'✦ Claude auto-answer'),
+    ca.display&&h('div',{className:'claude-answer-value'},ca.display),
+    h('div',{className:'claude-answer-rationale'},ca.rationale),
+    ca.warning&&h('div',{className:'warn-flag'},'⚠ Flag — IC must discuss before proceeding')
+  );
+}
+function CtxBox({text}){
+  if(!text)return null;
+  return h('div',{className:'ctx-box'},h('div',{className:'ctx-box-label'},'Context from PQ & portfolio data'),text);
+}
+function YNInput({value,onChange,options,disabled}){
+  return h('div',{className:'yn-wrap'},(options||['Yes','No']).map(o=>h('button',{key:o,className:`yn-btn sel-${value===o?o.replace(/ /g,'-'):''}`,onClick:()=>!disabled&&onChange(o),style:{opacity:disabled?.5:1,cursor:disabled?'not-allowed':'pointer'}},o)));
+}
+function RatingInput({value,onChange,disabled}){
+  return h('div',{className:'rating-wrap'},[1,2,3,4,5].map(n=>h('button',{key:n,className:`star-btn${value===n?' sel':''}`,onClick:()=>!disabled&&onChange(n),style:{opacity:disabled?.5:1,cursor:disabled?'not-allowed':'pointer'},title:`${n}/5`},n)));
+}
+function RiskInput({value,onChange,disabled}){
+  return h('div',{className:'risk-wrap'},['Low','Medium','High'].map(r=>h('button',{key:r,className:`risk-btn sel-${value===r?r:''}`,onClick:()=>!disabled&&onChange(r),style:{opacity:disabled?.5:1,cursor:disabled?'not-allowed':'pointer'}},r)));
+}
+function QuestionRow({q,ca,response,onChange,opp}){
+  const r=response||{};
+  const isLocked=ca?.locked||false;
+  const isPrefill=q.mode==='prefill';
+  const isAutoData=q.mode==='auto_data';
+  const effV=r.v!=null?r.v:(isLocked?ca?.value:isPrefill?ca?.value:undefined);
+  const ctx=q.ctxKey?getCtxSummary(q.ctxKey,opp):null;
+  function upd(f,v){onChange(q.id,{...r,[f]:v})}
+  return h('div',{className:`q-row${ca&&isLocked?' auto-answered':q.mode==='human'?' human-only':''}`},
+    h('div',{className:'q-id'},q.id,h(ModeTag,{mode:q.mode,gating:q.gating})),
+    h('div',{className:'q-text'},q.text),
+    ca&&(q.mode==='auto'||isAutoData)&&h(ClaudeBox,{ca,isPrefill:isAutoData}),
+    ca&&isPrefill&&h(ClaudeBox,{ca,isPrefill:true}),
+    ctx&&h(CtxBox,{text:ctx}),
+    isLocked
+      ?h('div',{style:{fontSize:11,color:'var(--purple)',fontWeight:600,opacity:.6,paddingTop:4}},'Locked — no input required')
+      :h('div',null,
+          (isPrefill||isAutoData)&&ca&&h('label',{className:'confirm-row'},h('input',{type:'checkbox',checked:r.confirmed||false,onChange:e=>upd('confirmed',e.target.checked)}),h('span',{className:'confirm-label'},isPrefill?'Confirmed — I accept or have adjusted this rating below':'Confirmed — I accept Claude\'s data assessment above')),
+          q.type==='yn'&&h(YNInput,{value:effV,onChange:v=>upd('v',v)}),
+          q.type==='yn3'&&h(YNInput,{value:effV,onChange:v=>upd('v',v),options:['Yes','No','Partially','Uncertain']}),
+          q.type==='risk'&&h(RiskInput,{value:effV,onChange:v=>upd('v',v)}),
+          q.type==='rating'&&h(RatingInput,{value:effV,onChange:v=>upd('v',v)}),
+          q.type==='text'&&h('textarea',{className:'textarea',placeholder:'Your view — be specific…',value:r.v||'',onChange:e=>upd('v',e.target.value)}),
+          q.type==='lpac'&&h(YNInput,{value:effV,onChange:v=>upd('v',v),options:['Adequate','Inadequate','Uncertain']}),
+          q.hint&&h('div',{style:{fontSize:11,color:'var(--muted)',fontStyle:'italic',marginTop:6,lineHeight:1.5}},q.hint),
+          q.mode!=='auto'&&h('textarea',{className:'textarea',style:{minHeight:40},placeholder:q.type==='text'?'':'Comments…',value:r.c||'',onChange:e=>upd('c',e.target.value)})
+        )
+  );
+}
+
+// Section A data panels
+function SectionAPanel({opp}){
+  const cadFx={CAD:1,USD:1.35,EUR:1.48,GBP:1.72};
+  const cadCommit=opp.commitment*(cadFx[opp.currency]||1.35);
+  const ips=PORT.ips[opp.assetClass]||{min:0,target:10,max:20};
+  const cur=PORT.alloc[opp.assetClass]||0;
+  const proj=Math.min(cur+(cadCommit/PORT.totalCAD)*100,ips.max+5);
+  const scale=Math.max(ips.max*1.3,proj*1.1,20);
+  const total=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);
+  return h('div',{style:{padding:'12px 16px',background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:14}},
+      h('div',null,
+        h('div',{className:'card-title',style:{fontSize:12,marginBottom:8}},'Allocation Impact'),
+        h('div',{className:'ips-bar-wrap'},
+          h('div',{className:'ips-label-row'},h('span',null,opp.assetClass),h('span',null,pct(cur)+' → '+pct(cur+(cadCommit/PORT.totalCAD)*100))),
+          h('div',{className:'ips-track'},
+            h('div',{className:'ips-fill-cur',style:{width:`${(cur/scale)*100}%`,background:'#2A7D7B'}}),
+            h('div',{className:'ips-fill-proj',style:{width:`${(proj/scale)*100}%`,background:'#2A7D7B'}}),
+            h('div',{className:'ips-m-target',style:{left:`${(ips.target/scale)*100}%`}}),
+            h('div',{className:'ips-m-max',style:{left:`${(ips.max/scale)*100}%`}})
+          ),
+          h('div',{className:'ips-legend'},h('span',null,'Min '+ips.min+'%'),h('span',{style:{color:'#059669'}},'Target '+ips.target+'%'),h('span',{style:{color:'#DC2626'}},'Max '+ips.max+'%'))
+        )
+      ),
+      h('div',null,
+        h('div',{className:'card-title',style:{fontSize:12,marginBottom:8}},'Portfolio FX Exposure'),
+        Object.entries(PORT.fx).map(([c,d])=>h('div',{key:c,className:'currency-row'},h('span',{style:{minWidth:32,fontWeight:600,fontSize:12,color:'var(--navy)'}},c),h('div',{className:'currency-bar',style:{width:`${d.pct*1.8}px`}}),h('span',{style:{minWidth:38,fontSize:12}},pct(d.pct)),h('span',{style:{fontSize:11,color:'var(--muted)'}},fmtCAD(d.val))))
+      )
+    ),
+    h('div',{className:'card-title',style:{fontSize:12,marginBottom:6}},'Unfunded Commitments — Near-term Capital Call Exposure'),
+    h('table',{className:'mini-table'},
+      h('thead',null,h('tr',null,h('th',null,'Fund'),h('th',null,'Class'),h('th',null,'Unfunded (CAD)'),h('th',null,'Call within 12m?'))),
+      h('tbody',null,PORT.unfunded.map(u=>h('tr',{key:u.fund},h('td',null,u.fund),h('td',null,u.class),h('td',null,fmtCAD(u.unfundedCAD)),h('td',{style:{color:u.call12m?'#DC2626':'var(--muted)',fontWeight:u.call12m?600:400}},u.call12m?'⚠ Yes':'No'))),
+        h('tr',null,h('td',{colSpan:2},'TOTAL'),h('td',null,fmtCAD(total)),h('td',null,PORT.unfunded.filter(u=>u.call12m).length>0?'⚠ '+fmtCAD(PORT.unfunded.filter(u=>u.call12m).reduce((a,u)=>a+u.unfundedCAD,0))+' near-term':'None imminent'))
+      )
+    )
+  );
+}
+
+function SectionCard({section,responses,claudeAnswers,onChange,initialOpen,opp}){
+  const [open,setOpen]=useState(!!initialOpen);
+  const autoQ=section.questions.filter(q=>q.mode==='auto').length;
+  const humanQ=section.questions.filter(q=>q.mode!=='auto');
+  const answered=humanQ.filter(q=>responses[q.id]?.v!=null).length;
+  return h('div',{className:'section-card'},
+    h('div',{className:'section-header',onClick:()=>setOpen(!open)},
+      h('div',{className:'section-letter',style:{background:section.color}},section.id),
+      h('div',{className:'section-title-wrap'},h('div',{className:'section-title'},section.label),h('div',{className:'section-sub'},section.purpose)),
+      h('div',{className:'section-stats'},
+        autoQ>0&&h('span',{style:{fontSize:10,color:'var(--purple)',background:'var(--purple-l)',padding:'2px 7px',borderRadius:8,fontWeight:600}},autoQ+' auto'),
+        h('span',{style:{fontSize:11,color:'var(--muted)'}},answered+'/'+humanQ.length+' yours'),
+        h('span',{style:{fontSize:16,color:'var(--muted)',marginLeft:4}},open?'▾':'▸')
+      )
+    ),
+    open&&h('div',{className:'section-body'},
+      section.id==='A'&&h(SectionAPanel,{opp}),
+      // Research panels appear at the top of B (manager+industry) and D (regulatory)
+      section.researchGroup&&h(ResearchPanelGroup,{opp,sections:section.researchGroup}),
+      section.questions.map(q=>h(QuestionRow,{key:q.id,q,ca:claudeAnswers[q.id],response:responses[q.id],onChange,opp}))
+    )
+  );
+}
+
+// ─── CHECKLIST PAGE ───────────────────────────────────────────────────────
+function ChecklistPage({opp,currentUser,onSave,onSubmit,onBack}){
+  const myR=opp.responses[currentUser.id]||{submitted:false,responses:{}};
+  const [responses,setResponses]=useState(myR.responses||{});
+  const [rec,setRec]=useState(myR.recommendation||null);
+  const [comments,setComments]=useState(myR.overall||'');
+  const [followUp,setFollowUp]=useState(myR.followUp||[]);
+  const [newFU,setNewFU]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [submitted,setSubmitted]=useState(myR.submitted||false);
+  const ca=computeClaudeAnswers(opp);
+  const humanQs=SECTIONS.flatMap(s=>s.questions).filter(q=>q.mode!=='auto');
+  const answered=humanQs.filter(q=>responses[q.id]?.v!=null).length;
+  function upd(qid,val){setResponses(r=>({...r,[qid]:val}))}
+  async function save(){setSaving(true);onSave(currentUser.id,{responses,recommendation:rec,overall:comments,followUp,submitted:false});await new Promise(r=>setTimeout(r,400));setSaving(false);}
+  function submit(){if(!rec){alert('Select a recommendation first.');return;}if(!window.confirm('Submit your checklist?'))return;onSubmit(currentUser.id,{responses,recommendation:rec,overall:comments,followUp,submitted:true});setSubmitted(true);}
+  function addFU(){if(newFU.trim()){setFollowUp(f=>[...f,newFU.trim()]);setNewFU('');}}
+
+  if(submitted)return h('div',{className:'page'},h('div',{style:{maxWidth:480,margin:'60px auto',textAlign:'center'}},h('div',{style:{width:64,height:64,borderRadius:'50%',background:'var(--green-l)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:32,margin:'0 auto 20px'}},'✓'),h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)',marginBottom:8}},'Checklist Submitted'),h('div',{className:'alert alert-success',style:{textAlign:'left'}},'Your recommendation: ',h('strong',null,rec)),h('button',{className:'btn btn-primary',style:{marginTop:12},onClick:onBack},'← Dashboard')));
+
+  const pctDone=Math.round((answered/humanQs.length)*100);
+  return h('div',null,
+    h('div',{className:'cl-sticky'},
+      h('div',null,h('div',{className:'cl-fund'},opp.title),h('div',{className:'cl-meta'},opp.assetClass+' · '+fmtMoney(opp.commitment,opp.currency)+' · Due '+fmtDate(opp.deadline))),
+      h('div',{className:'cl-progress-wrap'},h('span',null,currentUser.name),h('div',{className:'cl-bar'},h('div',{className:'cl-fill',style:{width:pctDone+'%'}})),h('span',null,answered+'/'+humanQs.length+' questions'))
+    ),
+    h('div',{className:'page'},
+      h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},
+        h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),
+        h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)'}},'IC Checklist — '+opp.title)
+      ),
+      h('div',{className:'alert alert-purple'},'✦ ',h('strong',null,'v4 · Live intelligence: '),'Web research runs automatically in Sections B (manager reputation, industry dynamics) and D (Canadian regulatory). Results appear above the relevant questions as they load.'),
+      SECTIONS.map((s,i)=>h(SectionCard,{key:s.id,section:s,responses,claudeAnswers:ca,onChange:upd,initialOpen:i===0,opp})),
+      h('div',{className:'card'},
+        h('div',{className:'card-title'},'Your Overall Recommendation'),
+        h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'Anchor this in your D4 (risk-return) and E4 (values) answers. Factor in any red flags from the live research.'),
+        h('div',{className:'overall-wrap'},['Approve','Conditional Approval','Decline','Abstain'].map(r=>h('button',{key:r,className:`overall-btn sel-${rec===r?r.replace(' ','-'):''}`,onClick:()=>setRec(r)},r))),
+        h('div',{style:{marginTop:14}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Overall comments'),h('textarea',{className:'textarea',style:{minHeight:80},placeholder:'Key reasons for your recommendation, and anything that would change your view…',value:comments,onChange:e=>setComments(e.target.value)})),
+        h('div',{style:{marginTop:14}},
+          h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Conditions / Follow-up items'),
+          followUp.length>0&&h('div',{style:{marginBottom:8}},followUp.map((fu,i)=>h('span',{key:i,className:'tag'},fu,h('button',{onClick:()=>setFollowUp(f=>f.filter((_,j)=>j!==i))},'×')))),
+          h('div',{style:{display:'flex',gap:8}},h('input',{className:'form-input',style:{fontSize:12},placeholder:'Add a condition…',value:newFU,onChange:e=>setNewFU(e.target.value),onKeyDown:e=>e.key==='Enter'&&addFU()}),h('button',{className:'btn btn-outline btn-sm',onClick:addFU},'Add'))
+        )
+      ),
+      h('div',{style:{display:'flex',gap:10,marginBottom:40}},h('button',{className:'btn btn-outline',onClick:save,disabled:saving},saving?'Saving…':'Save Draft'),h('button',{className:'btn btn-teal',style:{flex:1},onClick:submit},'Submit My Review →'))
+    )
+  );
+}
+
+// ─── PQ PDF EXTRACTION via Claude API ────────────────────────────────────
+async function extractFromPDF(base64Data){
+  const today=new Date().toLocaleDateString('en-CA',{year:'numeric',month:'long',day:'numeric'});
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-6',
+      max_tokens:1500,
+      messages:[{role:'user',content:[
+        {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64Data}},
+        {type:'text',text:`You are reading a Prime Quadrant investment research report for a Canadian family office. Today is ${today}.
+
+Extract the following fields and return ONLY a valid JSON object, no markdown, no preamble:
+
+{
+  "title": "Full fund/manager name exactly as written",
+  "assetClass": "One of: Cash | Fixed Income | Public Equity | Private Equity | Private Credit | Diversifying Strategies | Real Assets | Monetary Hedge",
+  "commitment": 0,
+  "currency": "USD or CAD or EUR or GBP",
+  "thesisSummary": "1-2 sentence summary of the core investment thesis and differentiated edge",
+  "thesisRating": 4,
+  "returnTarget": "e.g. 12-16% net IRR",
+  "hasTrackRecord": true,
+  "trackRecordDetail": "e.g. Fund I: 14.2% net IRR, Fund II: 12.8% net IRR",
+  "teamSummary": "1-2 sentences on team size, experience, and stability",
+  "esgProgramme": "Mature or Developing or Nascent or None",
+  "esgApproach": "Impact or Integrated or ESG Aware or Opportunistic or None",
+  "esgNote": "1 sentence on any notable ESG detail",
+  "oddRatings": {
+    "governance": "Low or Medium or High",
+    "compliance": "Low or Medium or High",
+    "operations": "Low or Medium or High",
+    "alignment": "Low or Medium or High",
+    "reporting": "Low or Medium or High"
+  },
+  "oddGovernanceNote": "explain if governance is Medium or High, else empty string",
+  "feesSummary": "e.g. 1.5% mgmt fee, 20% carry, 8% hurdle",
+  "termsSummary": "e.g. LPAC seat, co-invest rights, key-person provisions",
+  "lpRightsNote": "any LP rights caveat or deficiency noted",
+  "isOffshore": false,
+  "vehicleType": "e.g. Delaware LP or Cayman LP",
+  "feesAboveNorm": false,
+  "feesBelowNorm": false,
+  "additionalContext": "any notable context not captured above"
+}
+
+For commitment: extract the recommended commitment size if stated; if not stated, use 0.
+For thesisRating: rate 1-5 based on how clearly and compellingly the thesis is articulated in the document.
+For feesAboveNorm/feesBelowNorm: compare to typical market norms (PE: 2%/20%, Credit: 1.5%/15-20%, Real Assets: 1.5%/20%).
+If a field is genuinely not found in the document, use null for strings and false for booleans.`}
+      ]}]
+    })
+  });
+  if(resp.status===401||resp.status===403)throw new Error('STANDALONE_FILE');
+  if(!resp.ok)throw new Error('API error '+resp.status);
+  const data=await resp.json();
+  const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  const match=text.replace(/```json|```/gi,'').trim().match(/\{[\s\S]*\}/);
+  if(!match)throw new Error('No JSON in extraction response');
+  return JSON.parse(match[0]);
+}
+
+// ─── NEW OPPORTUNITY MODAL — upload-first, Claude extracts, confirm only ──
+function NewOpportunityModal({onClose,onSubmit,currentUser}){
+  // Step 1: upload. Step 2: extracting (loading). Step 3: review & confirm.
+  const [step,setStep]=useState(1);
+  const [fileName,setFileName]=useState('');
+  const [fileB64,setFileB64]=useState('');
+  const [extracting,setExtracting]=useState(false);
+  const [extractError,setExtractError]=useState('');
+  // Extracted + editable form state
+  const [form,setForm]=useState(null); // null until extraction completes
+  // The few fields Claude can't know
+  const [deadline,setDeadline]=useState(new Date(Date.now()+5*86400000).toISOString().slice(0,10));
+  const [notifyLucas,setNotifyLucas]=useState(true);
+  const [additionalContext,setAdditionalContext]=useState('');
+
+  function upd(k,v){setForm(f=>({...f,[k]:v}))}
+  function updPQ(k,v){setForm(f=>({...f,pqData:{...f.pqData,[k]:v}}))}
+  function updODD(k,v){setForm(f=>({...f,pqData:{...f.pqData,oddRatings:{...f.pqData.oddRatings,[k]:v}}}))}
+
+  function handleFile(e){
+    const f=e.target.files?.[0];
+    if(!f){return;}
+    if(f.type!=='application/pdf'){alert('Please upload a PDF file.');return;}
+    setFileName(f.name);
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const b64=ev.target.result.split(',')[1];
+      setFileB64(b64);
+    };
+    reader.readAsDataURL(f);
+  }
+
+  async function handleExtract(){
+    if(!fileB64){alert('Please select a PDF first.');return;}
+    setExtracting(true);
+    setExtractError('');
+    try{
+      const extracted=await extractFromPDF(fileB64);
+      // Map extracted fields into our form shape
+      setForm({
+        title:extracted.title||'',
+        assetClass:extracted.assetClass||'',
+        commitment:extracted.commitment||'',
+        currency:extracted.currency||'USD',
+        pqData:{
+          thesisSummary:extracted.thesisSummary||'',
+          thesisRating:extracted.thesisRating||4,
+          returnTarget:extracted.returnTarget||'',
+          hasTrackRecord:extracted.hasTrackRecord!==false,
+          trackRecordDetail:extracted.trackRecordDetail||'',
+          teamSummary:extracted.teamSummary||'',
+          esgProgramme:extracted.esgProgramme||'Developing',
+          esgApproach:extracted.esgApproach||'Opportunistic',
+          esgNote:extracted.esgNote||'',
+          oddRatings:{
+            governance:extracted.oddRatings?.governance||'Low',
+            compliance:extracted.oddRatings?.compliance||'Low',
+            operations:extracted.oddRatings?.operations||'Low',
+            alignment:extracted.oddRatings?.alignment||'Low',
+            reporting:extracted.oddRatings?.reporting||'Low',
+          },
+          oddGovernanceNote:extracted.oddGovernanceNote||'',
+          feesSummary:extracted.feesSummary||'',
+          termsSummary:extracted.termsSummary||'',
+          lpRightsNote:extracted.lpRightsNote||'',
+          isOffshore:extracted.isOffshore||false,
+          vehicleType:extracted.vehicleType||'',
+          mltaRequired:extracted.isOffshore||false,
+          feesAboveNorm:extracted.feesAboveNorm||false,
+          feesBelowNorm:extracted.feesBelowNorm||false,
+        }
+      });
+      setAdditionalContext(extracted.additionalContext||'');
+      setStep(3);
+    }catch(err){
+      if(err.message==='STANDALONE_FILE'){
+        setExtractError('STANDALONE');
+      }else{
+        setExtractError(err.message||'Extraction failed');
+      }
+    }finally{
+      setExtracting(false);
+    }
+  }
+
+  function handleSubmit(){
+    if(!form?.title||!form?.assetClass){alert('Fund name and asset class are required — edit the fields above if Claude left them blank.');return;}
+    onSubmit({
+      id:Math.random().toString(36).slice(2),
+      title:form.title,
+      assetClass:form.assetClass,
+      commitment:parseFloat(form.commitment)||0,
+      currency:form.currency,
+      deadline:deadline+'T23:59:00Z',
+      additionalContext,
+      notifyLucas,
+      createdAt:new Date().toISOString(),
+      initiatedBy:currentUser.id,
+      status:'open',
+      pqSummary:form.pqData.thesisSummary||'PQ research uploaded.',
+      pqData:form.pqData,
+      responses:{reg:{submitted:false,responses:{}},sd:{submitted:false,responses:{}},ross:{submitted:false,responses:{}},lucas:{submitted:false,responses:{}}},
+      report:null,decision:null,
+    });
+  }
+
+  const oddDims=['governance','compliance','operations','alignment','reporting'];
+
+  // ── render ───────────────────────────────────────────────────────────────
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',style:{maxWidth:600},onClick:e=>e.stopPropagation()},
+
+      // Header
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
+        h('div',{className:'modal-title'},'Initiate New IC Review'),
+        h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'✕')
+      ),
+
+      // Step indicator
+      h('div',{style:{display:'flex',gap:0,borderBottom:'0.5px solid var(--border)',marginBottom:18}},
+        [{n:1,l:'1 · Upload PQ Document'},{n:2,l:'2 · Claude Reads'},{n:3,l:'3 · Confirm & Send'}]
+          .map(t=>h('div',{key:t.n,style:{padding:'6px 14px',fontSize:12,borderBottom:`2px solid ${step===t.n?'var(--teal)':'transparent'}`,color:step===t.n?'var(--navy)':'var(--muted)',fontWeight:step===t.n?600:400,cursor:step>t.n?'pointer':'default'},onClick:()=>step>t.n&&setStep(t.n)},t.l))
+      ),
+
+      // ── STEP 1: upload ───────────────────────────────────────────────────
+      step===1&&h('div',null,
+        h('div',{className:'alert alert-purple',style:{marginBottom:16}},
+          '✦ Upload the PQ research PDF and Claude will read it and pre-populate every field it can find. You\'ll only need to confirm a few things it can\'t know.'
+        ),
+        h('label',{className:`upload-zone${fileB64?' has-file':''}`,style:{marginBottom:16,display:'block'}},
+          fileB64
+            ? h('div',null,
+                h('div',{style:{fontSize:24,marginBottom:6}},'📄'),
+                h('div',{style:{fontWeight:600,color:'var(--teal)',fontSize:13}},fileName),
+                h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:4}},'Click to replace')
+              )
+            : h('div',null,
+                h('div',{style:{fontSize:32,marginBottom:8}},'☁'),
+                h('div',{style:{fontWeight:600,color:'var(--navy)',fontSize:14}},'Upload PQ Research PDF'),
+                h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:4}},'PDF only · max 50 MB · Claude will extract all data automatically')
+              ),
+          h('input',{type:'file',accept:'.pdf',style:{display:'none'},onChange:handleFile})
+        ),
+
+        // Error states
+        extractError==='STANDALONE'&&h('div',{style:{padding:'10px 14px',background:'#FEF3C7',border:'0.5px solid #FCD34D',borderRadius:8,fontSize:12,color:'#92400E',marginBottom:14,lineHeight:1.7}},
+          h('strong',null,'PDF extraction requires claude.ai. '),
+          'This file is running outside the Claude artifact environment. To use automatic extraction, open this app inside a claude.ai conversation. ',
+          h('br',null),h('br',null),
+          h('span',{style:{fontSize:11}},'Alternatively, use the manual entry link below.')
+        ),
+        extractError&&extractError!=='STANDALONE'&&h('div',{style:{padding:'10px 14px',background:'#FEE2E2',border:'0.5px solid #FCA5A5',borderRadius:8,fontSize:12,color:'#991B1B',marginBottom:14}},
+          'Extraction error: '+extractError+'. Try uploading a different file or use manual entry.'
+        ),
+
+        h('button',{className:'btn btn-gold',style:{width:'100%',padding:'10px',fontSize:13},onClick:handleExtract,disabled:!fileB64||extracting},
+          extracting
+            ? h('span',null,h('span',{className:'spin',style:{width:14,height:14,borderWidth:2,display:'inline-block',verticalAlign:'middle',marginRight:8}}),'Reading PQ document…')
+            : '✦ Read Document & Pre-populate Fields →'
+        ),
+        h('div',{style:{textAlign:'center',marginTop:12,fontSize:11,color:'var(--muted)'}},'Having trouble? ',
+          h('span',{style:{color:'var(--teal)',cursor:'pointer',textDecoration:'underline'},onClick:()=>{
+            // Skip to step 3 with blank form for manual entry
+            setForm({title:'',assetClass:'',commitment:'',currency:'USD',pqData:{thesisSummary:'',thesisRating:4,returnTarget:'',hasTrackRecord:true,trackRecordDetail:'',teamSummary:'',esgProgramme:'Developing',esgApproach:'Opportunistic',esgNote:'',oddRatings:{governance:'Low',compliance:'Low',operations:'Low',alignment:'Low',reporting:'Low'},oddGovernanceNote:'',feesSummary:'',termsSummary:'',lpRightsNote:'',isOffshore:false,vehicleType:'',mltaRequired:false,feesAboveNorm:false,feesBelowNorm:false}});
+            setStep(3);
+          }},'Enter details manually')
+        )
+      ),
+
+      // ── STEP 2: extracting (shown briefly while loading, usually auto-advances) ─
+      step===2&&h('div',{style:{textAlign:'center',padding:'40px 20px'}},
+        h('span',{className:'spin',style:{width:36,height:36,borderWidth:3,display:'inline-block',marginBottom:16}}),
+        h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Reading PQ document…'),
+        h('div',{style:{fontSize:12,color:'var(--muted)'}},'Claude is extracting fund details, ODD ratings, fees, team data, and ESG information.')
+      ),
+
+      // ── STEP 3: review & confirm ─────────────────────────────────────────
+      step===3&&form&&h('div',null,
+        h('div',{className:'alert alert-success',style:{marginBottom:14}},
+          '✦ ',h('strong',null,'Claude has pre-populated all fields from the PQ document. '),
+          'Review what it found, correct anything that looks wrong, then complete the 4 fields at the bottom that Claude can\'t know.'
+        ),
+
+        // ── Claude-extracted fields (all editable) ──
+        h('div',{style:{background:'var(--purple-l)',border:'0.5px solid #C4B5FD',borderRadius:10,padding:'14px 16px',marginBottom:14}},
+          h('div',{style:{fontSize:11,fontWeight:700,color:'var(--purple)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},'✦ Extracted from PQ document — edit if needed'),
+
+          h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'Fund / Manager Name'),
+            h('input',{className:'form-input',value:form.title,onChange:e=>upd('title',e.target.value)})
+          ),
+          h('div',{className:'form-row'},
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Asset Class'),
+              h('select',{className:'form-select',value:form.assetClass,onChange:e=>upd('assetClass',e.target.value)},
+                h('option',{value:''},'Select if not detected…'),
+                ASSET_CLASSES.map(a=>h('option',{key:a,value:a},a))
+              )
+            ),
+            h('div',{className:'form-row'},
+              h('div',{className:'form-group'},
+                h('label',{className:'form-label'},'Commitment'),
+                h('input',{className:'form-input',type:'number',placeholder:'0 if not in document',value:form.commitment,onChange:e=>upd('commitment',e.target.value)})
+              ),
+              h('div',{className:'form-group'},
+                h('label',{className:'form-label'},'Currency'),
+                h('select',{className:'form-select',value:form.currency,onChange:e=>upd('currency',e.target.value)},
+                  ['CAD','USD','EUR','GBP','Other'].map(c=>h('option',{key:c,value:c},c))
+                )
+              )
+            )
+          ),
+
+          h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'Thesis Summary'),
+            h('textarea',{className:'form-textarea',style:{minHeight:56},value:form.pqData.thesisSummary,onChange:e=>updPQ('thesisSummary',e.target.value)})
+          ),
+
+          h('div',{className:'form-row'},
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Return Target'),
+              h('input',{className:'form-input',value:form.pqData.returnTarget,onChange:e=>updPQ('returnTarget',e.target.value)})
+            ),
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Track Record'),
+              h('input',{className:'form-input',value:form.pqData.trackRecordDetail,onChange:e=>updPQ('trackRecordDetail',e.target.value)})
+            )
+          ),
+
+          h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'Team Summary'),
+            h('input',{className:'form-input',value:form.pqData.teamSummary,onChange:e=>updPQ('teamSummary',e.target.value)})
+          ),
+
+          // ODD ratings grid
+          h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'PQ ODD Ratings'),
+            h('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}},
+              oddDims.map(dim=>h('div',{key:dim},
+                h('div',{style:{fontSize:10,fontWeight:600,color:'var(--muted)',marginBottom:3,textTransform:'capitalize'}},dim),
+                h('select',{className:'form-select',style:{fontSize:11},value:form.pqData.oddRatings[dim],onChange:e=>updODD(dim,e.target.value)},
+                  ['Low','Medium','High'].map(r=>h('option',{key:r,value:r},r))
+                )
+              ))
+            )
+          ),
+          form.pqData.oddRatings.governance!=='Low'&&h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'Governance ODD Note'),
+            h('input',{className:'form-input',value:form.pqData.oddGovernanceNote,onChange:e=>updPQ('oddGovernanceNote',e.target.value)})
+          ),
+
+          h('div',{className:'form-row'},
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Fees Summary'),
+              h('input',{className:'form-input',value:form.pqData.feesSummary,onChange:e=>updPQ('feesSummary',e.target.value)})
+            ),
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Terms / LP Rights'),
+              h('input',{className:'form-input',value:form.pqData.termsSummary,onChange:e=>updPQ('termsSummary',e.target.value)})
+            )
+          ),
+
+          h('div',{className:'form-row'},
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'ESG Programme'),
+              h('select',{className:'form-select',value:form.pqData.esgProgramme,onChange:e=>updPQ('esgProgramme',e.target.value)},
+                ['Mature','Developing','Nascent','None'].map(v=>h('option',{key:v,value:v},v))
+              )
+            ),
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'ESG Approach'),
+              h('select',{className:'form-select',value:form.pqData.esgApproach,onChange:e=>updPQ('esgApproach',e.target.value)},
+                ['Impact','Integrated','ESG Aware','Opportunistic','None'].map(v=>h('option',{key:v,value:v},v))
+              )
+            )
+          ),
+          h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'ESG Note'),
+            h('input',{className:'form-input',value:form.pqData.esgNote,onChange:e=>updPQ('esgNote',e.target.value)})
+          ),
+
+          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+            h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.isOffshore,onChange:e=>updPQ('isOffshore',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Offshore / Cayman structure')),
+            h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.feesBelowNorm,onChange:e=>updPQ('feesBelowNorm',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Fees below market norm')),
+            h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.mltaRequired,onChange:e=>updPQ('mltaRequired',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'MLTA review required')),
+            h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12}},h('input',{type:'checkbox',checked:form.pqData.feesAboveNorm,onChange:e=>updPQ('feesAboveNorm',e.target.checked),style:{accentColor:'var(--teal)'}}),h('span',null,'Fees above market norm'))
+          )
+        ),
+
+        // ── Human-only fields ──────────────────────────────────────────────
+        h('div',{style:{background:'var(--gold-l)',border:'0.5px solid #e8d5a0',borderRadius:'var(--r)',padding:'14px 16px',marginBottom:14}},
+          h('div',{style:{fontSize:11,fontWeight:700,color:'#633806',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},'◎ Your input required — Claude can\'t determine these'),
+
+          h('div',{className:'form-row'},
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Response Deadline'),
+              h('input',{className:'form-input',type:'date',value:deadline,onChange:e=>setDeadline(e.target.value)})
+            ),
+            h('div',{className:'form-group'},
+              h('label',{className:'form-label'},'Proposed Commitment',h('span',{style:{fontWeight:400,color:'var(--muted)',marginLeft:4,textTransform:'none'}},'(if not in doc)')),
+              h('input',{className:'form-input',type:'number',placeholder:'Enter if Claude left blank',value:form.commitment,onChange:e=>upd('commitment',e.target.value)})
+            )
+          ),
+
+          h('div',{className:'form-group'},
+            h('label',{className:'form-label'},'Additional Context'),
+            h('textarea',{className:'form-textarea',placeholder:'Verbal context from PQ not captured in the document — prior fund relationship, call notes, special terms discussed…',value:additionalContext,onChange:e=>setAdditionalContext(e.target.value)})
+          ),
+
+          h('label',{style:{display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,padding:'10px 0'}},
+            h('input',{type:'checkbox',checked:notifyLucas,onChange:e=>setNotifyLucas(e.target.checked),style:{width:16,height:16,accentColor:'var(--teal)',cursor:'pointer'}}),
+            h('div',null,
+              h('div',{style:{fontWeight:600,color:'var(--navy)'}},'Notify Lucas Robinson'),
+              h('div',{style:{fontSize:11,color:'var(--muted)'}},'Lucas is an optional IC member — his response will be included in the report if received before generation')
+            )
+          )
+        ),
+
+        // Submit button
+        h('div',{style:{display:'flex',gap:8}},
+          h('button',{className:'btn btn-outline',onClick:()=>setStep(1)},'← Re-upload'),
+          h('button',{className:'btn btn-gold',style:{flex:1,padding:'10px'},onClick:handleSubmit},'Create Opportunity & Send Notifications →')
+        )
+      )
+    )
+  );
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────
+function Dashboard({currentUser,setPage,setActiveOpp,openNewModal}){
+  const SEED={id:'opp1',title:'Arctos Sports Partners Fund III',assetClass:'Private Equity',commitment:500000,currency:'USD',status:'open',deadline:new Date(Date.now()+5*86400000).toISOString(),createdAt:new Date(Date.now()-86400000).toISOString(),initiatedBy:'reg',pqSummary:'Minority ownership stakes in major North American and European professional sports franchises.',
+    pqData:{thesisRating:5,thesisSummary:'Arctos has proprietary deal flow via longstanding league relationships — no generalist PE manager can replicate this sourcing network. The strategy offers inflation-protected, fan-driven revenue with low correlation to public markets.',hasTrackRecord:true,trackRecordDetail:'Fund I: 14.2% net IRR; Fund II tracking 12.8% net IRR as of Q4-2024.',returnTarget:'12–16% net IRR',teamSummary:'12-person team; avg 16 years in sports & media investing; no senior departures since Fund I close.',esgProgramme:'Developing',esgApproach:'Opportunistic',esgNote:'No formal ESG policy. League regulations (NFL, NBA, NHL) impose material behavioural constraints on all fund employees and investments, including gambling prohibitions.',oddRatings:{governance:'Medium',compliance:'Low',operations:'Low',alignment:'Low',reporting:'Low'},oddGovernanceNote:'KKR acquired Arctos in 2023. Management continuity agreements are in place and the investment team operates independently. PQ has monitored this transition and is satisfied.',feesSummary:'1.5% mgmt fee, 20% carry, American-style waterfall with escrow provision — below norm for PE',termsSummary:'No LPAC seat at this commitment size. Co-invest rights on best-efforts basis. Day-1 key-person clause covering 3 founding partners.',lpRightsNote:'LPAC access would require USD 5M+ commitment. Co-invest rights are informal at this size.',feesAboveNorm:false,feesBelowNorm:true,isOffshore:false,vehicleType:'Delaware LP',mltaRequired:true},
+    responses:{reg:{submitted:false,responses:{}},sd:{submitted:false,responses:{}},ross:{submitted:false,responses:{}},lucas:{submitted:false,responses:{}}},report:null,decision:null};
+  const myR=SEED.responses[currentUser.id];
+  const started=Object.keys(myR?.responses||{}).length>0;
+  const myStatus=myR?.submitted?'Submitted':started?'In Progress':'Not Started';
+  const myBadge={Submitted:'badge-sub','In Progress':'badge-ip','Not Started':'badge-ns'};
+  const reqSub=['reg','sd','ross'].filter(id=>SEED.responses[id]?.submitted).length;
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20}},
+      h('div',null,h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'IC Due Diligence'),h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:2}},'Robinson Family Office · v4 · 23 questions · Live web research')),
+      h('button',{className:'btn btn-gold',onClick:openNewModal},'+ Initiate New Opportunity')
+    ),
+    h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ ',h('strong',null,'v4 — Live Intelligence: '),'When you open a checklist, Claude automatically searches the web for: (1) manager reputation and red flags, (2) current industry dynamics and phenomena (e.g. sports valuation reset, PE vintage-year trends), and (3) the Canadian regulatory and tax environment. Results appear in the relevant sections before you answer those questions.'),
+    h('div',{className:'opp-card bl-teal'},
+      h('div',null,h('div',{className:'opp-name'},SEED.title),h('div',{className:'opp-meta'},h('span',{className:'badge badge-open'},'Open'),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,SEED.assetClass),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,fmtMoney(SEED.commitment,SEED.currency)),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,'Due '+fmtDate(SEED.deadline))),h('div',{className:'prog-bar'},h('div',{className:'prog-fill',style:{width:`${(reqSub/3)*100}%`}})),h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:3}},reqSub+'/3 required members submitted')),
+      h('div',{style:{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-end'}},h('span',{className:`badge ${myBadge[myStatus]}`},myStatus),h('button',{className:'btn btn-teal btn-sm',onClick:()=>{setActiveOpp(SEED);setPage('checklist')}},'Start Review →'))
+    )
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────────────────
+function App(){
+  const [user,setUser]=useState(IC_MEMBERS[0]);
+  const [page,setPage]=useState('dashboard');
+  const [opp,setOpp]=useState(null);
+  const [showNew,setShowNew]=useState(false);
+  const [showMenu,setShowMenu]=useState(false);
+  function save(uid,data){setOpp(o=>o?{...o,responses:{...o.responses,[uid]:{...o.responses[uid],...data}}}:o);}
+  function submit(uid,data){save(uid,data);setPage('dashboard');}
+  return h('div',null,
+    h('nav',{className:'nav'},
+      h('div',{className:'nav-brand'},'Robinson Family Office',h('span',null,'IC Portal v4')),
+      h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},user.name.split(' ')[0],' ',h('span',{className:'nav-badge'},user.role)),
+      showMenu&&h('div',{style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:210,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
+        h('div',{style:{padding:'5px 10px',fontSize:10,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px'}},'Switch user'),
+        IC_MEMBERS.map(m=>h('div',{key:m.id,style:{padding:'8px 10px',cursor:'pointer',borderRadius:7,display:'flex',alignItems:'center',gap:8,background:user.id===m.id?'var(--teal-l)':'transparent'},onClick:()=>{setUser(m);setShowMenu(false);setPage('dashboard')}},h('div',{style:{width:28,height:28,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:600,color:'#fff'}},m.initials),h('div',null,h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)'}},m.name),h('div',{style:{fontSize:10,color:'var(--muted)'}},m.role+(m.isAdmin?' · Admin':'')))))
+      )
+    ),
+    h('div',{className:'legend-bar'},
+      h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)'}}),h('span',null,'Claude auto-answered')),
+      h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--teal)'}}),h('span',null,'Claude data / suggests')),
+      h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--gold)'}}),h('span',null,'Your judgment')),
+      h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'#DC2626'}}),h('span',null,'Gating')),
+      h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)',opacity:.5}}),h('span',null,'🔍 Live web research'))
+    ),
+    h('div',{onClick:()=>showMenu&&setShowMenu(false)},
+      page==='dashboard'&&h(Dashboard,{currentUser:user,setPage,setActiveOpp:setOpp,openNewModal:()=>setShowNew(true)}),
+      page==='checklist'&&opp&&h(ChecklistPage,{opp,currentUser:user,onSave:save,onSubmit:submit,onBack:()=>setPage('dashboard')})
+    ),
+    showNew&&h(NewOpportunityModal,{onClose:()=>setShowNew(false),onSubmit:o=>{setOpp(o);setShowNew(false);setPage('checklist');},currentUser:user})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

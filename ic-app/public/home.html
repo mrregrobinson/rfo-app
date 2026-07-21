@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--navy);min-height:100vh}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.wrap{max-width:760px;margin:0 auto;padding:48px 20px}
+.h1{font-size:22px;font-weight:600;margin-bottom:6px}
+.sub{font-size:13px;color:var(--muted);margin-bottom:32px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:600px){.tiles{grid-template-columns:1fr}}
+.tile{display:block;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:24px;text-decoration:none;color:inherit;transition:border-color .15s}
+.tile:hover{border-color:var(--teal)}
+.tile-title{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px}
+.tile-desc{font-size:12px;color:var(--muted);line-height:1.6}
+.loading{padding:48px;text-align:center;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div id="root"><div class="loading">Loading…</div></div>
+<script>
+const api = {
+  async get(url) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (r.status === 401) { const e = new Error('UNAUTHENTICATED'); e.code = 401; throw e; }
+    if (!r.ok) throw new Error('Request failed');
+    return r.json();
+  },
+};
+
+async function init() {
+  let user;
+  try {
+    user = await api.get('/api/me');
+  } catch (err) {
+    // No shared login page yet at "/" — the Due Diligence app's Login screen is reused
+    // for both apps (Section 3.2 assumption); send unauthenticated visitors there.
+    location.href = '/due-diligence?returnTo=' + encodeURIComponent('/');
+    return;
+  }
+  document.getElementById('root').innerHTML = `
+    <nav class="nav">
+      <div class="nav-brand">Robinson Family Office</div>
+      <div class="nav-user" id="signout">${user.name.split(' ')[0]} · Sign out</div>
+    </nav>
+    <div class="wrap">
+      <div class="h1">Welcome, ${user.name.split(' ')[0]}</div>
+      <div class="sub">Choose an application.</div>
+      <div class="tiles">
+        <a class="tile" href="/due-diligence">
+          <div class="tile-title">PQ Introduced Due Diligence</div>
+          <div class="tile-desc">Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.</div>
+        </a>
+        <a class="tile" href="/tasks">
+          <div class="tile-title">Family Task List</div>
+          <div class="tile-desc">Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.</div>
+        </a>
+      </div>
+    </div>
+  `;
+  document.getElementById('signout').addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+    location.href = '/due-diligence';
+  });
+}
+init();
+</script>
+</body>
+</html>
