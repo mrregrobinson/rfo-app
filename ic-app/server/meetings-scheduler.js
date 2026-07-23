@@ -18,6 +18,19 @@ function familyAttendeesWithEmail(db, meetingId) {
     .all(meetingId);
 }
 
+// All planned attendees (family + external), for display in the minutes email header —
+// distinct from familyAttendeesWithEmail above, which is who the email actually sends to.
+function allAttendeeNames(db, meetingId) {
+  const rows = db.prepare('SELECT * FROM meeting_attendees WHERE meeting_id = ?').all(meetingId);
+  return rows.map((row) => {
+    if (row.user_id) {
+      const user = db.prepare('SELECT name FROM users WHERE id = ?').get(row.user_id);
+      return { name: user ? user.name : row.user_id };
+    }
+    return { name: `${row.external_name} (external)` };
+  });
+}
+
 function agendaHtmlForInvite(agendaItems) {
   if (agendaItems.length === 0) return '<p>No agenda items yet.</p>';
   return `<p>Agenda:</p><ul>${agendaItems.map((a) => `<li>${escapeHtml(a.title)}</li>`).join('')}</ul>`;
@@ -94,49 +107,115 @@ function startMeetingsScheduler(db) {
 
 // ---- minutes email (Section 6.3) ----
 
+// Robinson Family Office brand palette, matching the app's own CSS variables
+// (public/*.html :root{--navy...}), so the emailed minutes look like part of the same
+// product rather than a generic system notification.
+const BRAND = { navy: '#1B2A4A', teal: '#2A7D7B', gold: '#C9A84C', muted: '#6B7280', border: '#E5E7EB', bg: '#F9FAFB' };
+
+function quarterBadgeHtml(targetQuarter) {
+  if (!targetQuarter) return '';
+  return `<span style="display:inline-block;margin-left:8px;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;color:${BRAND.navy};background:#E8ECF3;">${escapeHtml(targetQuarter)}</span>`;
+}
+
+function actionItemListHtml(items, { showQuarter } = {}) {
+  return `<ul style="margin:0 0 4px;padding-left:20px;">${items
+    .map(
+      (a) =>
+        `<li style="margin-bottom:4px;">${escapeHtml(a.description)}${a.assigneeDisplayName ? ` <span style="color:${BRAND.muted};">— ${escapeHtml(a.assigneeDisplayName)}</span>` : ''}${
+          showQuarter ? quarterBadgeHtml(a.targetQuarter) : ''
+        }</li>`
+    )
+    .join('')}</ul>`;
+}
+
+function sectionLabelHtml(label) {
+  return `<div style="font-size:11px;font-weight:700;color:${BRAND.teal};text-transform:uppercase;letter-spacing:.4px;margin:12px 0 4px;">${label}</div>`;
+}
+
 function agendaItemHtml(item, decisions, actionItems) {
-  const familyItems = actionItems.filter((a) => a.is_family);
-  const nonFamilyItems = actionItems.filter((a) => !a.is_family);
-  const parts = [`<h3 style="margin:16px 0 6px;font-size:13px;color:#1B2A4A;">${escapeHtml(item.title)}</h3>`];
-  if (item.discussion_summary) parts.push(`<p style="margin:0 0 8px;">${escapeHtml(item.discussion_summary)}</p>`);
+  const familyItems = actionItems.filter((a) => a.isFamily);
+  const nonFamilyItems = actionItems.filter((a) => !a.isFamily);
+  const parts = [
+    `<tr><td style="padding:18px 24px 4px;border-top:1px solid ${BRAND.border};">`,
+    `<div style="font-size:15px;font-weight:700;color:${BRAND.navy};margin-bottom:6px;">${escapeHtml(item.title)}</div>`,
+  ];
+  parts.push(
+    item.discussion_summary
+      ? `<p style="margin:0 0 4px;font-size:13px;line-height:1.6;color:#374151;">${escapeHtml(item.discussion_summary)}</p>`
+      : `<p style="margin:0 0 4px;font-size:13px;color:${BRAND.muted};font-style:italic;">No discussion summary recorded.</p>`
+  );
   if (decisions.length) {
-    parts.push(
-      `<p style="margin:0 0 2px;font-weight:600;">Decisions</p><ul style="margin:0 0 8px;padding-left:18px;">${decisions
-        .map((d) => `<li>${escapeHtml(d.description)}</li>`)
-        .join('')}</ul>`
-    );
+    parts.push(sectionLabelHtml('Decisions'));
+    parts.push(`<ul style="margin:0 0 4px;padding-left:20px;font-size:13px;">${decisions.map((d) => `<li style="margin-bottom:4px;">${escapeHtml(d.description)}</li>`).join('')}</ul>`);
   }
   if (familyItems.length) {
-    parts.push(
-      `<p style="margin:0 0 2px;font-weight:600;">Family action items</p><ul style="margin:0 0 8px;padding-left:18px;">${familyItems
-        .map((a) => `<li>${escapeHtml(a.description)}${a.assignee_name ? ` — ${escapeHtml(a.assignee_name)}` : ''}</li>`)
-        .join('')}</ul>`
-    );
+    parts.push(sectionLabelHtml('Family action items'));
+    parts.push(`<div style="font-size:13px;">${actionItemListHtml(familyItems, { showQuarter: true })}</div>`);
   }
   if (nonFamilyItems.length) {
-    parts.push(
-      `<p style="margin:0 0 2px;font-weight:600;">Other action items</p><ul style="margin:0 0 8px;padding-left:18px;">${nonFamilyItems
-        .map((a) => `<li>${escapeHtml(a.description)}${a.assignee_name ? ` — ${escapeHtml(a.assignee_name)}` : ''}</li>`)
-        .join('')}</ul>`
-    );
+    parts.push(sectionLabelHtml('Other action items'));
+    parts.push(`<div style="font-size:13px;">${actionItemListHtml(nonFamilyItems)}</div>`);
   }
+  parts.push('</td></tr>');
   return parts.join('');
 }
 
-function buildMinutesHtml(meeting, agendaItemsWithDetail) {
-  const dateStr = new Date(meeting.planned_at).toLocaleString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+function buildMinutesHtml(meeting, attendees, agendaItemsWithDetail) {
+  const dateStr = new Date(meeting.planned_at).toLocaleString('en-CA', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const attendeeNames = attendees.map((a) => escapeHtml(a.name)).join(', ') || 'None listed';
   const sections = agendaItemsWithDetail.map(({ item, decisions, actionItems }) => agendaItemHtml(item, decisions, actionItems)).join('');
-  const body = sections || '<p>No agenda items were recorded.</p>';
-  return `<p>Minutes from <strong>${escapeHtml(meeting.title)}</strong> (${dateStr}):</p>${body}<p style="margin-top:16px;"><a href="${APP_BASE_URL}/meetings?meeting=${meeting.id}">Open in Family Office Meetings</a></p>`;
+  const body = sections || `<tr><td style="padding:18px 24px;border-top:1px solid ${BRAND.border};font-size:13px;color:${BRAND.muted};">No agenda items were recorded.</td></tr>`;
+  return `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;font-family:-apple-system,Segoe UI,Arial,sans-serif;">
+      <tr><td style="background:${BRAND.navy};padding:20px 24px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${BRAND.gold};margin-bottom:6px;">Robinson Family Office · Meeting Minutes</div>
+        <div style="font-size:19px;font-weight:700;color:#ffffff;">${escapeHtml(meeting.title)}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:4px;">${dateStr}</div>
+      </td></tr>
+      <tr><td style="padding:14px 24px;border-bottom:1px solid ${BRAND.border};">
+        <div style="font-size:11px;font-weight:700;color:${BRAND.muted};text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Attendees</div>
+        <div style="font-size:13px;color:#374151;">${attendeeNames}</div>
+      </td></tr>
+      ${body}
+      <tr><td style="padding:20px 24px;background:${BRAND.bg};">
+        <a href="${APP_BASE_URL}/meetings?meeting=${meeting.id}" style="display:inline-block;background:${BRAND.teal};color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:9px 18px;border-radius:7px;">Open in Family Office Meetings</a>
+        <div style="font-size:11px;color:${BRAND.muted};margin-top:14px;">This is an automated summary of the minutes recorded for this meeting. Reply to a family member directly with any corrections.</div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`;
 }
 
 function meetingMinutesDetail(db, meetingId) {
   const agendaItems = db.prepare('SELECT * FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order').all(meetingId);
-  return agendaItems.map((item) => ({
-    item,
-    decisions: db.prepare('SELECT * FROM meeting_decisions WHERE agenda_item_id = ? ORDER BY created_at').all(item.id),
-    actionItems: db.prepare('SELECT * FROM meeting_action_items WHERE agenda_item_id = ? ORDER BY created_at').all(item.id),
-  }));
+  return agendaItems.map((item) => {
+    const actionItemRows = db.prepare('SELECT * FROM meeting_action_items WHERE agenda_item_id = ? ORDER BY created_at').all(item.id);
+    const actionItems = actionItemRows.map((a) => {
+      let assigneeDisplayName = a.assignee_name;
+      let targetQuarter = null;
+      if (a.is_family) {
+        const user = a.assignee_user_id ? db.prepare('SELECT name FROM users WHERE id = ?').get(a.assignee_user_id) : null;
+        assigneeDisplayName = user ? user.name : null;
+        const task = a.task_id ? db.prepare('SELECT target_quarter FROM tasks WHERE id = ?').get(a.task_id) : null;
+        targetQuarter = task ? task.target_quarter : null;
+      }
+      return { description: a.description, isFamily: !!a.is_family, assigneeDisplayName, targetQuarter };
+    });
+    return {
+      item,
+      decisions: db.prepare('SELECT * FROM meeting_decisions WHERE agenda_item_id = ? ORDER BY created_at').all(item.id),
+      actionItems,
+    };
+  });
 }
 
 // Sends the finished minutes to every family attendee and stamps minutes_emailed_at.
@@ -146,7 +225,7 @@ function meetingMinutesDetail(db, meetingId) {
 async function sendMinutesEmail(db, meetingId) {
   const meeting = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId);
   if (!meeting) throw new Error('Meeting not found');
-  const html = buildMinutesHtml(meeting, meetingMinutesDetail(db, meetingId));
+  const html = buildMinutesHtml(meeting, allAttendeeNames(db, meetingId), meetingMinutesDetail(db, meetingId));
   const attendees = familyAttendeesWithEmail(db, meetingId);
   let sentTo = 0;
   for (const attendee of attendees) {

@@ -35,6 +35,10 @@ module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
   }
 
   function actionItemRowToJson(row) {
+    // targetQuarter lives on the linked task (tasks.target_quarter), not duplicated onto
+    // this row — looked up here purely for display, so the minutes UI/email can show the
+    // completion quarter the person recording minutes picked for a family action item.
+    const task = row.task_id ? db.prepare('SELECT target_quarter FROM tasks WHERE id = ?').get(row.task_id) : null;
     return {
       id: row.id,
       agendaItemId: row.agenda_item_id,
@@ -43,6 +47,7 @@ module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
       assigneeUserId: row.assignee_user_id,
       assigneeName: row.assignee_name,
       taskId: row.task_id,
+      targetQuarter: task ? task.target_quarter : null,
       createdBy: row.created_by,
       createdAt: row.created_at,
     };
@@ -307,8 +312,8 @@ module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
       const now = new Date().toISOString();
       db.prepare(
         `INSERT INTO tasks (id, category_id, parent_task_id, title, priority, target_quarter, target_date, status, completed_at, notes, source_ref_id, created_by, created_at, updated_at)
-         VALUES (?, ?, NULL, ?, 'medium', NULL, NULL, 'open', NULL, ?, NULL, ?, ?, ?)`
-      ).run(taskId, b.categoryId, description, `From: ${meeting.title} — agenda item "${item.title}."`, req.session.userId, now, now);
+         VALUES (?, ?, NULL, ?, 'medium', ?, NULL, 'open', NULL, ?, NULL, ?, ?, ?)`
+      ).run(taskId, b.categoryId, description, b.targetQuarter || null, `From: ${meeting.title} — agenda item "${item.title}."`, req.session.userId, now, now);
       db.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').run(taskId, b.assigneeUserId);
       logAudit({ userId: req.session.userId, action: 'task.created', entityType: 'task', entityId: taskId, details: { title: description, fromMeetingId: meeting.id } });
     }

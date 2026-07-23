@@ -197,12 +197,13 @@ function AddActionItem({members,categories,onAdd}){
   const [description,setDescription]=useState('');
   const [assigneeUserId,setAssigneeUserId]=useState(members[0]?.id||'');
   const [categoryId,setCategoryId]=useState(categories[0]?.id||'');
+  const [targetQuarter,setTargetQuarter]=useState('');
   const [assigneeName,setAssigneeName]=useState('');
   async function submit(){
     if(!description.trim())return;
-    if(isFamily)await onAdd({description:description.trim(),isFamily:true,assigneeUserId,categoryId});
+    if(isFamily)await onAdd({description:description.trim(),isFamily:true,assigneeUserId,categoryId,targetQuarter:targetQuarter.trim()||null});
     else await onAdd({description:description.trim(),isFamily:false,assigneeName:assigneeName.trim()});
-    setDescription('');setAssigneeName('');
+    setDescription('');setAssigneeName('');setTargetQuarter('');
   }
   return h('div',{style:{marginTop:6}},
     h('div',{style:{display:'flex',gap:12,marginBottom:6,fontSize:12}},
@@ -212,7 +213,8 @@ function AddActionItem({members,categories,onAdd}){
       h('input',{style:{flex:1},placeholder:'Action item description',value:description,onChange:e=>setDescription(e.target.value)}),
       isFamily?h(React.Fragment,null,
         h('select',{value:assigneeUserId,onChange:e=>setAssigneeUserId(e.target.value)},members.map(m=>h('option',{key:m.id,value:m.id},m.name.split(' ')[0]))),
-        h('select',{value:categoryId,onChange:e=>setCategoryId(e.target.value)},categories.map(c=>h('option',{key:c.id,value:c.id},c.name)))
+        h('select',{value:categoryId,onChange:e=>setCategoryId(e.target.value)},categories.map(c=>h('option',{key:c.id,value:c.id},c.name))),
+        h('input',{style:{width:100},placeholder:'Quarter (2026-Q3)',value:targetQuarter,onChange:e=>setTargetQuarter(e.target.value)})
       ):h('input',{placeholder:'Who (optional)',value:assigneeName,onChange:e=>setAssigneeName(e.target.value)}),
       h('button',{type:'button',className:'btn btn-outline btn-sm',onClick:submit},'Add'))
   );
@@ -237,7 +239,7 @@ function AgendaItemCard({item,members,categories,editable,onSaveSummary,onAddDec
     editable&&h(AddDecision,{onAdd:desc=>onAddDecision(item.id,desc)}),
     h('div',{className:'subhead'},'Family action items'),
     familyItems.length===0&&h('div',{className:'muted'},'None.'),
-    familyItems.map(a=>h('div',{key:a.id,className:'item-line'},h('span',null,a.description,' — ',(memberById(members,a.assigneeUserId)||{}).name||'—'),editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteActionItem(a.id)},'×'))),
+    familyItems.map(a=>h('div',{key:a.id,className:'item-line'},h('span',null,a.description,' — ',(memberById(members,a.assigneeUserId)||{}).name||'—',a.targetQuarter&&h('span',{className:'badge badge-planned'},a.targetQuarter)),editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteActionItem(a.id)},'×'))),
     h('div',{className:'subhead'},'Non-family action items'),
     nonFamilyItems.length===0&&h('div',{className:'muted'},'None.'),
     nonFamilyItems.map(a=>h('div',{key:a.id,className:'item-line'},h('span',null,a.description,a.assigneeName?' — '+a.assigneeName:''),editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteActionItem(a.id)},'×'))),
