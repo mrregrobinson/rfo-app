@@ -395,10 +395,12 @@ function TasksApp({me,roles}){
     }
   }
   async function deleteTask(id){
-    if(!window.confirm('Delete this task permanently?'))return;
-    await api.del(`/api/tasks/${id}`);
-    setTasks(list=>list.filter(t=>t.id!==id));
-    setEditing(null);
+    if(!window.confirm('Delete this task permanently? Any sub-items under it will be deleted too.'))return;
+    try{
+      await api.del(`/api/tasks/${id}`);
+      setTasks(list=>list.filter(t=>t.id!==id&&t.parentTaskId!==id));
+      setEditing(null);
+    }catch(e){setToast('Failed to delete: '+e.message);}
   }
 
   const quarters=[...new Set(tasks.map(t=>t.targetQuarter).filter(Boolean))].sort();

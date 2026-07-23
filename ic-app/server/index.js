@@ -43,6 +43,12 @@ if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true }
 
 const app = express();
 
+// Railway sits in front of this app as a reverse proxy and sets X-Forwarded-For, which
+// express-rate-limit refuses to trust by default (it can't tell a real client IP from a
+// spoofed header otherwise). `1` trusts exactly one hop — the platform's own proxy —
+// which is correct here since we're not behind any additional untrusted proxy layer.
+app.set('trust proxy', 1);
+
 // This app ships as a handful of single-file HTML pages with an inline <script>/<style>
 // and loads React from unpkg.com, so the CSP below allows those specifically rather
 // than using helmet's stricter defaults (which would break the app outright).

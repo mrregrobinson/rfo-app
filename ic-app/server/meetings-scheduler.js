@@ -117,12 +117,24 @@ function quarterBadgeHtml(targetQuarter) {
   return `<span style="display:inline-block;margin-left:8px;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;color:${BRAND.navy};background:#E8ECF3;">${escapeHtml(targetQuarter)}</span>`;
 }
 
+const PRIORITY_BADGE_COLORS = {
+  high: { bg: '#FEE2E2', fg: '#991B1B' },
+  medium: { bg: '#FEF3C7', fg: '#92400E' },
+  low: { bg: '#D1FAE5', fg: '#065F46' },
+};
+
+function priorityBadgeHtml(priority) {
+  const colors = PRIORITY_BADGE_COLORS[priority];
+  if (!colors) return '';
+  return `<span style="display:inline-block;margin-left:8px;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;color:${colors.fg};background:${colors.bg};">${escapeHtml(priority)}</span>`;
+}
+
 function actionItemListHtml(items, { showQuarter } = {}) {
   return `<ul style="margin:0 0 4px;padding-left:20px;">${items
     .map(
       (a) =>
         `<li style="margin-bottom:4px;">${escapeHtml(a.description)}${a.assigneeDisplayName ? ` <span style="color:${BRAND.muted};">— ${escapeHtml(a.assigneeDisplayName)}</span>` : ''}${
-          showQuarter ? quarterBadgeHtml(a.targetQuarter) : ''
+          showQuarter ? priorityBadgeHtml(a.priority) + quarterBadgeHtml(a.targetQuarter) : ''
         }</li>`
     )
     .join('')}</ul>`;
@@ -202,13 +214,15 @@ function meetingMinutesDetail(db, meetingId) {
     const actionItems = actionItemRows.map((a) => {
       let assigneeDisplayName = a.assignee_name;
       let targetQuarter = null;
+      let priority = null;
       if (a.is_family) {
         const user = a.assignee_user_id ? db.prepare('SELECT name FROM users WHERE id = ?').get(a.assignee_user_id) : null;
         assigneeDisplayName = user ? user.name : null;
-        const task = a.task_id ? db.prepare('SELECT target_quarter FROM tasks WHERE id = ?').get(a.task_id) : null;
+        const task = a.task_id ? db.prepare('SELECT target_quarter, priority FROM tasks WHERE id = ?').get(a.task_id) : null;
         targetQuarter = task ? task.target_quarter : null;
+        priority = task ? task.priority : null;
       }
-      return { description: a.description, isFamily: !!a.is_family, assigneeDisplayName, targetQuarter };
+      return { description: a.description, isFamily: !!a.is_family, assigneeDisplayName, targetQuarter, priority };
     });
     return {
       item,

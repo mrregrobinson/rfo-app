@@ -180,6 +180,10 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
     if (!roles.tasksAdmin) return res.status(403).json({ error: 'Admin only' });
     const row = db.prepare('SELECT id, title FROM tasks WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Task not found' });
+    // parent_task_id has no ON DELETE CASCADE, so a task with sub-items must have them
+    // removed first or this violates the foreign key constraint (task_assignees rows
+    // cascade automatically via their own FK).
+    db.prepare('DELETE FROM tasks WHERE parent_task_id = ?').run(req.params.id);
     db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
     logAudit({ userId: req.session.userId, action: 'task.deleted', entityType: 'task', entityId: req.params.id, details: { title: row.title } });
     res.json({ ok: true });
