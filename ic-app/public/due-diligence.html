@@ -211,7 +211,7 @@ function pct(n){return n.toFixed(1)+'%'}
 function computeClaudeAnswers(opp,activities){
   const p=opp.pqData||{};const cur=opp.currency;const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[cur]||1.35);const ac=opp.assetClass;const ips=PORT.ips[ac]||{min:0,target:10,max:20};
   const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const nearAct=nonCompleted.filter(a=>NEAR_TERM_TIMINGS.includes(a.timing));const effAll=getEffectivePort(nonCompleted);const effNear=getEffectivePort(nonCompleted,{nearTermOnly:true});
-  const curPct=effAll.alloc[ac]||0;const projPct=curPct+(cadCommit/effAll.totalCAD)*100;const manPct=(cadCommit/effAll.totalCAD)*100;const totalUnf=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);const calls12=PORT.unfunded.filter(u=>u.call12m);const totCalls=calls12.reduce((a,u)=>a+u.unfundedCAD,0);const cash=effNear.allocCAD['Cash'];const oddR=p.oddRatings||{};const highF=Object.entries(oddR).filter(([,v])=>v==='High').map(([k])=>k);const medF=Object.entries(oddR).filter(([,v])=>v==='Medium').map(([k])=>k);const isOff=p.isOffshore||false;const govR=oddR.governance||'Low';const compR=oddR.compliance||'Low';const addUSD=cur==='USD';const usdAfter=addUSD?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const ans={};
+  const curPct=effAll.alloc[ac]||0;const projPct=curPct+(cadCommit/effAll.totalCAD)*100;const manPct=(cadCommit/effAll.totalCAD)*100;const totalUnf=PORT.unfunded.reduce((a,u)=>a+u.unfundedCAD,0);const calls12=PORT.unfunded.filter(u=>u.call12m);const totCalls=calls12.reduce((a,u)=>a+u.unfundedCAD,0);const cash=effNear.allocCAD['Cash'];const oddR=p.oddRatings||{};const highF=Object.entries(oddR).filter(([,v])=>v==='High').map(([k])=>k);const medF=Object.entries(oddR).filter(([,v])=>v==='Medium').map(([k])=>k);const govR=oddR.governance||'Low';const compR=oddR.compliance||'Low';const addUSD=cur==='USD';const usdAfter=addUSD?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const ans={};
   ans.A1={value:ASSET_CLASSES.includes(ac)?'Yes':'No',display:ASSET_CLASSES.includes(ac)?'Yes — IPS approved':'No — not an approved class',rationale:`${ac} is ${ASSET_CLASSES.includes(ac)?'one of the eight IPS-approved asset classes.':'NOT on the IPS approved list.'}`,locked:true,warning:!ASSET_CLASSES.includes(ac)};
   const aboveMax=projPct>ips.max;const underW=curPct<ips.target;
   const adjNote=nonCompleted.length>0?` Adjusted for ${nonCompleted.length} pending family planning activit${nonCompleted.length===1?'y':'ies'} (raw PQ-reported ${ac} allocation is ${(PORT.alloc[ac]||0).toFixed(1)}%, before those activities).`:'';
@@ -226,7 +226,6 @@ function computeClaudeAnswers(opp,activities){
   ans.C2={value:compR==='Low'?'Yes':'Uncertain',display:`${compR==='Low'?'Yes':'Uncertain'} (PQ ODD Compliance: ${compR})`,rationale:`PQ ODD Compliance: ${compR}. ${compR==='Low'?'No deficiencies.':'⚠ Compliance concern — see PQ ODD.'}`,locked:true,warning:compR!=='Low'};
   const oddLines=Object.entries(oddR).map(([k,v])=>`• ${k}: ${v}`).join('\n')||'• All: Low';
   ans.D1={value:highF.length>0?'No':medF.length>0?'Uncertain':'Yes',display:highF.length>0?`No — High: ${highF.join(', ')}`:medF.length>0?`Uncertain — Medium: ${medF.join(', ')}`:'Yes — all Low',rationale:`PQ ODD:\n${oddLines}\n\n${highF.length>0?`⛔ HIGH flags must be resolved: ${highF.join(', ')}`:medF.length>0?`⚠ Medium flags (${medF.join(', ')}) noted — IC should confirm acceptance.`:'ODD satisfactory.'}`,locked:true,warning:highF.length>0||medF.length>0};
-  ans.D2={value:isOff?'Yes':'No',display:isOff?'Yes — offshore structure, MLT Aikens review required':'No material Canadian-specific risks',rationale:`Vehicle: ${p.vehicleType||'not specified'}. ${isOff?'⚠ Offshore/Cayman — withholding tax, FAPI, and MLT Aikens review required.':'Standard structure. MLT Aikens review recommended for any unusual provisions.'}`,locked:true,warning:isOff};
   const alignR=oddR.alignment||'Low';const alignConcern=alignR!=='Low';
   ans.F1={value:(p.feesAboveNorm||alignConcern)?'Uncertain':p.feesBelowNorm?'Yes — below norm':'Yes',display:(p.feesAboveNorm||alignConcern)?'Uncertain — flagged':p.feesBelowNorm?'Yes — below norm (favourable)':'Yes — within market norm',rationale:`Market norm for ${ac}: ${PORT.feeNorms[ac]||'varies'}.\nThis fund: ${p.feesSummary||'see PQ report.'}${p.feesAboveNorm?'\n⚠ Above market norm.':p.feesBelowNorm?'\n✓ Favourable terms.':''}\n\nManagement compensation alignment (PQ ODD): ${alignR}. ${alignConcern?'⚠ Alignment flagged — confirm carry, co-invest, and clawback provisions reflect best practice before proceeding.':'No misalignment concerns — carry and co-invest terms appear standard.'}`,locked:true,warning:p.feesAboveNorm||alignConcern};
   return ans;
@@ -268,10 +267,14 @@ function ResearchPanel({type,oppId,label,icon,colorClass}){
   );
 }
 
+function ResearchLegend(){
+  const items=[{dot:'#DC2626',icon:'🚩',label:'Flag — needs attention'},{dot:'#D97706',icon:'⚠',label:'Caution — worth noting'},{dot:'#059669',icon:'✓',label:'Positive'},{dot:'#9CA3AF',icon:'·',label:'Neutral'}];
+  return h('div',{style:{display:'flex',gap:14,flexWrap:'wrap',fontSize:11,color:'var(--muted)',margin:'2px 2px 8px'}},items.map(it=>h('span',{key:it.label,style:{display:'flex',alignItems:'center',gap:5}},h('span',{style:{width:8,height:8,borderRadius:'50%',background:it.dot,display:'inline-block',flexShrink:0}}),it.icon+' '+it.label)));
+}
 function ResearchPanelGroup({opp,sections}){
   if(!sections)return null;
-  if(sections==='BC')return h('div',{style:{marginBottom:8}},h(ResearchPanel,{type:'manager',oppId:opp.id,label:'Manager Reputation & Red Flags',icon:'🔍',colorClass:'manager'}),h(ResearchPanel,{type:'industry',oppId:opp.id,label:'Industry & Macro Intelligence',icon:'📈',colorClass:'industry'}));
-  if(sections==='D')return h('div',{style:{marginBottom:8}},h(ResearchPanel,{type:'regulatory',oppId:opp.id,label:'Canadian Regulatory & Tax Environment',icon:'⚖',colorClass:'regulatory'}));
+  if(sections==='BC')return h('div',{style:{marginBottom:8}},h(ResearchLegend,null),h(ResearchPanel,{type:'manager',oppId:opp.id,label:'Manager Reputation & Red Flags',icon:'🔍',colorClass:'manager'}),h(ResearchPanel,{type:'industry',oppId:opp.id,label:'Industry & Macro Intelligence',icon:'📈',colorClass:'industry'}));
+  if(sections==='D')return h('div',{style:{marginBottom:8}},h(ResearchLegend,null),h(ResearchPanel,{type:'regulatory',oppId:opp.id,label:'Canadian Regulatory & Tax Environment',icon:'⚖',colorClass:'regulatory'}));
   return null;
 }
 
@@ -292,9 +295,8 @@ const SECTIONS=[
     {id:'C2',text:'Are compliance and legal controls adequate?',type:'yn',mode:'auto'},
     {id:'C3',text:'Does the leadership team have the experience and depth needed for this strategy?',type:'rating',mode:'human',ctxKey:'C3',hint:'Rate 1–5. Factor in the PQ team overview summarized above and any people-related flags from the manager research above.'},
   ]},
-  {id:'D',label:'Risk',color:'#1B2A4A',researchGroup:'D',purpose:'Live Canadian regulatory research (above) covers the tax and legal environment. ODD and vehicle risk are auto-answered.',questions:[
+  {id:'D',label:'Risk',color:'#1B2A4A',researchGroup:'D',purpose:'Live Canadian regulatory research (above) covers the tax and legal environment. ODD is auto-answered.',questions:[
     {id:'D1',text:"Is PQ's operational due diligence assessment satisfactory?",type:'yn',mode:'auto'},
-    {id:'D2',text:'Are there Canadian-specific regulatory, tax, or vehicle risks requiring attention?',type:'yn',mode:'auto'},
     {id:'D3',text:'What is the most significant risk you see — including any downside scenarios PQ describes — and is it adequately mitigated or acceptable to the family?',type:'yn3',mode:'human',ctxKey:'B3',hint:"Name your primary risk and your view on mitigation in the comments below. Factor in the plausible loss scenario summarized above, the family's total exposure to this asset class, and the regulatory research above."},
     {id:'D4',text:'Does the risk-adjusted return justify commitment given all risks identified?',type:'yn3',mode:'human',hint:'Your final risk-return call. A Yes here is the clearest single input into your overall recommendation.'},
   ]},
@@ -471,6 +473,19 @@ const RECOMMENDATION_STYLE={
   'DEFER PENDING INFORMATION':{alert:'alert-purple',label:'⏸ Defer Pending Information'},
 };
 
+// Deterministic governance rule, independent of Claude's own analytical recommendation
+// above: any decline is a veto, unanimous approval among those who've submitted is a
+// clean pass, anything else (conditional approvals and/or abstentions mixed in) needs
+// the IC to actually discuss it before a call is made.
+function computeDecision(opp,roster){
+  const members=roster||IC_MEMBERS;
+  const submitted=members.map(m=>opp.responses[m.id]).filter(r=>r?.submitted&&r?.recommendation);
+  if(submitted.length===0)return{label:'Pending',style:'alert-info',detail:'No IC member has submitted a recommendation yet.'};
+  const recs=submitted.map(r=>r.recommendation);
+  if(recs.includes('Decline'))return{label:'Declined',style:'alert-danger',detail:'At least one IC member recommended declining this opportunity.'};
+  if(recs.every(r=>r==='Approve'))return{label:'Approved',style:'alert-success',detail:'All '+submitted.length+' submitted review'+(submitted.length===1?'':'s')+' recommended approval.'};
+  return{label:'More IC Discussion Required',style:'alert-warn',detail:'Recommendations are mixed (conditional approval and/or abstention) — the IC should discuss before finalizing.'};
+}
 function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,roster}){
   const [loading,setLoading]=useState(false);const [error,setError]=useState('');
   const report=opp.report;
@@ -481,6 +496,7 @@ function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,rost
   const requiredMembers=(roster||IC_MEMBERS).filter(m=>m.role==='Required');
   const reqSubmitted=requiredMembers.filter(m=>opp.responses[m.id]?.submitted).length;
   const quorumMet=reqSubmitted>=quorumThreshold;
+  const decision=computeDecision(opp,roster);
 
   async function generate(){
     setLoading(true);setError('');
@@ -503,6 +519,8 @@ function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,rost
     h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'IC Summary Report — '+opp.title)),
     h('div',{style:{fontSize:12,color:'var(--muted)',marginBottom:4}},submittedCount+'/'+IC_MEMBERS.length+' members submitted'+(pending.length?' · Awaiting: '+pending.join(', '):'')),
     h('div',{style:{fontSize:12,fontWeight:600,marginBottom:16,color:quorumMet?'var(--teal)':'var(--gold)'}},(quorumMet?'✓ Quorum reached — ':'⏳ Quorum not yet reached — ')+reqSubmitted+'/'+quorumThreshold+' required members submitted'),
+
+    h('div',{className:`alert ${decision.style}`,style:{marginBottom:16}},h('div',{style:{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4,opacity:.7}},'Decision'),h('div',{style:{fontSize:15,fontWeight:700}},decision.label),h('div',{style:{fontSize:12,fontWeight:400,marginTop:2}},decision.detail)),
 
     error==='NOT_CONFIGURED'&&h('div',{className:'alert alert-warn'},h('strong',null,'Report generation is not configured. '),'The server has no ANTHROPIC_API_KEY set. Ask your admin to add one.'),
     error&&error!=='NOT_CONFIGURED'&&h('div',{className:'alert alert-danger'},'Error: '+error),
@@ -529,51 +547,8 @@ function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,rost
   );
 }
 
-const AUDIT_ACTION_LABELS={
-  'member.setup_completed':'Completed account setup',
-  'login.success':'Logged in',
-  'admin.reset_auth':'Reset a member’s login',
-  'admin.role_granted':'Granted admin access',
-  'admin.role_revoked':'Removed admin access',
-  'admin.member_role_updated':'Changed a member’s Required/Optional status',
-  'admin.member_email_updated':'Updated a member’s email address',
-  'admin.quorum_updated':'Updated decision quorum threshold',
-  'opportunity.created':'Created opportunity',
-  'opportunity.published':'Published opportunity',
-  'opportunity.sent_to_member':'Sent opportunity to a member',
-  'opportunity.deleted':'Deleted opportunity',
-  'opportunity.closed':'Closed opportunity',
-  'opportunity.reopened':'Reopened opportunity',
-  'response.submitted':'Submitted checklist response',
-  'report.generated':'Generated IC summary report',
-  'activity.created':'Added family planning activity',
-  'activity.updated':'Updated family planning activity',
-  'activity.deleted':'Deleted family planning activity',
-};
-
-function AuditLogPage({onBack}){
-  const [entries,setEntries]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
-  useEffect(()=>{api.get('/api/admin/audit-log').then(setEntries).catch(e=>setError(e.message||'Failed to load audit log')).finally(()=>setLoading(false));},[]);
-  function memberName(id){const m=IC_MEMBERS.find(x=>x.id===id);return m?m.name:(id||'—');}
-  return h('div',{className:'page'},
-    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Audit Log')),
-    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
-    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
-    !loading&&!error&&h('div',{className:'card',style:{padding:0,overflow:'hidden'}},
-      h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
-        h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['When','Who','Action','Details'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
-        h('tbody',null,entries.map(e=>h('tr',{key:e.id,style:{borderBottom:'0.5px solid var(--border)'}},
-          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(e.at).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
-          h('td',{style:{padding:'8px 12px',fontWeight:600,color:'var(--navy)',whiteSpace:'nowrap'}},memberName(e.userId)),
-          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},AUDIT_ACTION_LABELS[e.action]||e.action),
-          h('td',{style:{padding:'8px 12px',color:'var(--muted)',fontSize:11}},Object.keys(e.details||{}).length?JSON.stringify(e.details):'')
-        )))
-      )),
-      entries.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No activity recorded yet.')
-    )
-  );
-}
-
+// Audit Log now covers both apps' actions (task.*, opportunity.*, admin.*), so it lives
+// at the top-level /admin page — same reasoning as Backups below.
 function UsagePage({onBack}){
   const [data,setData]=useState(null);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
   useEffect(()=>{api.get('/api/admin/usage').then(setData).catch(e=>setError(e.message||'Failed to load usage')).finally(()=>setLoading(false));},[]);
@@ -618,29 +593,8 @@ function UsagePage({onBack}){
   );
 }
 
-function BackupsPage({onBack}){
-  const [backups,setBackups]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [backingUp,setBackingUp]=useState(false);
-  function load(){setLoading(true);api.get('/api/admin/backups').then(setBackups).catch(e=>setError(e.message||'Failed to load backups')).finally(()=>setLoading(false));}
-  useEffect(()=>{load();},[]);
-  async function backupNow(){setBackingUp(true);setError('');try{await api.post('/api/admin/backups',{});load();}catch(e){setError(e.message||'Backup failed');}finally{setBackingUp(false);}}
-  function fmtSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';return (bytes/1024/1024).toFixed(1)+' MB';}
-  return h('div',{className:'page'},
-    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Database Backups'),h('button',{className:'btn btn-gold btn-sm',disabled:backingUp,onClick:backupNow},backingUp?'Backing up…':'✦ Backup Now')),
-    h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Automatic backups run at startup and every 24 hours — the last 14 are kept.'),
-    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
-    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
-    !loading&&h('div',{className:'card',style:{padding:0,overflow:'hidden'}},h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
-      h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Created',''].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
-      h('tbody',null,backups.map(b=>h('tr',{key:b.filename,style:{borderBottom:'0.5px solid var(--border)'}},
-        h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},b.filename),
-        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtSize(b.sizeBytes)),
-        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(b.createdAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
-        h('td',{style:{padding:'8px 12px'}},h('a',{href:'/api/admin/backups/'+encodeURIComponent(b.filename),className:'btn btn-outline btn-sm',style:{textDecoration:'none'}},'Download'))
-      )))
-    ))),
-    !loading&&backups.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No backups yet.')
-  );
-}
+// Backups are whole-database snapshots (covering both apps' data), so — like Audit Log
+// above — that page lives at the top-level /admin, not here.
 
 // Lets the initiator/admin control exactly when each family member gains access to a
 // published opportunity, instead of publishing making it visible to everyone at once.
@@ -668,79 +622,45 @@ function SharingPanel({opp,currentUser,onSend}){
   );
 }
 
-// Email is what makes "Send →" in the Sharing panel actually notify someone, rather than
-// just granting silent in-app access — kept as its own small component so each row can
-// hold its own draft-text state without the parent re-rendering every keystroke.
-function MemberEmailRow({member,onSaved}){
-  const [value,setValue]=useState(member.email||'');
-  const [saving,setSaving]=useState(false);
-  const [err,setErr]=useState('');
-  const dirty=value.trim()!==(member.email||'');
-  async function save(){
-    setSaving(true);setErr('');
-    try{const updated=await api.put(`/api/admin/members/${member.id}/email`,{email:value.trim()});onSaved(updated);}
-    catch(e){setErr(e.message||'Failed to save');}
-    finally{setSaving(false);}
-  }
-  return h('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
-    h('input',{className:'form-input',style:{fontSize:12,padding:'4px 8px',maxWidth:260},type:'email',placeholder:'Email address for notifications…',value,onChange:e=>setValue(e.target.value)}),
-    dirty&&h('button',{className:'btn btn-outline btn-sm',disabled:saving,onClick:save},saving?'Saving…':'Save'),
-    err&&h('span',{style:{fontSize:11,color:'#991B1B'}},err)
-  );
+function DDRoleSelect({value,onChange,disabled}){
+  return h('select',{style:{fontSize:11,padding:'3px 6px',borderRadius:6,border:'0.5px solid var(--border)'},value,disabled,onChange:e=>onChange(e.target.value)},
+    h('option',{value:'admin'},'Admin'),h('option',{value:'member'},'Member'),h('option',{value:'viewer'},'Viewer'));
 }
 
-function MembersPage({onBack,currentUser,onQuorumChange,onMemberUpdated}){
-  const [members,setMembers]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
-  const [resetting,setResetting]=useState(null);const [resetCode,setResetCode]=useState(null);
-  const [adminBusy,setAdminBusy]=useState(null);const [typeBusy,setTypeBusy]=useState(null);
+// Account-level actions (add/deactivate a member, Family Office admin, password reset)
+// live at the top-level /admin page — those are Family Office-wide, not Due Diligence
+// concerns. This page holds what's actually administered *for this app*: the Decision
+// Quorum setting, who's a Due Diligence admin/member/viewer, and who's Required for
+// quorum. Any Due Diligence admin can make these changes, not only Family Office admins.
+function DDSettingsPage({onBack,roster,onQuorumChange,onRosterUpdated}){
   const [quorum,setQuorum]=useState(null);const [quorumInput,setQuorumInput]=useState('');const [quorumSaving,setQuorumSaving]=useState(false);const [quorumError,setQuorumError]=useState('');
-  function load(){setLoading(true);api.get('/api/admin/members?_='+Date.now()).then(setMembers).catch(e=>setError(e.message||'Failed to load members')).finally(()=>setLoading(false));}
-  useEffect(()=>{load();api.get('/api/settings').then(s=>{setQuorum(s.quorumThreshold);setQuorumInput(String(s.quorumThreshold));}).catch(()=>{});},[]);
-  const requiredCount=members.filter(m=>m.role==='Required').length;
-  async function resetAuth(m){if(!window.confirm(`Generate a new setup code for ${m.name}? This replaces their password and 2FA.`))return;setResetting(m.id);setResetCode(null);try{const res=await api.post(`/api/admin/reset-auth/${m.id}`,{});setResetCode({name:m.name,code:res.setupCode});}catch(e){alert(e.message||'Failed to reset');}finally{setResetting(null);}}
-  async function toggleAdmin(m){
-    const makingAdmin=!m.isAdmin;
-    const msg=makingAdmin?`Make ${m.name} an admin? They'll be able to close/reopen opportunities, reset logins, and manage other members' roles.`:`Remove admin access from ${m.name}?`;
-    if(!window.confirm(msg))return;
-    setAdminBusy(m.id);
-    try{const updated=await api.put(`/api/admin/members/${m.id}/admin`,{isAdmin:makingAdmin});setMembers(list=>list.map(x=>x.id===m.id?updated:x));onMemberUpdated&&onMemberUpdated(updated);}
-    catch(e){alert(e.message||'Failed to update admin status');}
-    finally{setAdminBusy(null);}
-  }
-  async function toggleMemberType(m){
-    const makingOptional=m.role==='Required';
-    const msg=makingOptional?`Make ${m.name} Optional? They'll no longer count toward the required quorum.`:`Make ${m.name} Required?`;
-    if(!window.confirm(msg))return;
-    setTypeBusy(m.id);
-    try{const updated=await api.put(`/api/admin/members/${m.id}/role`,{role:makingOptional?'Optional':'Required'});setMembers(list=>list.map(x=>x.id===m.id?updated:x));onMemberUpdated&&onMemberUpdated(updated);}
-    catch(e){alert(e.message||'Failed to update member type');}
-    finally{setTypeBusy(null);}
-  }
+  const [roleBusy,setRoleBusy]=useState(null);const [typeBusy,setTypeBusy]=useState(null);
+  useEffect(()=>{api.get('/api/settings').then(s=>{setQuorum(s.quorumThreshold);setQuorumInput(String(s.quorumThreshold));}).catch(()=>{});},[]);
+  const requiredCount=(roster||[]).filter(m=>m.role==='Required'&&m.isActive!==false).length;
   async function saveQuorum(){
     setQuorumSaving(true);setQuorumError('');
     try{const res=await api.put('/api/admin/settings/quorum',{quorumThreshold:Number(quorumInput)});setQuorum(res.quorumThreshold);onQuorumChange&&onQuorumChange(res.quorumThreshold);}
     catch(e){setQuorumError(e.message||'Failed to update quorum threshold');}
     finally{setQuorumSaving(false);}
   }
+  async function setDdRole(m,role){
+    setRoleBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/app-role`,{app:'dd',role});onRosterUpdated&&onRosterUpdated(updated);}
+    catch(e){alert(e.message||'Failed to update role');}
+    finally{setRoleBusy(null);}
+  }
+  async function toggleMemberType(m){
+    const makingOptional=m.role==='Required';
+    const msg=makingOptional?`Make ${m.name} Optional? They'll no longer count toward the required quorum.`:`Make ${m.name} Required?`;
+    if(!window.confirm(msg))return;
+    setTypeBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/role`,{role:makingOptional?'Optional':'Required'});onRosterUpdated&&onRosterUpdated(updated);}
+    catch(e){alert(e.message||'Failed to update member type');}
+    finally{setTypeBusy(null);}
+  }
   return h('div',{className:'page'},
-    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Manage Members')),
-    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
-    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
-    !loading&&!error&&h('div',{className:'card',style:{padding:0,overflow:'hidden',marginBottom:16}},
-      members.map((m,i)=>h('div',{key:m.id,style:{padding:'12px 16px',borderBottom:i<members.length-1?'0.5px solid var(--border)':'none'}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',marginBottom:8}},
-          h('div',{style:{width:30,height:30,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),
-          h('div',{style:{flex:1,minWidth:120}},h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)'}},m.name+(m.id===currentUser.id?' (you)':'')),h('div',{style:{fontSize:11,color:'var(--muted)'}},m.role+(m.needsSetup?' · Not yet set up':''))),
-          h('span',{className:'badge',style:m.isAdmin?{background:'var(--teal-l)',color:'var(--teal)'}:{background:'var(--bg)',color:'var(--muted)'}},m.isAdmin?'Admin':'Member'),
-          h('button',{className:'btn btn-outline btn-sm',disabled:typeBusy===m.id,onClick:()=>toggleMemberType(m)},typeBusy===m.id?'…':(m.role==='Required'?'Make Optional':'Make Required')),
-          h('button',{className:'btn btn-outline btn-sm',disabled:adminBusy===m.id,onClick:()=>toggleAdmin(m)},adminBusy===m.id?'…':(m.isAdmin?'Remove Admin':'Make Admin')),
-          h('button',{className:'btn btn-outline btn-sm',disabled:resetting===m.id,onClick:()=>resetAuth(m)},resetting===m.id?'…':'Reset Login')
-        ),
-        h(MemberEmailRow,{member:m,onSaved:updated=>{setMembers(list=>list.map(x=>x.id===m.id?updated:x));onMemberUpdated&&onMemberUpdated(updated);}})
-      ))
-    ),
-    resetCode&&h('div',{className:'alert alert-success',style:{marginTop:-4,marginBottom:16}},'New one-time code for ',h('strong',null,resetCode.name),': ',h('code',{style:{fontSize:13}},resetCode.code),h('div',{style:{color:'var(--muted)',marginTop:4,fontSize:11}},'Share this with them — it replaces their password and 2FA.')),
-    !loading&&!error&&h('div',{className:'card'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Due Diligence Settings')),
+    h('div',{className:'card'},
       h('div',{className:'card-title'},'Decision Quorum'),
       h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'How many Required members must submit their review before an opportunity has quorum for decision-making. Currently '+requiredCount+' member'+(requiredCount===1?'':'s')+' '+(requiredCount===1?'is':'are')+' Required.'),
       h('div',{style:{display:'flex',gap:8,alignItems:'center'}},
@@ -750,6 +670,16 @@ function MembersPage({onBack,currentUser,onQuorumChange,onMemberUpdated}){
       ),
       quorum!=null&&h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:8}},'Current threshold: '+quorum),
       quorumError&&h('div',{style:{fontSize:12,color:'#991B1B',marginTop:8}},quorumError)
+    ),
+    h('div',{className:'card',style:{padding:0,overflow:'hidden'}},
+      h('div',{style:{padding:'16px 16px 0'}},h('div',{className:'card-title'},'Member Roles')),
+      (roster||[]).filter(m=>m.isActive!==false).map((m,i,arr)=>h('div',{key:m.id,style:{padding:'10px 16px',borderBottom:i<arr.length-1?'0.5px solid var(--border)':'none',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
+        h('div',{style:{width:26,height:26,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),
+        h('div',{style:{flex:1,minWidth:100,fontSize:13,fontWeight:600,color:'var(--navy)'}},m.name),
+        h('button',{className:'btn btn-outline btn-sm',disabled:typeBusy===m.id,onClick:()=>toggleMemberType(m)},typeBusy===m.id?'…':(m.role==='Required'?'Make Optional':'Make Required')),
+        h(DDRoleSelect,{value:m.ddRole,disabled:roleBusy===m.id,onChange:role=>setDdRole(m,role)})
+      )),
+      h('p',{style:{fontSize:11,color:'var(--muted)',padding:'10px 16px'}},'Adding/deactivating members and Family Office admin access are managed on the ',h('a',{href:'/admin',style:{color:'var(--teal)'}},'Manage Members'),' page.')
     )
   );
 }
@@ -843,7 +773,7 @@ function OppCard({opp,currentUser,setPage,setActiveOpp,onToggleStatus,onDelete,q
   const myR=opp.responses[currentUser.id];const started=Object.keys(myR?.responses||{}).length>0;const myStatus=myR?.submitted?'Submitted':started?'In Progress':'Not Started';const myBadge={Submitted:'badge-sub','In Progress':'badge-ip','Not Started':'badge-ns'};const requiredMembers=(roster||IC_MEMBERS).filter(m=>m.role==='Required');const reqSub=requiredMembers.filter(m=>opp.responses[m.id]?.submitted).length;const quorumMet=reqSub>=quorumThreshold;const closed=opp.status==='closed';const isDraft=opp.status==='draft';const canManage=opp.initiatedBy===currentUser.id||currentUser.ddAdmin;const canPublish=isDraft&&canManage;
   const others=IC_MEMBERS.filter(m=>m.id!==opp.initiatedBy);const sentCount=others.filter(m=>opp.responses[m.id]?.sentAt).length;
   function publish(){if(!window.confirm('Publish this opportunity? It becomes active, and you can then send it to each family member individually, on your own schedule.'))return;onToggleStatus(opp.id,'open');}
-  function toggle(){const next=closed?'open':'closed';if(!window.confirm(closed?'Reopen this opportunity for editing?':'Close this opportunity? Responses become read-only for everyone until reopened.'))return;onToggleStatus(opp.id,next);}
+  function toggle(){const next=closed?'open':'closed';if(!window.confirm(closed?'Reopen this opportunity for editing?':'Close this opportunity? Responses become read-only, and a final report will be generated and emailed to the whole family.'))return;onToggleStatus(opp.id,next);}
   function del(){if(!window.confirm(`Permanently delete "${opp.title}"? This removes it and everyone's responses. This cannot be undone.`))return;onDelete(opp.id);}
   return h('div',{className:`opp-card ${closed?'bl-teal':'bl-teal'}`,style:closed?{opacity:.75}:null},h('div',null,h('div',{className:'opp-name'},opp.title),h('div',{className:'opp-meta'},h('span',{className:`badge ${isDraft?'badge-draft':closed?'badge-ns':'badge-open'}`},isDraft?'✎ Draft':closed?'🔒 Closed':'Open'),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,opp.assetClass),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,fmtMoney(opp.commitment,opp.currency)),h('span',{style:{color:'var(--border)'}},'\u00b7'),h('span',null,'Due '+fmtDate(opp.deadline))),isDraft?h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:3}},'Only visible to you until you publish it.'):h(React.Fragment,null,h('div',{className:'prog-bar'},h('div',{className:'prog-fill',style:{width:`${(reqSub/requiredMembers.length)*100}%`}})),h('div',{style:{fontSize:11,color:quorumMet?'var(--teal)':'var(--muted)',marginTop:3,fontWeight:quorumMet?600:400}},reqSub+'/'+requiredMembers.length+' required members submitted'+(quorumMet?' · Quorum reached ✓':' · Quorum: '+quorumThreshold)),canManage&&h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:2}},'Shared with '+sentCount+'/'+others.length+' family members'))),h('div',{style:{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-end'}},!isDraft&&h('span',{className:`badge ${myBadge[myStatus]}`},myStatus),h('button',{className:'btn btn-teal btn-sm',onClick:()=>{setActiveOpp(opp);setPage('checklist')}},closed?'View →':isDraft?'Continue Draft →':'Start Review →'),canPublish&&h('button',{className:'btn btn-gold btn-sm',onClick:publish},'Publish →'),!isDraft&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>{setActiveOpp(opp);setPage('report')}},'📄 View Report'),!isDraft&&currentUser.ddAdmin&&h('button',{className:'btn btn-outline btn-sm',onClick:toggle},closed?'Reopen':'Close'),currentUser.ddAdmin&&h('button',{className:'btn btn-outline btn-sm',style:{color:'#991B1B',borderColor:'#F3D6D6'},onClick:del},'🗑 Delete')));
 }
@@ -925,7 +855,7 @@ function Login({onLogin}){
 
       step==='select'&&h('div',null,
         h('div',{className:'form-label',style:{marginBottom:6}},'Who are you?'),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:6}},members.map(m=>h('button',{key:m.id,type:'button',onClick:()=>selectMember(m),style:{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:7,border:'0.5px solid var(--border)',cursor:'pointer',background:'#fff',textAlign:'left'}},h('div',{style:{width:26,height:26,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),h('span',{style:{fontSize:13,color:'var(--navy)',flex:1}},m.name),m.needsSetup&&h('span',{style:{fontSize:10,color:'var(--gold)',fontWeight:600}},'SET UP'))))
+        h('div',{style:{display:'flex',flexDirection:'column',gap:6}},members.filter(m=>m.isActive!==false).map(m=>h('button',{key:m.id,type:'button',onClick:()=>selectMember(m),style:{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:7,border:'0.5px solid var(--border)',cursor:'pointer',background:'#fff',textAlign:'left'}},h('div',{style:{width:26,height:26,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),h('span',{style:{fontSize:13,color:'var(--navy)',flex:1}},m.name),m.needsSetup&&h('span',{style:{fontSize:10,color:'var(--gold)',fontWeight:600}},'SET UP'))))
       ),
 
       step==='password'&&h('form',{onSubmit:submitPassword},
@@ -975,7 +905,8 @@ function App(){
   function loadActivities(){api.get('/api/activities').then(setActivities).catch(()=>{});}
   // roster mirrors IC_MEMBERS but with live role/isAdmin from the server — the static
   // constant only has the fixed shape (id/name/color/initials) baked in at build time, so
-  // Required/Optional changes made on the Manage Members page wouldn't otherwise show up
+  // Required/Optional changes made on the top-level /admin Manage Members page wouldn't
+  // otherwise show up
   // in quorum calculations elsewhere without a full page reload.
   useEffect(()=>{if(user){loadOpportunities();loadActivities();api.get('/api/settings').then(s=>setQuorumThreshold(s.quorumThreshold)).catch(()=>{});api.get('/api/members?_='+Date.now()).then(setRoster).catch(()=>{});}},[user]);
   async function sendToMember(oppId,userId){const res=await api.post(`/api/opportunities/${oppId}/send/${userId}`,{});const patch=o=>o&&o.id===oppId?{...o,responses:{...o.responses,[userId]:{...o.responses[userId],sentAt:res.sentAt}}}:o;setOpportunities(list=>list.map(patch));setOpp(patch);return res;}
@@ -986,7 +917,27 @@ function App(){
   async function submit(uid,data){await save(uid,data);setPage('dashboard');loadOpportunities();}
   async function logout(){await api.post('/api/logout');setUser(null);setOpp(null);setPage('dashboard');}
   async function createOpportunity(payload){const created=await api.post('/api/opportunities',payload);setOpportunities(list=>[created,...list]);setOpp(created);setShowNew(false);setPage('checklist');}
-  async function toggleStatus(id,status){const updated=await api.put(`/api/opportunities/${id}/status`,{status});setOpportunities(list=>list.map(o=>o.id===id?{...o,status:updated.status}:o));setOpp(o=>o&&o.id===id?{...o,status:updated.status}:o);}
+  async function toggleStatus(id,status){
+    if(status==='closed'){
+      // Closing triggers the final, whole-family notification server-side — generate a
+      // fresh report first so it reflects the truly final state, not a stale earlier draft.
+      const target=opportunities.find(o=>o.id===id)||(opp&&opp.id===id?opp:null);
+      if(target){
+        try{
+          const ca=computeClaudeAnswers(target,activities);
+          const allQuestions=SECTIONS.flatMap(s=>s.questions);
+          const autoAnswers={};
+          allQuestions.filter(q=>q.mode!=='human').forEach(q=>{const a=ca[q.id];if(a)autoAnswers[q.id]={display:a.display,rationale:a.rationale};});
+          const questions=allQuestions.map(q=>({id:q.id,text:q.text}));
+          const members=IC_MEMBERS.map(m=>{const r=target.responses[m.id]||{};return{name:m.name,submitted:!!r.submitted,recommendation:r.recommendation,overall:r.overall,followUp:r.followUp,responses:r.responses};});
+          await generateReport(id,{questions,autoAnswers,members,totalCAD:PORT.totalCAD});
+        }catch(e){console.error('Failed to generate final report before closing:',e.message);}
+      }
+    }
+    const updated=await api.put(`/api/opportunities/${id}/status`,{status});
+    setOpportunities(list=>list.map(o=>o.id===id?{...o,status:updated.status}:o));
+    setOpp(o=>o&&o.id===id?{...o,status:updated.status}:o);
+  }
   async function updateOpportunity(id,payload){const updated=await api.put(`/api/opportunities/${id}`,payload);setOpportunities(list=>list.map(o=>o.id===id?updated:o));setOpp(o=>o&&o.id===id?updated:o);}
   async function deleteOpportunity(id){await api.del(`/api/opportunities/${id}`);setOpportunities(list=>list.filter(o=>o.id!==id));setOpp(o=>o&&o.id===id?null:o);}
   async function generateReport(id,payload){const report=await api.post(`/api/opportunities/${id}/report`,payload);setOpportunities(list=>list.map(o=>o.id===id?{...o,report}:o));setOpp(o=>o&&o.id===id?{...o,report}:o);return report;}
@@ -994,17 +945,16 @@ function App(){
   if(checkingAuth)return h('div',{style:{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--muted)'}},'Loading…');
   if(!user)return h(Login,{onLogin:handleLogin});
   return h('div',null,
-    h('nav',{className:'nav'},h('div',{className:'nav-brand'},h('a',{href:'/',style:{color:'#fff',textDecoration:'none'}},'Robinson Family Office'),h('span',null,'PQ Due Diligence'),h('a',{href:'/tasks',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Family Task List →')),h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},user.name.split(' ')[0],' ',h('span',{className:'nav-badge'},user.role)),
+    h('nav',{className:'nav'},h('div',{className:'nav-brand'},h('a',{href:'/',style:{color:'#fff',textDecoration:'none'}},'Robinson Family Office'),h('span',null,'PQ Due Diligence'),h('a',{href:'/tasks',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Family Task List →'),h('a',{href:'/meetings',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Meetings →')),h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},user.name.split(' ')[0],' ',h('span',{className:'nav-badge'},user.role)),
       showMenu&&h('div',{style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:230,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},h('div',{style:{padding:'8px 10px 2px',fontSize:13,fontWeight:600,color:'var(--navy)'}},user.name),h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},user.role+(user.isAdmin?' · Admin':'')),
-        user.isAdmin&&h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('members');setShowMenu(false);}},'👥 Manage Members'),
-        user.isAdmin&&h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('audit-log');setShowMenu(false);}},'📋 View Audit Log'),
+        user.ddAdmin&&h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('dd-settings');setShowMenu(false);}},'⚙ Due Diligence Settings'),
+        user.isAdmin&&h('a',{href:'/admin',style:{display:'block',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'👥 Manage Members / Audit Log / Backups'),
         user.isAdmin&&h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('usage');setShowMenu(false);}},'💰 API Usage'),
-        user.isAdmin&&h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'var(--navy)',fontWeight:600},onClick:()=>{setPage('backups');setShowMenu(false);}},'🗄 Backups'),
         h('a',{href:'/',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'🏠 RFO Home'),
         h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out'))
     ),
     h('div',{className:'legend-bar'},h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)'}}),h('span',null,'Claude auto-answered')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--teal)'}}),h('span',null,'Claude data / suggests')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--gold)'}}),h('span',null,'Your judgment')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'#DC2626'}}),h('span',null,'Gating')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)',opacity:.5}}),h('span',null,'🔍 Live web research'))),
-    h('div',{onClick:()=>showMenu&&setShowMenu(false)},page==='dashboard'&&h(Dashboard,{currentUser:user,opportunities,loading:loadingOpps,setPage,setActiveOpp:setOpp,openNewModal:()=>setShowNew(true),onToggleStatus:toggleStatus,onDelete:deleteOpportunity,quorumThreshold,roster}),page==='checklist'&&opp&&h(ChecklistPage,{opp,currentUser:user,onSave:save,onSubmit:submit,onBack:()=>setPage('dashboard'),activities,onCreateActivity:createActivity,onUpdateActivity:updateActivity,onDeleteActivity:deleteActivity,onUpdateOpportunity:updateOpportunity,onToggleStatus:toggleStatus,onViewReport:()=>setPage('report'),onSendTo:sendToMember}),page==='report'&&opp&&h(ReportPage,{opp,activities,onBack:()=>setPage('dashboard'),onGenerateReport:generateReport,quorumThreshold,roster}),page==='audit-log'&&h(AuditLogPage,{onBack:()=>setPage('dashboard')}),page==='usage'&&h(UsagePage,{onBack:()=>setPage('dashboard')}),page==='backups'&&h(BackupsPage,{onBack:()=>setPage('dashboard')}),page==='members'&&h(MembersPage,{onBack:()=>setPage('dashboard'),currentUser:user,onQuorumChange:setQuorumThreshold,onMemberUpdated:u=>setRoster(list=>list.map(x=>x.id===u.id?u:x))})),
+    h('div',{onClick:()=>showMenu&&setShowMenu(false)},page==='dashboard'&&h(Dashboard,{currentUser:user,opportunities,loading:loadingOpps,setPage,setActiveOpp:setOpp,openNewModal:()=>setShowNew(true),onToggleStatus:toggleStatus,onDelete:deleteOpportunity,quorumThreshold,roster}),page==='checklist'&&opp&&h(ChecklistPage,{opp,currentUser:user,onSave:save,onSubmit:submit,onBack:()=>setPage('dashboard'),activities,onCreateActivity:createActivity,onUpdateActivity:updateActivity,onDeleteActivity:deleteActivity,onUpdateOpportunity:updateOpportunity,onToggleStatus:toggleStatus,onViewReport:()=>setPage('report'),onSendTo:sendToMember}),page==='report'&&opp&&h(ReportPage,{opp,activities,onBack:()=>setPage('dashboard'),onGenerateReport:generateReport,quorumThreshold,roster}),page==='usage'&&h(UsagePage,{onBack:()=>setPage('dashboard')}),page==='dd-settings'&&h(DDSettingsPage,{onBack:()=>setPage('dashboard'),roster,onQuorumChange:setQuorumThreshold,onRosterUpdated:u=>setRoster(list=>list.map(x=>x.id===u.id?u:x))})),
     showNew&&h(NewOpportunityModal,{onClose:()=>setShowNew(false),onSubmit:createOpportunity,currentUser:user})
   );
 }

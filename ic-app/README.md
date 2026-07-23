@@ -1,6 +1,6 @@
 # RFO — backend + app
 
-This is the Robinson Family Office umbrella app: one server, one login, and two
+This is the Robinson Family Office umbrella app: one server, one login, and three
 applications under it —
 
 - **PQ Introduced Due Diligence** (`/due-diligence`) — the IC checklist app for
@@ -10,9 +10,17 @@ applications under it —
 - **Family Task List** (`/tasks`) — a shared, prioritized task tracker (Strategy /
   People / Core Business / Operations), seeded from the family's
   `Family_Office_Task_List_2026 Q2.xlsx`, with its own scheduled email digest.
+- **Family Office Meetings** (`/meetings`) — schedule a meeting with an agenda and
+  planned attendees, optionally emailing family attendees a Teams calendar invite on a
+  chosen date; record minutes against the agenda during the meeting (discussion summary,
+  decisions, family/non-family action items); mark the meeting complete to email the
+  finished minutes to every family attendee. A family action item recorded in the
+  minutes creates a real task in the Family Task List. See
+  `RFO_Meetings_App_BuildSpec_v1.docx` for the full build spec.
 
-`/` is the RFO home page — sign in once, land there, and pick an app. Both apps share
-the same accounts, sessions, and database (`data/ic.db`); there is no second login.
+`/` is the RFO home page — sign in once, land there, and pick an app. All three apps
+share the same accounts, sessions, and database (`data/ic.db`); there is no second
+login.
 
 ## What changed vs. the old single-file HTML
 
@@ -75,10 +83,10 @@ for the full rationale):
 
 - **Family Office Administrator** (`users.is_fo_admin`) — family-office-wide: add/delete
   members, reset a lost password/2FA. Reg and Sheri-Dawn hold this today.
-- **Per-application role** (`users.dd_role`, `users.tasks_role`, each `admin` / `member`
-  / `viewer`) — independent per app. An FO admin is always also an admin of both apps.
-  Set from the "Manage Members" page, or directly via
-  `PUT /api/admin/members/:userId/app-role`.
+- **Per-application role** (`users.dd_role`, `users.tasks_role`, `users.meetings_role`,
+  each `admin` / `member` / `viewer`) — independent per app. An FO admin is always also
+  an admin of every app. Set from each app's own "Roles" panel, or directly via
+  `PUT /api/admin/members/:userId/app-role` (`app` is `dd`, `tasks`, or `meetings`).
 
 ### One-off task import
 
@@ -95,7 +103,7 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 ## Data model
 
 - `users` — the 4 IC members, with a hashed passcode each, plus `is_fo_admin`,
-  `dd_role`, and `tasks_role` (see Permissions above).
+  `dd_role`, `tasks_role`, and `meetings_role` (see Permissions above).
 - `opportunities` — one row per fund/manager under review (title, asset class,
   commitment, the PQ data extracted from the research PDF, etc). Editable after
   creation via "Edit Details" on the checklist page — restricted to the opportunity's
@@ -126,6 +134,18 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   "assigned to All."
 - `settings` — generic key/value store, also used for the Task List's digest cadence
   (`task_digest_cadence`, `task_digest_day_of_week`, etc. — see `server/digest.js`).
+- `meetings` — one row per scheduled/held meeting (title, planned date/time, duration,
+  status `planned`/`completed`/`cancelled`, optional `invite_send_date`, and the
+  Microsoft Graph event id/Teams join link once an invite has gone out).
+- `meeting_attendees` — a meeting's planned attendees: either a family member
+  (`user_id`) or an external invitee (`external_name`/`external_email`).
+- `agenda_items` — one row per agenda item on a meeting, with `discussion_summary`
+  filled in while recording minutes and `added_during_minutes` marking items added on
+  the fly during the meeting rather than planned in advance.
+- `meeting_decisions` / `meeting_action_items` — decisions and action items recorded
+  against an agenda item. An action item is either a family action item (has an
+  `assignee_user_id` and a `task_id` pointing at the Family Task List task it created)
+  or a non-family action item (free-text `assignee_name`, no task created).
 
 ## Scheduled Task List digest
 
@@ -136,11 +156,33 @@ quarters, then unscheduled — via the same Microsoft Graph mailer used for Due 
 notifications. A Task List admin sets cadence/day/hour/timezone from the "Digest
 Settings" panel on `/tasks`.
 
+## Meetings module
+
+Schedule a meeting (`/meetings`) with an agenda, planned attendees, and an optional
+invite send date. If set, `server/meetings-scheduler.js` runs an hourly sweep
+(`startMeetingsScheduler`, same pattern as the Task List digest) that creates a real
+Microsoft Teams meeting via the Graph Calendar API (`server/graph-calendar.js`) and
+emails a calendar invite to the meeting's **family** attendees only — external attendees
+are never auto-invited by the app. This needs the Azure App Registration already used
+for `MS_GRAPH_*` mail to also be granted the **`Calendars.ReadWrite` application
+permission**, admin-consented and scoped to `MS_GRAPH_SENDER` via the same Exchange
+Application Access Policy documented below for Mail.Send — no new environment variables
+are required. An admin can also trigger the invite immediately via "Send Invite Now."
+
+During the meeting, anyone with Meetings member/admin access records minutes against
+each agenda item (discussion summary, decisions, family/non-family action items) and
+can add new agenda items on the fly. Saving a family action item immediately creates a
+linked task in the Family Task List, filed under whichever existing task category the
+person recording minutes picks. When a Meetings admin marks the meeting complete, the
+finished minutes are emailed to every family attendee; a completed meeting's minutes can
+still be edited by an admin afterward, and re-sent via "Resend Minutes" (it is not
+resent automatically). See `RFO_Meetings_App_BuildSpec_v1.docx` for the full spec.
+
 ## Deploying so the family can reach it
 
 This is a single Node process serving both the API and the static frontend
-(`public/home.html`, `public/due-diligence.html`, `public/tasks.html`), so any Node host
-works. Two things matter for hosting choice:
+(`public/home.html`, `public/due-diligence.html`, `public/tasks.html`,
+`public/meetings.html`), so any Node host works. Two things matter for hosting choice:
 
 1. **Persistent disk** — `data/ic.db` needs to survive restarts/redeploys. Serverless
    platforms (Vercel, Netlify functions) won't work as-is without swapping SQLite for a

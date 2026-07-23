@@ -3,6 +3,10 @@
 // the family's existing Microsoft 365 tenant instead of adding a third-party mail vendor.
 // Requires an Azure App Registration with an application-level Mail.Send permission,
 // scoped (via an Exchange Application Access Policy) to the sending mailbox only.
+// The Meetings module's Teams invites (server/graph-calendar.js) reuse this same
+// registration's token and additionally need the Calendars.ReadWrite application
+// permission granted on it, scoped the same way — no separate app registration or
+// environment variables needed for that.
 
 const TENANT_ID = process.env.MS_GRAPH_TENANT_ID;
 const CLIENT_ID = process.env.MS_GRAPH_CLIENT_ID;
@@ -68,4 +72,8 @@ async function sendMail({ to, subject, html }) {
   }
 }
 
-module.exports = { sendMail, isConfigured, MailNotConfiguredError };
+// Exported so server/graph-calendar.js (Meetings module Teams invites) can reuse the
+// same app-only token rather than authenticating a second time — Graph's ".default"
+// scope covers every permission granted on this app registration, Mail.Send and
+// Calendars.ReadWrite alike, so one cached token serves both.
+module.exports = { sendMail, isConfigured, getAccessToken, MailNotConfiguredError };

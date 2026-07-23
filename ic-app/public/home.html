@@ -45,6 +45,11 @@ async function init() {
     location.href = '/due-diligence?returnTo=' + encodeURIComponent('/');
     return;
   }
+  const adminTile = user.isAdmin ? `
+        <a class="tile" href="/admin">
+          <div class="tile-title">Manage Members</div>
+          <div class="tile-desc">Family Office administration — add or deactivate members, set admin access and app-level roles, reset logins.</div>
+        </a>` : '';
   document.getElementById('root').innerHTML = `
     <nav class="nav">
       <div class="nav-brand">Robinson Family Office</div>
@@ -62,6 +67,10 @@ async function init() {
           <div class="tile-title">Family Task List</div>
           <div class="tile-desc">Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.</div>
         </a>
+        <a class="tile" href="/meetings">
+          <div class="tile-title">Family Office Meetings</div>
+          <div class="tile-desc">Schedule meetings with an agenda, send Teams invitations to family attendees, and record minutes.</div>
+        </a>${adminTile}
       </div>
     </div>
   `;

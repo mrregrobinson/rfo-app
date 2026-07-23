@@ -20,6 +20,8 @@ const { runBackup, listBackups, scheduleBackups, BACKUPS_DIR } = require('./back
 const mailer = require('./mailer');
 const registerTaskRoutes = require('./tasks');
 const { startDigestScheduler } = require('./digest');
+const registerMeetingRoutes = require('./meetings');
+const { startMeetingsScheduler } = require('./meetings-scheduler');
 
 ensureSeeded();
 scheduleBackups();
@@ -34,7 +36,7 @@ try {
   console.error('Task list import failed:', err.message);
 }
 
-const APP_BASE_URL = process.env.APP_BASE_URL || 'https://ic.quaysolutions.ca';
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 
 const SESSIONS_DIR = path.join(__dirname, '..', 'data', 'sessions');
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -63,6 +65,14 @@ app.use(
         frameAncestors: ["'none'"],
       },
     },
+    // Helmet's default Cross-Origin-Opener-Policy ("same-origin") severs window.opener
+    // between this page and any popup it opens to another origin — which silently
+    // breaks the Google Identity Services sign-in popup used by "Add to Google Tasks":
+    // the user completes sign-in on Google's side, but the popup has no way to report
+    // that back, so it just closes and GIS reports it as "popup_closed".
+    // "same-origin-allow-popups" keeps the same protection but preserves that link for
+    // popups the page itself opened.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   })
 );
 
@@ -144,7 +154,10 @@ function userPublic(row) {
     ddRole: row.dd_role,
     tasksAdmin: isFoAdmin || row.tasks_role === 'admin',
     tasksRole: row.tasks_role,
+    meetingsAdmin: isFoAdmin || row.meetings_role === 'admin',
+    meetingsRole: row.meetings_role,
     needsSetup: !row.password_hash,
+    isActive: !!row.is_active,
   };
 }
 
@@ -227,6 +240,7 @@ app.post('/api/auth/claim-account', loginLimiter, async (req, res) => {
   const { userId, setupCode, newPassword } = req.body || {};
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!row) return res.status(404).json({ error: 'Member not found' });
+  if (!row.is_active) return res.status(403).json({ error: 'This account has been deactivated.' });
   if (row.password_hash) return res.status(400).json({ error: 'This account is already set up — use the normal sign-in.' });
   if (!verifySecret(setupCode || '', row.setup_code_hash)) {
     return res.status(400).json({ error: 'Invalid setup code' });
@@ -279,6 +293,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
   const { userId, password } = req.body || {};
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!row) return res.status(400).json({ error: 'Invalid member or password' });
+  if (!row.is_active) return res.status(403).json({ error: 'This account has been deactivated.' });
   if (!row.password_hash) return res.status(400).json({ error: 'NEEDS_SETUP', message: 'This account has not been set up yet — use your one-time setup code.' });
   if (isLocked(row)) return res.status(423).json({ error: lockMessage(row) });
   if (!verifySecret(password || '', row.password_hash)) {
@@ -380,26 +395,86 @@ app.put('/api/admin/members/:userId/admin', requireAuth, (req, res) => {
 });
 
 // Sets a member's per-application role (Section 4.2) — independent of FO admin status.
+// App-level roles are administered within each app, by that app's own admins — not
+// exclusively by Family Office admins (an FO admin can still always do this, since FO
+// admin is a superset of both). See the "top level vs. app level" reorganization: this
+// route is called from due-diligence.html (app='dd') and tasks.html (app='tasks').
 app.put('/api/admin/members/:userId/app-role', requireAuth, (req, res) => {
-  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
-  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
   const { app: appName, role } = req.body || {};
-  if (!['dd', 'tasks'].includes(appName)) return res.status(400).json({ error: 'app must be "dd" or "tasks"' });
+  if (!['dd', 'tasks', 'meetings'].includes(appName)) return res.status(400).json({ error: 'app must be "dd", "tasks", or "meetings"' });
   if (!['admin', 'member', 'viewer'].includes(role)) return res.status(400).json({ error: 'role must be admin, member, or viewer' });
+  const me = db.prepare('SELECT is_fo_admin, dd_role, tasks_role, meetings_role FROM users WHERE id = ?').get(req.session.userId);
+  const column = appName === 'dd' ? 'dd_role' : appName === 'tasks' ? 'tasks_role' : 'meetings_role';
+  const isAppAdmin = !!me && (me.is_fo_admin || me[column] === 'admin');
+  const appLabel = appName === 'dd' ? 'Due Diligence' : appName === 'tasks' ? 'Task List' : 'Meetings';
+  if (!isAppAdmin) return res.status(403).json({ error: `${appLabel} admin only` });
   const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.userId);
   if (!target) return res.status(404).json({ error: 'Member not found' });
-  const column = appName === 'dd' ? 'dd_role' : 'tasks_role';
   db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(role, req.params.userId);
   logAudit({ userId: req.session.userId, action: 'admin.app_role_updated', entityType: 'user', entityId: req.params.userId, details: { app: appName, role } });
   res.json(userPublic(db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId)));
 });
 
+const MEMBER_COLORS = ['#1B2A4A', '#2A7D7B', '#C9A84C', '#7C3AED', '#B45309', '#0E7490', '#9D174D', '#166534'];
+
+function initialsFromName(name) {
+  const parts = name.trim().split(/\s+/);
+  const letters = parts.length >= 2 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2);
+  return letters.toUpperCase();
+}
+
+// FO-admin-only: adds a new family member. Defaults to Optional/member/member — an
+// FO admin grants FO-admin or app-admin rights afterward via the routes above, rather
+// than a brand-new account starting with elevated access. Returns a one-time setup
+// code, same as the reset-auth flow — shown once, relayed to the new member directly.
+app.post('/api/admin/members', requireAuth, (req, res) => {
+  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  const name = (req.body?.name || '').trim();
+  const email = (req.body?.email || '').trim();
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (email && !EMAIL_RE.test(email)) return res.status(400).json({ error: 'That doesn\'t look like a valid email address.' });
+  const id = crypto.randomUUID();
+  const existingCount = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  const color = MEMBER_COLORS[existingCount % MEMBER_COLORS.length];
+  db.prepare('INSERT INTO users (id, name, role, initials, color, email) VALUES (?, ?, ?, ?, ?, ?)').run(
+    id, name, 'Optional', initialsFromName(name), color, email || null
+  );
+  const setupCode = issueSetupCode(id);
+  logAudit({ userId: req.session.userId, action: 'admin.member_added', entityType: 'user', entityId: id, details: { name } });
+  res.status(201).json({ ...userPublicAdmin(db.prepare('SELECT * FROM users WHERE id = ?').get(id)), setupCode });
+});
+
+// FO-admin-only: deactivate/reactivate, in place of a hard delete — see migration 016.
+// A deactivated member can't log in, but their name stays attached to past opportunity
+// reviews, tasks, and audit log entries. Blocks deactivating the last remaining FO
+// admin, or your own account (avoids an accidental self-lockout).
+app.put('/api/admin/members/:userId/active', requireAuth, (req, res) => {
+  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  const { isActive } = req.body || {};
+  if (typeof isActive !== 'boolean') return res.status(400).json({ error: 'isActive (boolean) is required' });
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'Member not found' });
+  if (!isActive) {
+    if (req.params.userId === req.session.userId) return res.status(400).json({ error: 'You cannot deactivate your own account.' });
+    if (target.is_fo_admin) {
+      const adminCount = db.prepare('SELECT COUNT(*) AS n FROM users WHERE is_fo_admin = 1 AND is_active = 1').get().n;
+      if (adminCount <= 1) return res.status(400).json({ error: 'Cannot deactivate the last remaining Family Office admin.' });
+    }
+  }
+  db.prepare('UPDATE users SET is_active = ? WHERE id = ?').run(isActive ? 1 : 0, req.params.userId);
+  logAudit({ userId: req.session.userId, action: isActive ? 'admin.member_reactivated' : 'admin.member_deactivated', entityType: 'user', entityId: req.params.userId });
+  res.json(userPublicAdmin(db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId)));
+});
+
 // Admin-only Required/Optional changes. Blocks dropping the Required headcount below the
 // current quorum threshold — that would make quorum permanently unreachable, so the
 // admin has to lower the threshold first (mirrors the last-admin protection above).
+// Required/Optional is a Due Diligence quorum concept, so it's administered by DD
+// admins (a superset includes FO admins), not exclusively Family Office admins.
 app.put('/api/admin/members/:userId/role', requireAuth, (req, res) => {
-  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
-  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
   const { role } = req.body || {};
   if (!['Required', 'Optional'].includes(role)) return res.status(400).json({ error: 'role must be "Required" or "Optional"' });
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId);
@@ -614,6 +689,48 @@ function notifyAdminsOfSubmission(opp, submitterId, recommendation) {
   }
 }
 
+// Deterministic governance rule, independent of Claude's own analytical report.recommendation:
+// any decline is a veto, unanimous approval among those who've submitted is a clean pass,
+// anything else (conditional approvals and/or abstentions mixed in) needs the IC to
+// actually discuss it. Mirrors the client-side Decision section on the report page exactly.
+function computeDecision(oppId) {
+  const rows = db.prepare("SELECT recommendation FROM responses WHERE opportunity_id = ? AND submitted = 1 AND recommendation IS NOT NULL").all(oppId);
+  if (rows.length === 0) return { label: 'Pending', detail: 'No IC member had submitted a recommendation.' };
+  const recs = rows.map((r) => r.recommendation);
+  if (recs.includes('Decline')) return { label: 'Declined', detail: 'At least one IC member recommended declining this opportunity.' };
+  if (recs.every((r) => r === 'Approve')) return { label: 'Approved', detail: `All ${rows.length} submitted review${rows.length === 1 ? '' : 's'} recommended approval.` };
+  return { label: 'More IC Discussion Required', detail: 'Recommendations were mixed (conditional approval and/or abstention).' };
+}
+
+// Fire-and-forget: closing is the trigger for the final, whole-family notification — the
+// admin's close action shouldn't wait on N Graph API round-trips. Reads whatever report is
+// currently saved on the opportunity — the frontend generates a fresh one immediately
+// before calling this endpoint, so it reflects the final state at closing time.
+function notifyFamilyOfClosure(row) {
+  const decision = computeDecision(row.id);
+  const report = row.report ? JSON.parse(row.report) : null;
+  const members = db.prepare('SELECT name, email FROM users WHERE is_active = 1').all();
+  for (const member of members) {
+    if (!member.email) continue;
+    const recLine = report?.recommendation ? `<p>Claude's analytical recommendation: <strong>${report.recommendation}</strong></p>` : '';
+    const summaryLine = report?.executiveSummary ? `<p>${report.executiveSummary}</p>` : '';
+    mailer.sendMail({
+      to: member.email,
+      subject: `IC Decision: ${row.title} — ${decision.label}`,
+      html: `<p>Hi ${member.name.split(' ')[0]},</p>` +
+        `<p>The IC review for <strong>${row.title}</strong> has been closed.</p>` +
+        `<p style="font-size:16px"><strong>Decision: ${decision.label}</strong></p>` +
+        `<p>${decision.detail}</p>` +
+        recLine + summaryLine +
+        `<p><a href="${APP_BASE_URL}/due-diligence">Open PQ Introduced Due Diligence</a> to view the full report.</p>`,
+    }).catch((err) => {
+      if (!(err instanceof mailer.MailNotConfiguredError)) {
+        console.error('Failed to send closure notification email:', err.message);
+      }
+    });
+  }
+}
+
 // Closing an opportunity is the only thing that locks responses — submitting your own
 // review just records your recommendation, it does not stop you from revising it later.
 // Publishing a draft is the one transition the initiator can make themselves, without
@@ -637,6 +754,10 @@ app.put('/api/opportunities/:id/status', requireAuth, (req, res) => {
   db.prepare('UPDATE opportunities SET status = ? WHERE id = ?').run(status, req.params.id);
   const action = row.status === 'draft' ? 'opportunity.published' : status === 'closed' ? 'opportunity.closed' : 'opportunity.reopened';
   logAudit({ userId: req.session.userId, action, entityType: 'opportunity', entityId: req.params.id });
+  if (status === 'closed' && row.status !== 'closed') {
+    const fresh = db.prepare('SELECT id, title, report FROM opportunities WHERE id = ?').get(req.params.id);
+    notifyFamilyOfClosure(fresh);
+  }
   res.json({ status });
 });
 
@@ -655,7 +776,13 @@ app.post('/api/opportunities/:id/send/:userId', requireAuth, async (req, res) =>
   const target = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(userId);
   if (!target) return res.status(404).json({ error: 'Member not found' });
   const now = new Date().toISOString();
-  db.prepare('UPDATE responses SET sent_at = ? WHERE opportunity_id = ? AND user_id = ?').run(now, id, userId);
+  // UPSERT rather than plain UPDATE — a member added after this opportunity was created
+  // has no responses row yet, and a bare UPDATE would silently affect zero rows.
+  db.prepare(
+    `INSERT INTO responses (opportunity_id, user_id, responses, recommendation, overall, follow_up, submitted, updated_at, sent_at)
+     VALUES (?, ?, '{}', NULL, '', '[]', 0, ?, ?)
+     ON CONFLICT(opportunity_id, user_id) DO UPDATE SET sent_at = excluded.sent_at`
+  ).run(id, userId, now, now);
   logAudit({ userId: req.session.userId, action: 'opportunity.sent_to_member', entityType: 'opportunity', entityId: id, details: { toUserId: userId } });
 
   let emailSent = false;
@@ -906,6 +1033,11 @@ app.get('/api/admin/audit-log', requireAuth, (req, res) => {
 registerTaskRoutes(app, { db, logAudit });
 startDigestScheduler(db);
 
+// ---- meetings routes + invite scheduler ----
+
+registerMeetingRoutes(app, { db, logAudit });
+startMeetingsScheduler(db);
+
 // ---- static frontend ----
 //
 // Umbrella shell (Section 3.2): "/" is the RFO home page (links to both apps), with the
@@ -919,6 +1051,8 @@ app.use(express.static(PUBLIC_DIR, { index: false }));
 app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'home.html')));
 app.get('/due-diligence', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'due-diligence.html')));
 app.get('/tasks', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'tasks.html')));
+app.get('/meetings', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'meetings.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

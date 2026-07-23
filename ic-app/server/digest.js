@@ -5,7 +5,7 @@
 const mailer = require('./mailer');
 
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
-const APP_BASE_URL = process.env.APP_BASE_URL || 'https://ic.quaysolutions.ca';
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 
 function currentQuarter(date = new Date()) {
   const q = Math.floor(date.getUTCMonth() / 3) + 1;

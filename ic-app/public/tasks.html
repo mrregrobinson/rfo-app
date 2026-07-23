@@ -49,6 +49,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .muted{color:var(--muted);font-size:12px}
 .avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff;margin-right:2px}
 .task-row.highlight{background:var(--gold-l);transition:background 2s ease}
+.notes-input{width:100%;border:0.5px solid transparent;background:transparent;border-radius:5px;padding:3px 6px;font-size:12px;color:var(--muted);font-family:inherit;margin-top:2px}
+.notes-input:hover{border-color:var(--border)}
+.notes-input:focus{outline:none;border-color:var(--teal);background:#fff;color:var(--text)}
 </style>
 </head>
 <body>
@@ -66,6 +69,27 @@ const api={
 
 function memberById(members,id){return members.find(m=>m.id===id)}
 
+const GOOGLE_TASK_LIST_TITLE='Family Office';
+
+// Finds the family's "Family Office" Google Tasks list, creating it the first time a
+// given member adds anything (each Google account has its own separate list of lists).
+async function getOrCreateFamilyOfficeListId(accessToken){
+  const headers={Authorization:'Bearer '+accessToken};
+  const listsRes=await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists',{headers});
+  const listsBody=await listsRes.json().catch(()=>null);
+  if(!listsRes.ok)throw new Error((listsBody&&listsBody.error&&listsBody.error.message)||'Could not read your Google Task lists');
+  const existing=(listsBody.items||[]).find(l=>l.title===GOOGLE_TASK_LIST_TITLE);
+  if(existing)return existing.id;
+  const createRes=await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists',{
+    method:'POST',
+    headers:{...headers,'Content-Type':'application/json'},
+    body:JSON.stringify({title:GOOGLE_TASK_LIST_TITLE}),
+  });
+  const createBody=await createRes.json().catch(()=>null);
+  if(!createRes.ok)throw new Error((createBody&&createBody.error&&createBody.error.message)||'Could not create the "Family Office" Google Tasks list');
+  return createBody.id;
+}
+
 function AssigneeBadges({task,members}){
   if(task.assignedToAll)return h('span',{className:'badge badge-all'},'All');
   return h(React.Fragment,null,task.assigneeIds.map(id=>{
@@ -81,8 +105,13 @@ function canEditTask(task,me,roles){
   return task.assignedToAll||task.assigneeIds.includes(me.id);
 }
 
-function TaskRow({task,me,roles,members,onToggleDone,onEdit,onAddToGoogleTasks,googleTasksReady,child,highlighted}){
+function TaskRow({task,me,roles,members,onToggleDone,onEdit,onAddToGoogleTasks,googleTasksReady,onUpdateNotes,child,highlighted}){
   const editable=canEditTask(task,me,roles);
+  const [notesDraft,setNotesDraft]=useState(task.notes||'');
+  useEffect(()=>{setNotesDraft(task.notes||'');},[task.notes]);
+  function saveNotes(){
+    if(notesDraft!==(task.notes||''))onUpdateNotes(task,notesDraft);
+  }
   return h('div',{id:'task-row-'+task.id,className:`task-row ${task.status==='done'?'done':''} ${child?'child':''} ${highlighted?'highlight':''}`},
     h('input',{type:'checkbox',className:'task-check',checked:task.status==='done',disabled:!editable,onChange:()=>onToggleDone(task)}),
     h('div',{style:{flex:1}},
@@ -92,7 +121,9 @@ function TaskRow({task,me,roles,members,onToggleDone,onEdit,onAddToGoogleTasks,g
         task.status==='done'&&task.completedAt&&h('span',{className:'muted',style:{marginLeft:6}},'Completed '+task.completedAt),
         h('span',{style:{marginLeft:6}},h(AssigneeBadges,{task,members}))
       ),
-      task.notes&&h('div',{className:'muted',style:{marginTop:3}},task.notes)
+      editable
+        ? h('input',{className:'notes-input',placeholder:'Add notes…',value:notesDraft,onChange:e=>setNotesDraft(e.target.value),onBlur:saveNotes,onKeyDown:e=>{if(e.key==='Enter')e.target.blur();}})
+        : task.notes&&h('div',{className:'muted',style:{marginTop:3}},task.notes)
     ),
     h('div',{style:{display:'flex',gap:6,flexShrink:0}},
       googleTasksReady&&h('button',{className:'btn btn-outline btn-sm',title:'Add to your Google Tasks',onClick:()=>onAddToGoogleTasks(task)},'📋 Google Tasks'),
@@ -149,6 +180,32 @@ function TaskFormModal({initial,categories,members,me,roles,onSave,onCancel,onDe
         h('div',{style:{display:'flex',gap:8}},
           h('button',{className:'btn btn-outline btn-sm',onClick:onCancel},'Cancel'),
           h('button',{className:'btn btn-teal btn-sm',disabled:!title||saving,onClick:save},saving?'Saving…':'Save')))
+    )
+  );
+}
+
+// Task List roles are administered here, by Task List admins — not on the top-level
+// /admin page, which only handles Family Office-wide account actions (add/deactivate,
+// FO admin, password reset). Any Task List admin can change these, not only FO admins.
+function RolesModal({members,onClose,onMemberUpdated}){
+  const [busy,setBusy]=useState(null);
+  async function setRole(m,role){
+    setBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/app-role`,{app:'tasks',role});onMemberUpdated(updated);}
+    catch(e){alert(e.message||'Failed to update role');}
+    finally{setBusy(null);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Task List Roles'),
+      members.filter(m=>m.isActive!==false).map(m=>h('div',{key:m.id,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}},
+        h('span',{className:'avatar',style:{background:m.color}},m.initials),
+        h('span',{style:{flex:1,fontSize:13}},m.name),
+        h('select',{style:{fontSize:11,padding:'3px 6px',borderRadius:6,border:'0.5px solid var(--border)'},value:m.tasksRole,disabled:busy===m.id,onChange:e=>setRole(m,e.target.value)},
+          h('option',{value:'admin'},'Admin'),h('option',{value:'member'},'Member'),h('option',{value:'viewer'},'Viewer'))
+      )),
+      h('div',{style:{display:'flex',justifyContent:'flex-end',marginTop:16}},
+        h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close'))
     )
   );
 }
@@ -220,6 +277,7 @@ function TasksApp({me,roles}){
   const [showAdd,setShowAdd]=useState(false);
   const [editing,setEditing]=useState(null);
   const [showDigest,setShowDigest]=useState(false);
+  const [showRoles,setShowRoles]=useState(false);
   const [filterAssignee,setFilterAssignee]=useState('');
   const [filterPriority,setFilterPriority]=useState('');
   const [filterStatus,setFilterStatus]=useState('open');
@@ -237,29 +295,52 @@ function TasksApp({me,roles}){
   function addToGoogleTasks(task){
     if(!googleClientId)return;
     function start(){
-      const tokenClient=google.accounts.oauth2.initTokenClient({
-        client_id:googleClientId,
-        scope:'https://www.googleapis.com/auth/tasks',
-        callback:async(resp)=>{
-          if(resp.error){setToast('Google sign-in was cancelled or failed.');return;}
-          const noteLines=[];
-          if(task.notes)noteLines.push(task.notes);
-          if(task.targetQuarter)noteLines.push('Target quarter: '+task.targetQuarter);
-          noteLines.push('From the Robinson Family Office Task List: '+location.origin+'/tasks?task='+task.id);
-          const body={title:task.title,notes:noteLines.join('\n\n')};
-          if(task.targetDate)body.due=new Date(task.targetDate+'T00:00:00Z').toISOString();
-          try{
-            const r=await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks',{
-              method:'POST',
-              headers:{'Content-Type':'application/json',Authorization:'Bearer '+resp.access_token},
-              body:JSON.stringify(body),
-            });
-            if(!r.ok)throw new Error('Google Tasks API error ('+r.status+')');
-            setToast('Added "'+task.title+'" to your Google Tasks.');
-          }catch(e){setToast('Failed to add to Google Tasks: '+e.message);}
-        },
-      });
-      tokenClient.requestAccessToken();
+      try{
+        const tokenClient=google.accounts.oauth2.initTokenClient({
+          client_id:googleClientId,
+          scope:'https://www.googleapis.com/auth/tasks',
+          callback:async(resp)=>{
+            console.log('Google token response:',resp);
+            if(!resp||resp.error){
+              console.error('Google sign-in error:',resp);
+              setToast('Google sign-in was cancelled or failed'+(resp&&resp.error?(': '+resp.error):'')+'.');
+              return;
+            }
+            const noteLines=[];
+            if(task.notes)noteLines.push(task.notes);
+            if(task.targetQuarter)noteLines.push('Target quarter: '+task.targetQuarter);
+            noteLines.push('From the Robinson Family Office Task List: '+location.origin+'/tasks?task='+task.id);
+            // Default the due date to today when the task has no exact date of its own
+            // (most tasks only carry a target quarter) — Google Tasks needs a concrete
+            // date, and "today" is a reasonable placeholder the member can adjust.
+            const dueDate=task.targetDate||new Date().toISOString().slice(0,10);
+            const body={title:task.title,notes:noteLines.join('\n\n'),due:new Date(dueDate+'T00:00:00Z').toISOString()};
+            try{
+              const listId=await getOrCreateFamilyOfficeListId(resp.access_token);
+              const r=await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks`,{
+                method:'POST',
+                headers:{'Content-Type':'application/json',Authorization:'Bearer '+resp.access_token},
+                body:JSON.stringify(body),
+              });
+              const responseBody=await r.json().catch(()=>null);
+              console.log('Google Tasks API response:',r.status,responseBody);
+              if(!r.ok)throw new Error((responseBody&&responseBody.error&&responseBody.error.message)||('Google Tasks API error ('+r.status+')'));
+              setToast('Added "'+task.title+'" to your "'+GOOGLE_TASK_LIST_TITLE+'" list in Google Tasks.');
+            }catch(e){
+              console.error('Failed to add to Google Tasks:',e);
+              setToast('Failed to add to Google Tasks: '+e.message);
+            }
+          },
+          error_callback:(err)=>{
+            console.error('Google token client error:',err);
+            setToast('Google sign-in error: '+(err&&err.message?err.message:JSON.stringify(err)));
+          },
+        });
+        tokenClient.requestAccessToken();
+      }catch(e){
+        console.error('Failed to start Google sign-in:',e);
+        setToast('Failed to start Google sign-in: '+e.message);
+      }
     }
     if(window.google&&window.google.accounts&&window.google.accounts.oauth2)start();
     else setToast('Still loading Google sign-in — try again in a moment.');
@@ -298,6 +379,10 @@ function TasksApp({me,roles}){
     const updated=await api.put(`/api/tasks/${task.id}`,{status:task.status==='done'?'open':'done'});
     setTasks(list=>list.map(t=>t.id===task.id?updated:t));
   }
+  async function updateNotes(task,notes){
+    const updated=await api.put(`/api/tasks/${task.id}`,{notes});
+    setTasks(list=>list.map(t=>t.id===task.id?updated:t));
+  }
   async function saveTask(payload){
     if(editing){
       const updated=await api.put(`/api/tasks/${editing.id}`,payload);
@@ -331,11 +416,12 @@ function TasksApp({me,roles}){
   if(loading)return h('div',{className:'page'},'Loading…');
 
   return h('div',{className:'page'},
-    toast&&h('div',{className:'card',style:{background:'var(--teal-l)',border:'0.5px solid var(--teal)'}},toast),
+    toast&&h('div',{style:{position:'fixed',top:62,left:'50%',transform:'translateX(-50%)',zIndex:500,maxWidth:500,background:'var(--teal-l)',border:'0.5px solid var(--teal)',borderRadius:8,padding:'10px 16px',boxShadow:'0 4px 20px rgba(0,0,0,.15)',fontSize:13}},toast),
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
       h('div',null,h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'Family Task List'),
         h('div',{className:'muted'},'Robinson Family Office · Strategy · People · Core Business · Operations')),
       h('div',{style:{display:'flex',gap:8}},
+        roles.tasksAdmin&&h('button',{className:'btn btn-outline',onClick:()=>setShowRoles(true)},'Roles'),
         roles.tasksAdmin&&h('button',{className:'btn btn-outline',onClick:()=>setShowDigest(true)},'Digest Settings'),
         roles.tasksMember&&h('button',{className:'btn btn-gold',onClick:()=>setShowAdd(true)},'+ Add Task'))
     ),
@@ -357,15 +443,16 @@ function TasksApp({me,roles}){
         return h('div',{key:c.id,className:'card'},
           h('div',{className:'category-title'},c.name),
           rows.map(t=>h(React.Fragment,{key:t.id},
-            h(TaskRow,{task:t,me,roles,members,onToggleDone:toggleDone,onEdit:setEditing,onAddToGoogleTasks:addToGoogleTasks,googleTasksReady,highlighted:t.id===highlightedId}),
-            childrenOf(t.id).map(child=>h(TaskRow,{key:child.id,task:child,me,roles,members,onToggleDone:toggleDone,onEdit:setEditing,onAddToGoogleTasks:addToGoogleTasks,googleTasksReady,child:true,highlighted:child.id===highlightedId}))
+            h(TaskRow,{task:t,me,roles,members,onToggleDone:toggleDone,onEdit:setEditing,onAddToGoogleTasks:addToGoogleTasks,googleTasksReady,onUpdateNotes:updateNotes,highlighted:t.id===highlightedId}),
+            childrenOf(t.id).map(child=>h(TaskRow,{key:child.id,task:child,me,roles,members,onToggleDone:toggleDone,onEdit:setEditing,onAddToGoogleTasks:addToGoogleTasks,googleTasksReady,onUpdateNotes:updateNotes,child:true,highlighted:child.id===highlightedId}))
           ))
         );
       })
     )),
     showAdd&&h(TaskFormModal,{categories,members,me,roles,onSave:saveTask,onCancel:()=>setShowAdd(false)}),
     editing&&h(TaskFormModal,{initial:editing,categories,members,me,roles,onSave:saveTask,onCancel:()=>setEditing(null),onDelete:deleteTask}),
-    showDigest&&h(DigestSettingsModal,{onClose:()=>setShowDigest(false)})
+    showDigest&&h(DigestSettingsModal,{onClose:()=>setShowDigest(false)}),
+    showRoles&&h(RolesModal,{members,onClose:()=>setShowRoles(false),onMemberUpdated:u=>setMembers(list=>list.map(x=>x.id===u.id?u:x))})
   );
 }
 
@@ -389,13 +476,15 @@ function Shell(){
   return h('div',null,
     h('nav',{className:'nav'},
       h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Family Task List'),
-        h('a',{href:'/due-diligence',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'PQ Due Diligence →')),
+        h('a',{href:'/due-diligence',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'PQ Due Diligence →'),
+        h('a',{href:'/meetings',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Meetings →')),
       h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},me.name.split(' ')[0]+(showMenu?'':'')),
     ),
     showMenu&&h('div',{style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:180,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
       h('div',{style:{padding:'8px 10px',fontSize:13,fontWeight:600,color:'var(--navy)'}},me.name),
       h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},roles.tasksAdmin?'Task List Admin':roles.tasksMember?'Task List Member':'Read-only'),
-      h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')
+      me.isAdmin&&h('a',{href:'/admin',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'👥 Manage Members'),
+      h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')
     ),
     h(TasksApp,{me,roles})
   );

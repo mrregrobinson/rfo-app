@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — Manage Members</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--green-l:#D1FAE5;--amber-l:#FEF3C7;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.nav-brand a{color:#fff;text-decoration:none}
+.nav-brand span{color:var(--gold);margin-left:6px;font-size:11px;background:rgba(201,168,76,.18);padding:2px 9px;border-radius:10px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.page{padding:20px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-teal{background:var(--teal);color:#fff}.btn-teal:hover{background:#236664}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}.btn-outline:hover{background:var(--bg)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit}
+.form-input:focus,.form-select:focus{outline:none;border-color:var(--teal)}
+.alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid;line-height:1.6}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin .65s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect}=React;
+const h=React.createElement;
+const api={
+  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(url,body){return api.send('POST',url,body)},
+  put(url,body){return api.send('PUT',url,body)},
+};
+
+function MemberEmailRow({member,onSaved}){
+  const [value,setValue]=useState(member.email||'');
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState('');
+  const dirty=value.trim()!==(member.email||'');
+  async function save(){
+    setSaving(true);setErr('');
+    try{const updated=await api.put(`/api/admin/members/${member.id}/email`,{email:value.trim()});onSaved(updated);}
+    catch(e){setErr(e.message||'Failed to save');}
+    finally{setSaving(false);}
+  }
+  return h('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+    h('input',{className:'form-input',style:{fontSize:12,padding:'4px 8px',maxWidth:260},type:'email',placeholder:'Email address for notifications…',value,onChange:e=>setValue(e.target.value)}),
+    dirty&&h('button',{className:'btn btn-outline btn-sm',disabled:saving,onClick:save},saving?'Saving…':'Save'),
+    err&&h('span',{style:{fontSize:11,color:'#991B1B'}},err)
+  );
+}
+
+function AddMemberModal({onClose,onAdded}){
+  const [name,setName]=useState('');const [email,setEmail]=useState('');
+  const [saving,setSaving]=useState(false);const [error,setError]=useState('');const [added,setAdded]=useState(null);
+  async function submit(){
+    if(!name.trim())return;
+    setSaving(true);setError('');
+    try{
+      const res=await api.post('/api/admin/members',{name:name.trim(),email:email.trim()});
+      setAdded({name:res.name,code:res.setupCode});
+      onAdded(res);
+      setName('');setEmail('');
+    }catch(e){setError(e.message||'Failed to add member');}
+    finally{setSaving(false);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Add Family Member'),
+      !added&&h('div',null,
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Name'),h('input',{className:'form-input',value:name,onChange:e=>setName(e.target.value),autoFocus:true})),
+        h('div',{className:'form-group'},h('label',{className:'form-label'},'Email (optional, for notifications)'),h('input',{className:'form-input',type:'email',value:email,onChange:e=>setEmail(e.target.value)})),
+        error&&h('div',{style:{fontSize:12,color:'#991B1B',marginBottom:10}},error),
+        h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end'}},
+          h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'),
+          h('button',{className:'btn btn-teal btn-sm',disabled:!name.trim()||saving,onClick:submit},saving?'Adding…':'Add Member'))
+      ),
+      added&&h('div',null,
+        h('div',{className:'alert alert-success'},'Added ',h('strong',null,added.name),'. One-time setup code: ',h('code',{style:{fontSize:13}},added.code),h('div',{style:{color:'var(--muted)',marginTop:4,fontSize:11}},'Share this with them — they use it once to set their own password and 2FA.')),
+        h('div',{style:{display:'flex',justifyContent:'flex-end'}},h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Done'))
+      )
+    )
+  );
+}
+
+function MembersPage({currentUser}){
+  const [members,setMembers]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+  const [resetting,setResetting]=useState(null);const [resetCode,setResetCode]=useState(null);
+  const [adminBusy,setAdminBusy]=useState(null);const [activeBusy,setActiveBusy]=useState(null);
+  const [showAdd,setShowAdd]=useState(false);
+  function load(){setLoading(true);api.get('/api/admin/members?_='+Date.now()).then(setMembers).catch(e=>setError(e.message||'Failed to load members')).finally(()=>setLoading(false));}
+  useEffect(load,[]);
+  async function resetAuth(m){if(!window.confirm(`Generate a new setup code for ${m.name}? This replaces their password and 2FA.`))return;setResetting(m.id);setResetCode(null);try{const res=await api.post(`/api/admin/reset-auth/${m.id}`,{});setResetCode({name:m.name,code:res.setupCode});}catch(e){alert(e.message||'Failed to reset');}finally{setResetting(null);}}
+  async function toggleAdmin(m){
+    const makingAdmin=!m.isAdmin;
+    const msg=makingAdmin?`Make ${m.name} a Family Office admin? They'll be able to add/deactivate members, reset logins, and access every app's settings.`:`Remove Family Office admin access from ${m.name}?`;
+    if(!window.confirm(msg))return;
+    setAdminBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/admin`,{isAdmin:makingAdmin});setMembers(list=>list.map(x=>x.id===m.id?updated:x));}
+    catch(e){alert(e.message||'Failed to update admin status');}
+    finally{setAdminBusy(null);}
+  }
+  async function toggleActive(m){
+    const deactivating=m.isActive;
+    const msg=deactivating?`Deactivate ${m.name}? They won't be able to log in, but their past reviews, tasks, and history stay intact.`:`Reactivate ${m.name}? They'll be able to log in again.`;
+    if(!window.confirm(msg))return;
+    setActiveBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/active`,{isActive:!deactivating});setMembers(list=>list.map(x=>x.id===m.id?updated:x));}
+    catch(e){alert(e.message||'Failed to update account status');}
+    finally{setActiveBusy(null);}
+  }
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}},
+      h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'Manage Members'),
+      h('button',{className:'btn btn-gold',onClick:()=>setShowAdd(true)},'+ Add Family Member')
+    ),
+    h('div',{style:{fontSize:12,color:'var(--muted)',marginBottom:16}},'Family Office-wide account actions. Each app\'s own roles (admin/member/viewer) and Due Diligence\'s Required/Optional setting are managed from within that app.'),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    !loading&&!error&&h('div',{className:'card',style:{padding:0,overflow:'hidden',marginBottom:16}},
+      members.map((m,i)=>h('div',{key:m.id,style:{padding:'12px 16px',borderBottom:i<members.length-1?'0.5px solid var(--border)':'none',opacity:m.isActive?1:.6}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',marginBottom:8}},
+          h('div',{style:{width:30,height:30,borderRadius:'50%',background:m.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:600,color:'#fff',flexShrink:0}},m.initials),
+          h('div',{style:{flex:1,minWidth:120}},h('div',{style:{fontSize:13,fontWeight:600,color:'var(--navy)'}},m.name+(m.id===currentUser.id?' (you)':'')),h('div',{style:{fontSize:11,color:'var(--muted)'}},m.role+(m.needsSetup?' · Not yet set up':'')+(!m.isActive?' · Deactivated':''))),
+          h('span',{className:'badge',style:m.isAdmin?{background:'var(--teal-l)',color:'var(--teal)'}:{background:'var(--bg)',color:'var(--muted)'}},m.isAdmin?'FO Admin':'FO Member'),
+          h('button',{className:'btn btn-outline btn-sm',disabled:adminBusy===m.id,onClick:()=>toggleAdmin(m)},adminBusy===m.id?'…':(m.isAdmin?'Remove FO Admin':'Make FO Admin')),
+          h('button',{className:'btn btn-outline btn-sm',disabled:resetting===m.id,onClick:()=>resetAuth(m)},resetting===m.id?'…':'Reset Login'),
+          h('button',{className:'btn btn-outline btn-sm',style:m.isActive?{color:'#991B1B',borderColor:'#F3D6D6'}:null,disabled:activeBusy===m.id||m.id===currentUser.id,onClick:()=>toggleActive(m)},activeBusy===m.id?'…':(m.isActive?'Deactivate':'Reactivate'))
+        ),
+        h(MemberEmailRow,{member:m,onSaved:updated=>setMembers(list=>list.map(x=>x.id===m.id?updated:x))})
+      ))
+    ),
+    resetCode&&h('div',{className:'alert alert-success'},'New one-time code for ',h('strong',null,resetCode.name),': ',h('code',{style:{fontSize:13}},resetCode.code),h('div',{style:{color:'var(--muted)',marginTop:4,fontSize:11}},'Share this with them — it replaces their password and 2FA.')),
+    showAdd&&h(AddMemberModal,{onClose:()=>setShowAdd(false),onAdded:m=>setMembers(list=>[...list,m])})
+  );
+}
+
+const AUDIT_ACTION_LABELS={
+  'member.setup_completed':'Completed account setup',
+  'login.success':'Logged in',
+  'admin.reset_auth':'Reset a member’s login',
+  'admin.role_granted':'Granted Family Office admin access',
+  'admin.role_revoked':'Removed Family Office admin access',
+  'admin.app_role_updated':'Changed an app-level role',
+  'admin.member_added':'Added a family member',
+  'admin.member_deactivated':'Deactivated a member',
+  'admin.member_reactivated':'Reactivated a member',
+  'admin.member_role_updated':'Changed a member’s Required/Optional status',
+  'admin.member_email_updated':'Updated a member’s email address',
+  'admin.quorum_updated':'Updated decision quorum threshold',
+  'admin.task_digest_settings_updated':'Updated the Task List digest settings',
+  'admin.task_digest_test_sent':'Sent a test Task List digest email',
+  'opportunity.created':'Created opportunity',
+  'opportunity.published':'Published opportunity',
+  'opportunity.sent_to_member':'Sent opportunity to a member',
+  'opportunity.deleted':'Deleted opportunity',
+  'opportunity.closed':'Closed opportunity',
+  'opportunity.reopened':'Reopened opportunity',
+  'response.submitted':'Submitted checklist response',
+  'report.generated':'Generated IC summary report',
+  'activity.created':'Added family planning activity',
+  'activity.updated':'Updated family planning activity',
+  'activity.deleted':'Deleted family planning activity',
+  'task.created':'Created a task',
+  'task.updated':'Updated a task',
+  'task.completed':'Completed a task',
+  'task.deleted':'Deleted a task',
+  'meeting.created':'Scheduled a meeting',
+  'meeting.updated':'Updated a meeting’s plan',
+  'meeting.attendees_updated':'Updated a meeting’s attendees',
+  'meeting.deleted':'Deleted a meeting',
+  'meeting.invite_sent':'Sent a Teams meeting invite',
+  'meeting.completed':'Marked a meeting complete',
+  'meeting.minutes_resent':'Resent meeting minutes',
+  'agenda_item.added':'Added an agenda item',
+  'agenda_item.deleted':'Removed an agenda item',
+  'decision.added':'Recorded a decision',
+  'action_item.added':'Recorded an action item',
+};
+
+function AuditLogPage(){
+  const [entries,setEntries]=useState([]);const [members,setMembers]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+  useEffect(()=>{
+    Promise.all([api.get('/api/admin/audit-log'),api.get('/api/admin/members')])
+      .then(([e,m])=>{setEntries(e);setMembers(m);})
+      .catch(e=>setError(e.message||'Failed to load audit log'))
+      .finally(()=>setLoading(false));
+  },[]);
+  function memberName(id){const m=members.find(x=>x.id===id);return m?m.name:(id||'—');}
+  return h('div',{className:'page'},
+    h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)',marginBottom:16}},'Audit Log'),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    !loading&&!error&&h('div',{className:'card',style:{padding:0,overflow:'hidden'}},
+      h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+        h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['When','Who','Action','Details'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+        h('tbody',null,entries.map(e=>h('tr',{key:e.id,style:{borderBottom:'0.5px solid var(--border)'}},
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(e.at).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
+          h('td',{style:{padding:'8px 12px',fontWeight:600,color:'var(--navy)',whiteSpace:'nowrap'}},memberName(e.userId)),
+          h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},AUDIT_ACTION_LABELS[e.action]||e.action),
+          h('td',{style:{padding:'8px 12px',color:'var(--muted)',fontSize:11}},Object.keys(e.details||{}).length?JSON.stringify(e.details):'')
+        )))
+      )),
+      entries.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No activity recorded yet.')
+    )
+  );
+}
+
+function BackupsPage(){
+  const [backups,setBackups]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [backingUp,setBackingUp]=useState(false);
+  function load(){setLoading(true);api.get('/api/admin/backups').then(setBackups).catch(e=>setError(e.message||'Failed to load backups')).finally(()=>setLoading(false));}
+  useEffect(()=>{load();},[]);
+  async function backupNow(){setBackingUp(true);setError('');try{await api.post('/api/admin/backups',{});load();}catch(e){setError(e.message||'Backup failed');}finally{setBackingUp(false);}}
+  function fmtSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';return (bytes/1024/1024).toFixed(1)+' MB';}
+  return h('div',{className:'page'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)',flex:1}},'Database Backups'),h('button',{className:'btn btn-gold btn-sm',disabled:backingUp,onClick:backupNow},backingUp?'Backing up…':'✦ Backup Now')),
+    h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Whole-database snapshot — covers both PQ Introduced Due Diligence and the Family Task List. Automatic backups run at startup and every 24 hours — the last 14 are kept.'),
+    loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    error&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    !loading&&h('div',{className:'card',style:{padding:0,overflow:'hidden'}},h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+      h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Created',''].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+      h('tbody',null,backups.map(b=>h('tr',{key:b.filename,style:{borderBottom:'0.5px solid var(--border)'}},
+        h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},b.filename),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtSize(b.sizeBytes)),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(b.createdAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
+        h('td',{style:{padding:'8px 12px'}},h('a',{href:'/api/admin/backups/'+encodeURIComponent(b.filename),className:'btn btn-outline btn-sm',style:{textDecoration:'none'}},'Download'))
+      )))
+    ))),
+    !loading&&backups.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No backups yet.')
+  );
+}
+
+function Shell(){
+  const [me,setMe]=useState(null);
+  const [checking,setChecking]=useState(true);
+  const [tab,setTab]=useState('members');
+  useEffect(()=>{
+    api.get('/api/me').then(setMe).catch(()=>{
+      const target=location.pathname+location.search;
+      location.href='/due-diligence?returnTo='+encodeURIComponent(target);
+    }).finally(()=>setChecking(false));
+  },[]);
+  async function logout(){await api.post('/api/logout');location.href='/due-diligence';}
+  if(checking||!me)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  if(!me.isAdmin)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},
+    h('div',{style:{marginBottom:12}},'You need Family Office admin access to view this page.'),
+    h('a',{href:'/',style:{color:'var(--teal)'}},'← Back to Home')
+  );
+  return h('div',null,
+    h('nav',{className:'nav'},
+      h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Manage Members'),
+        h('a',{href:'/due-diligence',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'PQ Due Diligence →'),
+        h('a',{href:'/tasks',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Family Task List →'),
+        h('a',{href:'/meetings',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Meetings →')),
+      h('div',{className:'nav-user',onClick:logout},me.name.split(' ')[0]+' · Sign out'),
+    ),
+    h('div',{style:{maxWidth:1000,margin:'0 auto',padding:'12px 20px 0',display:'flex',gap:6}},
+      [{k:'members',l:'Members'},{k:'audit-log',l:'Audit Log'},{k:'backups',l:'Backups'}].map(t=>h('button',{key:t.k,className:tab===t.k?'btn btn-teal btn-sm':'btn btn-outline btn-sm',onClick:()=>setTab(t.k)},t.l))
+    ),
+    tab==='members'&&h(MembersPage,{currentUser:me}),
+    tab==='audit-log'&&h(AuditLogPage,null),
+    tab==='backups'&&h(BackupsPage,null)
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(Shell));
+</script>
+</body>
+</html>

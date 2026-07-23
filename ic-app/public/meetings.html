@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — Family Office Meetings</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.nav-brand a{color:#fff;text-decoration:none}
+.nav-brand span{color:var(--gold);font-size:11px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.page{padding:20px;max-width:900px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}
+.btn-danger{background:#fff;color:#991B1B;border:0.5px solid #F3D6D6}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-left:6px}
+.badge-planned{background:var(--navy-l);color:var(--navy)}
+.badge-completed{background:var(--green-l);color:#065F46}
+.badge-cancelled{background:var(--red-l);color:#991B1B}
+.meeting-row{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:0.5px solid var(--border);cursor:pointer}
+.meeting-row:last-child{border-bottom:none}
+.meeting-row:hover{background:var(--bg)}
+.meeting-title{font-size:13px;font-weight:600;color:var(--navy)}
+.muted{color:var(--muted);font-size:12px}
+.avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff;margin-right:2px}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select,.form-textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit;margin-bottom:12px}
+.form-textarea{resize:vertical;min-height:56px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;color:var(--navy);margin-bottom:16px}
+.agenda-card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.agenda-title{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:8px}
+.subhead{font-size:11px;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:.3px;margin:10px 0 4px}
+.item-line{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:0.5px dashed var(--border);font-size:12px}
+.item-line:last-child{border-bottom:none}
+.inline-add{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.inline-add input,.inline-add select{border:0.5px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px}
+.back-link{display:inline-block;margin-bottom:12px;color:var(--teal);font-size:12px;text-decoration:none;cursor:pointer}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.filters select{border:0.5px solid var(--border);border-radius:7px;padding:6px 10px;font-size:12px;background:#fff}
+.alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect}=React;
+const h=React.createElement;
+const api={
+  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(url,body){return api.send('POST',url,body)},
+  put(url,body){return api.send('PUT',url,body)},
+  async del(url){const r=await fetch(url,{method:'DELETE',credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+};
+
+function memberById(members,id){return members.find(m=>m.id===id)}
+function fmtDateTime(iso){return new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function toDatetimeLocal(iso){const d=new Date(iso);const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+
+function AttendeesPicker({members,attendees,onChange}){
+  const familyIds=attendees.filter(a=>!a.external).map(a=>a.userId);
+  const externals=attendees.filter(a=>a.external);
+  function toggleFamily(id){
+    const isIn=familyIds.includes(id);
+    const nextFamily=isIn?attendees.filter(a=>a.external||a.userId!==id):[...attendees,{userId:id}];
+    onChange(nextFamily);
+  }
+  function addExternal(){onChange([...attendees,{external:true,externalName:'',externalEmail:''}]);}
+  function updateExternal(i,field,value){
+    const filtered=attendees.filter(a=>a.external);
+    const idx=attendees.indexOf(filtered[i]);
+    const next=[...attendees];
+    next[idx]={...next[idx],[field]:value};
+    onChange(next);
+  }
+  function removeExternal(i){
+    const filtered=attendees.filter(a=>a.external);
+    const idx=attendees.indexOf(filtered[i]);
+    onChange(attendees.filter((_,j)=>j!==idx));
+  }
+  return h('div',null,
+    h('label',{className:'form-label'},'Family attendees'),
+    h('div',{style:{display:'flex',flexWrap:'wrap',gap:8,marginBottom:10}},
+      members.filter(m=>m.isActive!==false).map(m=>h('label',{key:m.id,style:{display:'flex',alignItems:'center',gap:4,fontSize:12}},
+        h('input',{type:'checkbox',checked:familyIds.includes(m.id),onChange:()=>toggleFamily(m.id)}),m.name.split(' ')[0]))),
+    h('label',{className:'form-label'},'External attendees'),
+    externals.map((a,i)=>h('div',{key:i,className:'inline-add'},
+      h('input',{placeholder:'Name',value:a.externalName||'',onChange:e=>updateExternal(i,'externalName',e.target.value)}),
+      h('input',{placeholder:'Email (optional)',value:a.externalEmail||'',onChange:e=>updateExternal(i,'externalEmail',e.target.value)}),
+      h('button',{type:'button',className:'btn btn-outline btn-sm',onClick:()=>removeExternal(i)},'Remove'))),
+    h('button',{type:'button',className:'btn btn-outline btn-sm',style:{marginTop:6},onClick:addExternal},'+ Add external attendee')
+  );
+}
+
+function ScheduleModal({initial,members,onSave,onCancel}){
+  const [title,setTitle]=useState(initial?.title||'');
+  const [plannedAt,setPlannedAt]=useState(initial?initial.plannedAt&&toDatetimeLocal(initial.plannedAt):'');
+  const [durationMinutes,setDurationMinutes]=useState(initial?.durationMinutes||60);
+  const [inviteSendDate,setInviteSendDate]=useState(initial?.inviteSendDate||'');
+  const [attendees,setAttendees]=useState(initial?.attendees?initial.attendees.map(a=>a.external?{external:true,externalName:a.name,externalEmail:a.email}:{userId:a.userId}):[]);
+  const [agendaItems,setAgendaItems]=useState(initial?['']:['']);
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState('');
+  function updateAgenda(i,value){const next=[...agendaItems];next[i]=value;setAgendaItems(next);}
+  function addAgendaRow(){setAgendaItems([...agendaItems,'']);}
+  function removeAgendaRow(i){setAgendaItems(agendaItems.filter((_,j)=>j!==i));}
+  async function save(){
+    if(!title.trim()||!plannedAt){setError('Title and planned date/time are required.');return;}
+    setSaving(true);setError('');
+    try{
+      await onSave({
+        title:title.trim(),
+        plannedAt:new Date(plannedAt).toISOString(),
+        durationMinutes:Number(durationMinutes)||60,
+        inviteSendDate:inviteSendDate||null,
+        attendees,
+        ...(initial?{}:{agendaItems:agendaItems.filter(a=>a.trim())}),
+      });
+    }catch(e){setError(e.message||'Failed to save');}
+    finally{setSaving(false);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onCancel},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},initial?'Edit Meeting Plan':'Schedule a Meeting'),
+      h('label',{className:'form-label'},'Title'),
+      h('input',{className:'form-input',value:title,onChange:e=>setTitle(e.target.value),autoFocus:true,placeholder:'e.g. Q3 2026 Family Office Meeting'}),
+      h('label',{className:'form-label'},'Planned date & time'),
+      h('input',{className:'form-input',type:'datetime-local',value:plannedAt,onChange:e=>setPlannedAt(e.target.value)}),
+      h('label',{className:'form-label'},'Duration (minutes)'),
+      h('input',{className:'form-input',type:'number',min:15,step:15,value:durationMinutes,onChange:e=>setDurationMinutes(e.target.value)}),
+      h('label',{className:'form-label'},'Invite send date (optional)'),
+      h('input',{className:'form-input',type:'date',value:inviteSendDate,onChange:e=>setInviteSendDate(e.target.value)}),
+      h('div',{className:'muted',style:{marginTop:-8,marginBottom:12}},'Leave blank for a meeting entered after the fact — no Teams invite will be sent. Otherwise, family attendees get a Teams calendar invite on this date.'),
+      h(AttendeesPicker,{members,attendees,onChange:setAttendees}),
+      !initial&&h('div',{style:{marginTop:12}},
+        h('label',{className:'form-label'},'Initial agenda items'),
+        agendaItems.map((a,i)=>h('div',{key:i,className:'inline-add'},
+          h('input',{style:{flex:1},placeholder:'Agenda item',value:a,onChange:e=>updateAgenda(i,e.target.value)}),
+          agendaItems.length>1&&h('button',{type:'button',className:'btn btn-outline btn-sm',onClick:()=>removeAgendaRow(i)},'Remove'))),
+        h('button',{type:'button',className:'btn btn-outline btn-sm',style:{marginTop:6},onClick:addAgendaRow},'+ Add agenda item')),
+      error&&h('div',{className:'alert alert-danger',style:{marginTop:12}},error),
+      h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16}},
+        h('button',{className:'btn btn-outline btn-sm',onClick:onCancel},'Cancel'),
+        h('button',{className:'btn btn-teal btn-sm',disabled:saving,onClick:save},saving?'Saving…':'Save'))
+    )
+  );
+}
+
+function RolesModal({members,onClose,onMemberUpdated}){
+  const [busy,setBusy]=useState(null);
+  async function setRole(m,role){
+    setBusy(m.id);
+    try{const updated=await api.put(`/api/admin/members/${m.id}/app-role`,{app:'meetings',role});onMemberUpdated(updated);}
+    catch(e){alert(e.message||'Failed to update role');}
+    finally{setBusy(null);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Meetings Roles'),
+      members.filter(m=>m.isActive!==false).map(m=>h('div',{key:m.id,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}},
+        h('span',{className:'avatar',style:{background:m.color}},m.initials),
+        h('span',{style:{flex:1,fontSize:13}},m.name),
+        h('select',{style:{fontSize:11,padding:'3px 6px',borderRadius:6,border:'0.5px solid var(--border)'},value:m.meetingsRole,disabled:busy===m.id,onChange:e=>setRole(m,e.target.value)},
+          h('option',{value:'admin'},'Admin'),h('option',{value:'member'},'Member'),h('option',{value:'viewer'},'Viewer'))
+      )),
+      h('div',{style:{display:'flex',justifyContent:'flex-end',marginTop:16}},
+        h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close'))
+    )
+  );
+}
+
+function AddDecision({onAdd}){
+  const [value,setValue]=useState('');
+  async function submit(){if(!value.trim())return;await onAdd(value.trim());setValue('');}
+  return h('div',{className:'inline-add'},
+    h('input',{style:{flex:1},placeholder:'Add a decision…',value,onChange:e=>setValue(e.target.value),onKeyDown:e=>{if(e.key==='Enter')submit();}}),
+    h('button',{type:'button',className:'btn btn-outline btn-sm',onClick:submit},'Add'));
+}
+
+function AddActionItem({members,categories,onAdd}){
+  const [isFamily,setIsFamily]=useState(true);
+  const [description,setDescription]=useState('');
+  const [assigneeUserId,setAssigneeUserId]=useState(members[0]?.id||'');
+  const [categoryId,setCategoryId]=useState(categories[0]?.id||'');
+  const [assigneeName,setAssigneeName]=useState('');
+  async function submit(){
+    if(!description.trim())return;
+    if(isFamily)await onAdd({description:description.trim(),isFamily:true,assigneeUserId,categoryId});
+    else await onAdd({description:description.trim(),isFamily:false,assigneeName:assigneeName.trim()});
+    setDescription('');setAssigneeName('');
+  }
+  return h('div',{style:{marginTop:6}},
+    h('div',{style:{display:'flex',gap:12,marginBottom:6,fontSize:12}},
+      h('label',{style:{display:'flex',alignItems:'center',gap:4}},h('input',{type:'radio',checked:isFamily,onChange:()=>setIsFamily(true)}),'Family action item'),
+      h('label',{style:{display:'flex',alignItems:'center',gap:4}},h('input',{type:'radio',checked:!isFamily,onChange:()=>setIsFamily(false)}),'Non-family action item')),
+    h('div',{className:'inline-add'},
+      h('input',{style:{flex:1},placeholder:'Action item description',value:description,onChange:e=>setDescription(e.target.value)}),
+      isFamily?h(React.Fragment,null,
+        h('select',{value:assigneeUserId,onChange:e=>setAssigneeUserId(e.target.value)},members.map(m=>h('option',{key:m.id,value:m.id},m.name.split(' ')[0]))),
+        h('select',{value:categoryId,onChange:e=>setCategoryId(e.target.value)},categories.map(c=>h('option',{key:c.id,value:c.id},c.name)))
+      ):h('input',{placeholder:'Who (optional)',value:assigneeName,onChange:e=>setAssigneeName(e.target.value)}),
+      h('button',{type:'button',className:'btn btn-outline btn-sm',onClick:submit},'Add'))
+  );
+}
+
+function AgendaItemCard({item,members,categories,editable,onSaveSummary,onAddDecision,onDeleteDecision,onAddActionItem,onDeleteActionItem,onDelete}){
+  const [summary,setSummary]=useState(item.discussionSummary||'');
+  useEffect(()=>{setSummary(item.discussionSummary||'');},[item.discussionSummary]);
+  const familyItems=item.actionItems.filter(a=>a.isFamily);
+  const nonFamilyItems=item.actionItems.filter(a=>!a.isFamily);
+  return h('div',{className:'agenda-card'},
+    h('div',{style:{display:'flex',justifyContent:'space-between'}},
+      h('div',{className:'agenda-title'},item.title),
+      editable&&onDelete&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDelete(item.id)},'Remove')),
+    h('div',{className:'subhead'},'Discussion summary'),
+    editable
+      ? h('textarea',{className:'form-textarea',style:{marginBottom:4},value:summary,onChange:e=>setSummary(e.target.value),onBlur:()=>{if(summary!==(item.discussionSummary||''))onSaveSummary(item.id,summary);}})
+      : h('div',{className:'muted'},item.discussionSummary||'—'),
+    h('div',{className:'subhead'},'Decisions'),
+    item.decisions.length===0&&h('div',{className:'muted'},'None recorded.'),
+    item.decisions.map(d=>h('div',{key:d.id,className:'item-line'},h('span',null,d.description),editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteDecision(d.id)},'×'))),
+    editable&&h(AddDecision,{onAdd:desc=>onAddDecision(item.id,desc)}),
+    h('div',{className:'subhead'},'Family action items'),
+    familyItems.length===0&&h('div',{className:'muted'},'None.'),
+    familyItems.map(a=>h('div',{key:a.id,className:'item-line'},h('span',null,a.description,' — ',(memberById(members,a.assigneeUserId)||{}).name||'—'),editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteActionItem(a.id)},'×'))),
+    h('div',{className:'subhead'},'Non-family action items'),
+    nonFamilyItems.length===0&&h('div',{className:'muted'},'None.'),
+    nonFamilyItems.map(a=>h('div',{key:a.id,className:'item-line'},h('span',null,a.description,a.assigneeName?' — '+a.assigneeName:''),editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteActionItem(a.id)},'×'))),
+    editable&&h(AddActionItem,{members,categories,onAdd:payload=>onAddActionItem(item.id,payload)})
+  );
+}
+
+function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged}){
+  const [meeting,setMeeting]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [showEditPlan,setShowEditPlan]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [notice,setNotice]=useState('');
+  const [newAgendaTitle,setNewAgendaTitle]=useState('');
+
+  function load(){setLoading(true);api.get(`/api/meetings/${meetingId}`).then(setMeeting).catch(e=>setError(e.message)).finally(()=>setLoading(false));}
+  useEffect(load,[meetingId]);
+  // Post-mutation updates re-fetch without the loading flag, so the page doesn't flash
+  // back to "Loading…" and unmount every in-progress field — several agenda items may
+  // be mid-edit at once while minutes are being recorded live during a meeting.
+  function refresh(){return api.get(`/api/meetings/${meetingId}`).then(setMeeting).catch(e=>setError(e.message));}
+
+  const canEditPlan=roles.meetingsMember&&meeting&&meeting.status==='planned';
+  const canEditMinutes=meeting&&(roles.meetingsAdmin||(roles.meetingsMember&&meeting.status==='planned'));
+
+  async function savePlan(payload){await api.put(`/api/meetings/${meetingId}`,payload);setShowEditPlan(false);await refresh();onChanged();}
+  async function saveSummary(itemId,discussionSummary){await api.put(`/api/meetings/${meetingId}/agenda-items/${itemId}/summary`,{discussionSummary});await refresh();}
+  async function addDecision(itemId,description){await api.post(`/api/meetings/${meetingId}/agenda-items/${itemId}/decisions`,{description});await refresh();}
+  async function deleteDecision(decisionId){await api.del(`/api/meetings/${meetingId}/decisions/${decisionId}`);await refresh();}
+  async function addActionItem(itemId,payload){await api.post(`/api/meetings/${meetingId}/agenda-items/${itemId}/action-items`,payload);await refresh();}
+  async function deleteActionItem(actionItemId){await api.del(`/api/meetings/${meetingId}/action-items/${actionItemId}`);await refresh();}
+  async function addAgendaItem(){if(!newAgendaTitle.trim())return;await api.post(`/api/meetings/${meetingId}/agenda-items`,{title:newAgendaTitle.trim()});setNewAgendaTitle('');await refresh();}
+  async function deleteAgendaItem(itemId){if(!window.confirm('Remove this agenda item and its minutes?'))return;await api.del(`/api/meetings/${meetingId}/agenda-items/${itemId}`);await refresh();}
+
+  async function sendInviteNow(){
+    setBusy(true);setNotice('');
+    try{const r=await api.post(`/api/meetings/${meetingId}/send-invite`,{});setNotice(r.sent?'Teams invite sent to family attendees.':(r.reason||'Nothing sent.'));await refresh();}
+    catch(e){setNotice(e.message||'Failed to send invite');}
+    finally{setBusy(false);}
+  }
+  async function markComplete(){
+    if(!window.confirm('Mark this meeting and its minutes complete? This emails the minutes to every family attendee.'))return;
+    setBusy(true);setNotice('');
+    try{const r=await api.put(`/api/meetings/${meetingId}/complete`,{});setNotice(r.minutesEmailWarning||(r.minutesEmail?`Minutes emailed to ${r.minutesEmail.sentTo} attendee(s).`:'Meeting marked complete.'));await refresh();onChanged();}
+    catch(e){setNotice(e.message||'Failed to mark complete');}
+    finally{setBusy(false);}
+  }
+  async function resendMinutes(){
+    setBusy(true);setNotice('');
+    try{const r=await api.post(`/api/meetings/${meetingId}/resend-minutes`,{});setNotice(`Minutes resent to ${r.sentTo} attendee(s).`);}
+    catch(e){setNotice(e.message||'Failed to resend minutes');}
+    finally{setBusy(false);}
+  }
+  async function deleteMeeting(){
+    if(!window.confirm('Delete this meeting permanently? This cannot be undone.'))return;
+    await api.del(`/api/meetings/${meetingId}`);
+    onChanged();onBack();
+  }
+
+  if(loading)return h('div',{className:'page'},'Loading…');
+  if(error)return h('div',{className:'page'},h('div',{className:'alert alert-danger'},error));
+  if(!meeting)return null;
+
+  return h('div',{className:'page'},
+    h('a',{className:'back-link',onClick:onBack},'← Back to meetings'),
+    h('div',{className:'card'},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8}},
+        h('div',null,
+          h('div',{style:{fontSize:17,fontWeight:700,color:'var(--navy)'}},meeting.title,h('span',{className:`badge badge-${meeting.status}`},meeting.status)),
+          h('div',{className:'muted'},fmtDateTime(meeting.plannedAt)+' · '+meeting.durationMinutes+' min'),
+          meeting.teamsJoinUrl&&h('div',{style:{marginTop:4}},h('a',{href:meeting.teamsJoinUrl,target:'_blank',rel:'noopener',style:{color:'var(--teal)',fontSize:12}},'Join Teams meeting →'))
+        ),
+        h('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+          canEditPlan&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setShowEditPlan(true)},'Edit Plan'),
+          roles.meetingsAdmin&&meeting.status==='planned'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:sendInviteNow},meeting.inviteSentAt?'Resend Invite Now':'Send Invite Now'),
+          roles.meetingsAdmin&&meeting.status==='planned'&&h('button',{className:'btn btn-gold btn-sm',disabled:busy,onClick:markComplete},'Mark Complete'),
+          roles.meetingsAdmin&&meeting.status==='completed'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:resendMinutes},'Resend Minutes'),
+          roles.meetingsAdmin&&h('button',{className:'btn btn-danger btn-sm',onClick:deleteMeeting},'Delete')
+        )
+      ),
+      notice&&h('div',{className:'alert alert-success',style:{marginTop:10}},notice),
+      h('div',{style:{marginTop:10}},
+        h('div',{className:'subhead'},'Attendees'),
+        meeting.attendees.length===0&&h('div',{className:'muted'},'None listed.'),
+        meeting.attendees.map(a=>a.external
+          ?h('span',{key:a.id,className:'muted',style:{marginRight:10}},a.name+' (external)')
+          :h('span',{key:a.id,className:'avatar',style:{background:(memberById(members,a.userId)||{}).color||'#999'},title:a.name},(memberById(members,a.userId)||{}).initials||'?')),
+        meeting.inviteSendDate&&h('div',{className:'muted',style:{marginTop:6}},'Invite send date: '+meeting.inviteSendDate+(meeting.inviteSentAt?' · sent '+fmtDateTime(meeting.inviteSentAt):' · not yet sent')),
+        !meeting.inviteSendDate&&h('div',{className:'muted',style:{marginTop:6}},'No Teams invite scheduled for this meeting.')
+      )
+    ),
+    meeting.agendaItems.map(item=>h(AgendaItemCard,{
+      key:item.id,item,members,categories,editable:canEditMinutes,
+      onSaveSummary:saveSummary,onAddDecision:addDecision,onDeleteDecision:deleteDecision,
+      onAddActionItem:addActionItem,onDeleteActionItem:deleteActionItem,onDelete:deleteAgendaItem,
+    })),
+    canEditMinutes&&h('div',{className:'card'},
+      h('div',{className:'subhead'},'Add agenda item'),
+      h('div',{className:'inline-add'},
+        h('input',{style:{flex:1},placeholder:'New agenda item',value:newAgendaTitle,onChange:e=>setNewAgendaTitle(e.target.value),onKeyDown:e=>{if(e.key==='Enter')addAgendaItem();}}),
+        h('button',{type:'button',className:'btn btn-outline btn-sm',onClick:addAgendaItem},'Add'))
+    ),
+    showEditPlan&&h(ScheduleModal,{initial:meeting,members,onSave:savePlan,onCancel:()=>setShowEditPlan(false)})
+  );
+}
+
+function MeetingsList({meetings,members,onOpen}){
+  const [filterStatus,setFilterStatus]=useState('');
+  const visible=meetings.filter(m=>!filterStatus||m.status===filterStatus);
+  return h('div',null,
+    h('div',{className:'filters'},
+      h('select',{value:filterStatus,onChange:e=>setFilterStatus(e.target.value)},
+        h('option',{value:''},'All statuses'),h('option',{value:'planned'},'Planned'),h('option',{value:'completed'},'Completed'),h('option',{value:'cancelled'},'Cancelled'))),
+    h('div',{className:'card',style:{padding:0}},
+      visible.length===0&&h('div',{style:{padding:20,textAlign:'center'},className:'muted'},'No meetings yet.'),
+      visible.map(m=>h('div',{key:m.id,className:'meeting-row',onClick:()=>onOpen(m.id)},
+        h('div',{style:{flex:1}},
+          h('div',{className:'meeting-title'},m.title,h('span',{className:`badge badge-${m.status}`},m.status)),
+          h('div',{className:'muted'},fmtDateTime(m.plannedAt))
+        ),
+        m.teamsJoinUrl&&h('span',{className:'muted'},'Teams ✓')
+      ))
+    )
+  );
+}
+
+function MeetingsApp({me,roles}){
+  const [meetings,setMeetings]=useState([]);
+  const [members,setMembers]=useState([]);
+  const [categories,setCategories]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selectedId,setSelectedId]=useState(()=>new URLSearchParams(location.search).get('meeting'));
+  const [showSchedule,setShowSchedule]=useState(false);
+  const [showRoles,setShowRoles]=useState(false);
+
+  function load(){
+    setLoading(true);
+    Promise.all([api.get('/api/meetings'),api.get('/api/members'),api.get('/api/pillars-categories')])
+      .then(([m,mem,pc])=>{setMeetings(m);setMembers(mem.filter(x=>x.isActive!==false));setCategories(pc.categories);})
+      .finally(()=>setLoading(false));
+  }
+  useEffect(load,[]);
+
+  async function createMeeting(payload){
+    const created=await api.post('/api/meetings',payload);
+    setShowSchedule(false);
+    setMeetings(list=>[created,...list]);
+    setSelectedId(created.id);
+  }
+
+  if(loading)return h('div',{className:'page'},'Loading…');
+
+  return h('div',{className:'page'},
+    !selectedId&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},
+      h('div',null,h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'Family Office Meetings'),
+        h('div',{className:'muted'},'Robinson Family Office')),
+      h('div',{style:{display:'flex',gap:8}},
+        roles.meetingsAdmin&&h('button',{className:'btn btn-outline',onClick:()=>setShowRoles(true)},'Roles'),
+        roles.meetingsMember&&h('button',{className:'btn btn-gold',onClick:()=>setShowSchedule(true)},'+ Schedule Meeting'))
+    ),
+    selectedId
+      ?h(MeetingDetail,{meetingId:selectedId,me,roles,members,categories,onBack:()=>{setSelectedId(null);history.replaceState(null,'','/meetings');},onChanged:load})
+      :h(MeetingsList,{meetings,members,onOpen:id=>{setSelectedId(id);history.replaceState(null,'','/meetings?meeting='+id);}}),
+    showSchedule&&h(ScheduleModal,{members,onSave:createMeeting,onCancel:()=>setShowSchedule(false)}),
+    showRoles&&h(RolesModal,{members,onClose:()=>setShowRoles(false),onMemberUpdated:u=>setMembers(list=>list.map(x=>x.id===u.id?u:x))})
+  );
+}
+
+function Shell(){
+  const [me,setMe]=useState(null);
+  const [checking,setChecking]=useState(true);
+  const [showMenu,setShowMenu]=useState(false);
+  useEffect(()=>{
+    api.get('/api/me').then(setMe).catch(()=>{
+      const target=location.pathname+location.search;
+      location.href='/due-diligence?returnTo='+encodeURIComponent(target);
+    }).finally(()=>setChecking(false));
+  },[]);
+  async function logout(){await api.post('/api/logout');location.href='/due-diligence';}
+  if(checking||!me)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  const roles={meetingsAdmin:me.meetingsAdmin,meetingsMember:me.meetingsAdmin||me.meetingsRole==='member'};
+  if(!roles.meetingsMember&&me.meetingsRole!=='viewer')return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'You do not have access to Family Office Meetings.');
+  return h('div',null,
+    h('nav',{className:'nav'},
+      h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Family Office Meetings'),
+        h('a',{href:'/due-diligence',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'PQ Due Diligence →'),
+        h('a',{href:'/tasks',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Family Task List →')),
+      h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},me.name.split(' ')[0]),
+    ),
+    showMenu&&h('div',{style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:180,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
+      h('div',{style:{padding:'8px 10px',fontSize:13,fontWeight:600,color:'var(--navy)'}},me.name),
+      h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},roles.meetingsAdmin?'Meetings Admin':roles.meetingsMember?'Meetings Member':'Read-only'),
+      me.isAdmin&&h('a',{href:'/admin',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'👥 Manage Members'),
+      h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')
+    ),
+    h(MeetingsApp,{me,roles})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(Shell));
+</script>
+</body>
+</html>
