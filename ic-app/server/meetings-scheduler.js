@@ -40,11 +40,13 @@ function escapeHtml(text) {
   return String(text || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-// Creates the Graph Teams meeting and emails invites to family attendees only (Section
-// 7.2 — external attendees are never auto-invited by the app). Throws
-// mailer.MailNotConfiguredError if Graph isn't configured; callers decide whether that
-// should be swallowed (the hourly sweep does) or surfaced (the admin "Send invite now"
-// button does, so the admin sees why nothing happened).
+// Creates the Graph calendar event and emails invites to family attendees only (Section
+// 7.2 — external attendees are never auto-invited by the app). Teams online-meeting
+// provisioning is deferred for now (see graph-calendar.js) — this is a plain calendar
+// invite until that's added back. Throws mailer.MailNotConfiguredError if Graph isn't
+// configured; callers decide whether that should be swallowed (the hourly sweep does)
+// or surfaced (the admin "Send invite now" button does, so the admin sees why nothing
+// happened).
 async function sendMeetingInvite(db, meetingId) {
   const meeting = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId);
   if (!meeting) throw new Error('Meeting not found');
@@ -55,20 +57,15 @@ async function sendMeetingInvite(db, meetingId) {
   const agendaItems = db.prepare('SELECT title FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order').all(meetingId);
   const start = new Date(meeting.planned_at);
   const end = new Date(start.getTime() + meeting.duration_minutes * 60000);
-  const { eventId, joinUrl } = await graphCalendar.createTeamsMeeting({
+  const { eventId } = await graphCalendar.createCalendarEvent({
     subject: meeting.title,
     startIso: start.toISOString(),
     endIso: end.toISOString(),
     attendeeEmails: attendees.map((a) => a.email),
     agendaHtml: agendaHtmlForInvite(agendaItems),
   });
-  db.prepare('UPDATE meetings SET invite_sent_at = ?, graph_event_id = ?, teams_join_url = ? WHERE id = ?').run(
-    new Date().toISOString(),
-    eventId,
-    joinUrl,
-    meetingId
-  );
-  return { sent: true, joinUrl };
+  db.prepare('UPDATE meetings SET invite_sent_at = ?, graph_event_id = ? WHERE id = ?').run(new Date().toISOString(), eventId, meetingId);
+  return { sent: true };
 }
 
 function todayDateStr() {

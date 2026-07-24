@@ -11,7 +11,7 @@ applications under it —
   People / Core Business / Operations), seeded from the family's
   `Family_Office_Task_List_2026 Q2.xlsx`, with its own scheduled email digest.
 - **Family Office Meetings** (`/meetings`) — schedule a meeting with an agenda and
-  planned attendees, optionally emailing family attendees a Teams calendar invite on a
+  planned attendees, optionally emailing family attendees a calendar invite on a
   chosen date; record minutes against the agenda during the meeting (discussion summary,
   decisions, family/non-family action items); mark the meeting complete to email the
   finished minutes to every family attendee. A family action item recorded in the
@@ -136,7 +136,8 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   (`task_digest_cadence`, `task_digest_day_of_week`, etc. — see `server/digest.js`).
 - `meetings` — one row per scheduled/held meeting (title, planned date/time, duration,
   status `planned`/`completed`/`cancelled`, optional `invite_send_date`, and the
-  Microsoft Graph event id/Teams join link once an invite has gone out).
+  Microsoft Graph event id once an invite has gone out — `teams_join_url` is reserved
+  for when Teams online-meeting provisioning is added back, see below).
 - `meeting_attendees` — a meeting's planned attendees: either a family member
   (`user_id`) or an external invitee (`external_name`/`external_email`).
 - `agenda_items` — one row per agenda item on a meeting, with `discussion_summary`
@@ -161,13 +162,23 @@ Settings" panel on `/tasks`.
 Schedule a meeting (`/meetings`) with an agenda, planned attendees, and an optional
 invite send date. If set, `server/meetings-scheduler.js` runs an hourly sweep
 (`startMeetingsScheduler`, same pattern as the Task List digest) that creates a real
-Microsoft Teams meeting via the Graph Calendar API (`server/graph-calendar.js`) and
+Outlook calendar event via the Graph Calendar API (`server/graph-calendar.js`) and
 emails a calendar invite to the meeting's **family** attendees only — external attendees
 are never auto-invited by the app. This needs the Azure App Registration already used
 for `MS_GRAPH_*` mail to also be granted the **`Calendars.ReadWrite` application
 permission**, admin-consented and scoped to `MS_GRAPH_SENDER` via the same Exchange
 Application Access Policy documented below for Mail.Send — no new environment variables
 are required. An admin can also trigger the invite immediately via "Send Invite Now."
+
+**Teams online-meeting provisioning is deliberately deferred.** The event is a plain
+calendar invite for now — it does not set `isOnlineMeeting`/`onlineMeetingProvider`, so
+there's no Teams join link yet. Turning it into an actual Teams meeting later needs one
+more piece of Microsoft-side configuration beyond the Calendars.ReadWrite grant above: a
+**Microsoft Teams Application Access Policy** (`New-CsApplicationAccessPolicy` /
+`Grant-CsApplicationAccessPolicy` in Teams PowerShell — not configurable from the Azure
+Portal), scoped to this app's Client ID and the `MS_GRAPH_SENDER` mailbox. Without it,
+Graph silently drops the online-meeting fields rather than erroring, which is why this
+was pulled back out rather than shipped half-working.
 
 During the meeting, anyone with Meetings member/admin access records minutes against
 each agenda item (discussion summary, decisions, family/non-family action items) and

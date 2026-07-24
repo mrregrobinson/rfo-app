@@ -148,7 +148,7 @@ function ScheduleModal({initial,members,onSave,onCancel}){
       h('input',{className:'form-input',type:'number',min:15,step:15,value:durationMinutes,onChange:e=>setDurationMinutes(e.target.value)}),
       h('label',{className:'form-label'},'Invite send date (optional)'),
       h('input',{className:'form-input',type:'date',value:inviteSendDate,onChange:e=>setInviteSendDate(e.target.value)}),
-      h('div',{className:'muted',style:{marginTop:-8,marginBottom:12}},'Leave blank for a meeting entered after the fact — no Teams invite will be sent. Otherwise, family attendees get a Teams calendar invite on this date.'),
+      h('div',{className:'muted',style:{marginTop:-8,marginBottom:12}},'Leave blank for a meeting entered after the fact — no invite will be sent. Otherwise, family attendees get a calendar invite on this date.'),
       h(AttendeesPicker,{members,attendees,onChange:setAttendees}),
       !initial&&h('div',{style:{marginTop:12}},
         h('label',{className:'form-label'},'Initial agenda items'),
@@ -283,7 +283,7 @@ function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged})
 
   async function sendInviteNow(){
     setBusy(true);setNotice('');
-    try{const r=await api.post(`/api/meetings/${meetingId}/send-invite`,{});setNotice(r.sent?'Teams invite sent to family attendees.':(r.reason||'Nothing sent.'));await refresh();}
+    try{const r=await api.post(`/api/meetings/${meetingId}/send-invite`,{});setNotice(r.sent?'Calendar invite sent to family attendees.':(r.reason||'Nothing sent.'));await refresh();}
     catch(e){setNotice(e.message||'Failed to send invite');}
     finally{setBusy(false);}
   }
@@ -335,7 +335,7 @@ function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged})
           ?h('span',{key:a.id,className:'muted',style:{marginRight:10}},a.name+' (external)')
           :h('span',{key:a.id,className:'avatar',style:{background:(memberById(members,a.userId)||{}).color||'#999'},title:a.name},(memberById(members,a.userId)||{}).initials||'?')),
         meeting.inviteSendDate&&h('div',{className:'muted',style:{marginTop:6}},'Invite send date: '+meeting.inviteSendDate+(meeting.inviteSentAt?' · sent '+fmtDateTime(meeting.inviteSentAt):' · not yet sent')),
-        !meeting.inviteSendDate&&h('div',{className:'muted',style:{marginTop:6}},'No Teams invite scheduled for this meeting.')
+        !meeting.inviteSendDate&&h('div',{className:'muted',style:{marginTop:6}},'No invite scheduled for this meeting.')
       )
     ),
     meeting.agendaItems.map(item=>h(AgendaItemCard,{
