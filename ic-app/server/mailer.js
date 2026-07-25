@@ -3,10 +3,6 @@
 // the family's existing Microsoft 365 tenant instead of adding a third-party mail vendor.
 // Requires an Azure App Registration with an application-level Mail.Send permission,
 // scoped (via an Exchange Application Access Policy) to the sending mailbox only.
-// The Meetings module's Teams invites (server/graph-calendar.js) reuse this same
-// registration's token and additionally need the Calendars.ReadWrite application
-// permission granted on it, scoped the same way — no separate app registration or
-// environment variables needed for that.
 
 const TENANT_ID = process.env.MS_GRAPH_TENANT_ID;
 const CLIENT_ID = process.env.MS_GRAPH_CLIENT_ID;
@@ -46,34 +42,40 @@ async function getAccessToken() {
   return cachedToken.accessToken;
 }
 
-// { to, subject, html } — sends as SENDER via Graph's /users/{sender}/sendMail.
+// { to, subject, html, attachments } — sends as SENDER via Graph's /users/{sender}/sendMail.
+// attachments (optional) is [{ name, contentType, contentBase64 }] — used by the
+// Meetings module to attach a hand-built .ics meeting request (server/ics.js) rather
+// than creating the event through Graph's Calendar API, which has a known gap for
+// application-permission calls against a shared mailbox (see server/ics.js's header).
 // Throws MailNotConfiguredError if the MS_GRAPH_* env vars aren't set, or a plain Error
 // on any Graph/HTTP failure — callers decide how much that should matter to the request
 // that triggered the email (usually: log it, don't fail the request).
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, subject, html, attachments }) {
   const token = await getAccessToken();
+  const message = {
+    subject,
+    body: { contentType: 'HTML', content: html },
+    toRecipients: [{ emailAddress: { address: to } }],
+  };
+  if (attachments && attachments.length) {
+    message.attachments = attachments.map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: a.name,
+      contentType: a.contentType,
+      contentBytes: a.contentBase64,
+    }));
+  }
   const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(SENDER)}/sendMail`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      message: {
-        subject,
-        body: { contentType: 'HTML', content: html },
-        toRecipients: [{ emailAddress: { address: to } }],
-      },
-      saveToSentItems: false,
-    }),
+    body: JSON.stringify({ message, saveToSentItems: false }),
   });
   if (!res.ok) {
     throw new Error(`Graph sendMail failed: ${res.status} ${await res.text()}`);
   }
 }
 
-// Exported so server/graph-calendar.js (Meetings module Teams invites) can reuse the
-// same app-only token rather than authenticating a second time — Graph's ".default"
-// scope covers every permission granted on this app registration, Mail.Send and
-// Calendars.ReadWrite alike, so one cached token serves both.
-module.exports = { sendMail, isConfigured, getAccessToken, MailNotConfiguredError };
+module.exports = { sendMail, isConfigured, MailNotConfiguredError };

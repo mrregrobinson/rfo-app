@@ -135,9 +135,9 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 - `settings` — generic key/value store, also used for the Task List's digest cadence
   (`task_digest_cadence`, `task_digest_day_of_week`, etc. — see `server/digest.js`).
 - `meetings` — one row per scheduled/held meeting (title, planned date/time, duration,
-  status `planned`/`completed`/`cancelled`, optional `invite_send_date`, and the
-  Microsoft Graph event id once an invite has gone out — `teams_join_url` is reserved
-  for when Teams online-meeting provisioning is added back, see below).
+  status `planned`/`completed`/`cancelled`, optional `invite_send_date`, and
+  `ics_sequence` — the iCalendar SEQUENCE number for the invite, incremented on every
+  (re)send so a resend reads as an update rather than a stale duplicate).
 - `meeting_attendees` — a meeting's planned attendees: either a family member
   (`user_id`) or an external invitee (`external_name`/`external_email`).
 - `agenda_items` — one row per agenda item on a meeting, with `discussion_summary`
@@ -161,24 +161,32 @@ Settings" panel on `/tasks`.
 
 Schedule a meeting (`/meetings`) with an agenda, planned attendees, and an optional
 invite send date. If set, `server/meetings-scheduler.js` runs an hourly sweep
-(`startMeetingsScheduler`, same pattern as the Task List digest) that creates a real
-Outlook calendar event via the Graph Calendar API (`server/graph-calendar.js`) and
-emails a calendar invite to the meeting's **family** attendees only — external attendees
-are never auto-invited by the app. This needs the Azure App Registration already used
-for `MS_GRAPH_*` mail to also be granted the **`Calendars.ReadWrite` application
-permission**, admin-consented and scoped to `MS_GRAPH_SENDER` via the same Exchange
-Application Access Policy documented below for Mail.Send — no new environment variables
-are required. An admin can also trigger the invite immediately via "Send Invite Now."
+(`startMeetingsScheduler`, same pattern as the Task List digest) that emails a real
+calendar invite to the meeting's **family** attendees only — external attendees are
+never auto-invited by the app. An admin can also trigger it immediately via "Send Invite
+Now."
 
-**Teams online-meeting provisioning is deliberately deferred.** The event is a plain
-calendar invite for now — it does not set `isOnlineMeeting`/`onlineMeetingProvider`, so
-there's no Teams join link yet. Turning it into an actual Teams meeting later needs one
-more piece of Microsoft-side configuration beyond the Calendars.ReadWrite grant above: a
-**Microsoft Teams Application Access Policy** (`New-CsApplicationAccessPolicy` /
-`Grant-CsApplicationAccessPolicy` in Teams PowerShell — not configurable from the Azure
-Portal), scoped to this app's Client ID and the `MS_GRAPH_SENDER` mailbox. Without it,
-Graph silently drops the online-meeting fields rather than erroring, which is why this
-was pulled back out rather than shipped half-working.
+**The invite is a hand-built iCalendar (`.ics`) file (`server/ics.js`), attached to a
+normal email sent through the existing Mail.Send mailer — not created via the Graph
+Calendar API.** That's a deliberate choice, not a simplification for its own sake:
+creating a calendar event through Graph's *application* (app-only, no signed-in user)
+permissions against a *shared* mailbox — which is what `MS_GRAPH_SENDER` is — has a
+confirmed gap. The event gets created and something gets emailed, but Outlook never
+fully treats it as a real trackable meeting: no Accept/Decline, never lands on the
+recipient's calendar. This was verified directly by inspecting a real test invite via
+Outlook automation — the message was tagged as a meeting request, but Outlook's own
+typed meeting properties (Start/End/Organizer/RequiredAttendees) were empty, even though
+the raw start-date property underneath had a value. A hand-built `METHOD:REQUEST` `.ics`
+sidesteps this entirely, since it never goes through Graph's Calendar/Events endpoints —
+any calendar-aware client recognizes a well-formed `.ics` attachment as a meeting
+request regardless of how the email carrying it was sent. See `server/ics.js` for the
+full explanation and RFC 5545 details.
+
+Online-meeting links (Teams or otherwise) are out of scope for now — the invite is a
+plain calendar meeting. If that's revisited later, the natural place to add it is
+generating a join link (via whatever mechanism proves reliable for a shared mailbox) and
+including it in the `.ics` `DESCRIPTION`/`LOCATION` fields, rather than going back to the
+Graph Calendar API.
 
 During the meeting, anyone with Meetings member/admin access records minutes against
 each agenda item (discussion summary, decisions, family/non-family action items) and

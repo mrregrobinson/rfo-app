@@ -4,9 +4,10 @@
 // / "resend minutes" actions in server/meetings.js rather than on a schedule, since it's
 // a one-off admin-triggered event, not a recurring cadence.
 const mailer = require('./mailer');
-const graphCalendar = require('./graph-calendar');
+const { buildMeetingIcs } = require('./ics');
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
+const MS_GRAPH_SENDER = process.env.MS_GRAPH_SENDER;
 
 function familyAttendeesWithEmail(db, meetingId) {
   return db
@@ -36,17 +37,22 @@ function agendaHtmlForInvite(agendaItems) {
   return `<p>Agenda:</p><ul>${agendaItems.map((a) => `<li>${escapeHtml(a.title)}</li>`).join('')}</ul>`;
 }
 
+function agendaPlainTextForInvite(agendaItems) {
+  if (agendaItems.length === 0) return 'No agenda items yet.';
+  return 'Agenda:\n' + agendaItems.map((a) => `- ${a.title}`).join('\n');
+}
+
 function escapeHtml(text) {
   return String(text || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-// Creates the Graph calendar event and emails invites to family attendees only (Section
-// 7.2 — external attendees are never auto-invited by the app). Teams online-meeting
-// provisioning is deferred for now (see graph-calendar.js) — this is a plain calendar
-// invite until that's added back. Throws mailer.MailNotConfiguredError if Graph isn't
-// configured; callers decide whether that should be swallowed (the hourly sweep does)
-// or surfaced (the admin "Send invite now" button does, so the admin sees why nothing
-// happened).
+// Emails a hand-built .ics meeting request to family attendees only (Section 7.2 —
+// external attendees are never auto-invited by the app) — see server/ics.js for why
+// this doesn't go through the Graph Calendar API. Throws mailer.MailNotConfiguredError
+// if Graph isn't configured; callers decide whether that should be swallowed (the
+// hourly sweep does) or surfaced (the admin "Send invite now" button does, so the admin
+// sees why nothing happened). Per-recipient send failures (once mail is confirmed
+// configured) are logged and don't block the rest of the list, matching sendMinutesEmail.
 async function sendMeetingInvite(db, meetingId) {
   const meeting = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId);
   if (!meeting) throw new Error('Meeting not found');
@@ -57,15 +63,40 @@ async function sendMeetingInvite(db, meetingId) {
   const agendaItems = db.prepare('SELECT title FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order').all(meetingId);
   const start = new Date(meeting.planned_at);
   const end = new Date(start.getTime() + meeting.duration_minutes * 60000);
-  const { eventId } = await graphCalendar.createCalendarEvent({
-    subject: meeting.title,
-    startIso: start.toISOString(),
-    endIso: end.toISOString(),
-    attendeeEmails: attendees.map((a) => a.email),
-    agendaHtml: agendaHtmlForInvite(agendaItems),
+
+  const icsContent = buildMeetingIcs({
+    uid: `${meeting.id}@rfo.quaysolutions.ca`,
+    sequence: meeting.ics_sequence,
+    method: 'REQUEST',
+    organizerEmail: MS_GRAPH_SENDER,
+    organizerName: 'Robinson Family Office',
+    attendees: attendees.map((a) => ({ name: a.name, email: a.email })),
+    title: meeting.title,
+    startDate: start,
+    endDate: end,
+    descriptionText: agendaPlainTextForInvite(agendaItems),
   });
-  db.prepare('UPDATE meetings SET invite_sent_at = ?, graph_event_id = ? WHERE id = ?').run(new Date().toISOString(), eventId, meetingId);
-  return { sent: true };
+  const icsAttachment = {
+    name: 'invite.ics',
+    contentType: 'text/calendar; method=REQUEST; charset=UTF-8',
+    contentBase64: Buffer.from(icsContent, 'utf8').toString('base64'),
+  };
+  const html = `<p>You're invited to <strong>${escapeHtml(meeting.title)}</strong>.</p>${agendaHtmlForInvite(
+    agendaItems
+  )}<p>See the attached calendar invite to add this to your calendar.</p>`;
+
+  let sentTo = 0;
+  for (const attendee of attendees) {
+    try {
+      await mailer.sendMail({ to: attendee.email, subject: meeting.title, html, attachments: [icsAttachment] });
+      sentTo += 1;
+    } catch (err) {
+      if (err instanceof mailer.MailNotConfiguredError) throw err; // Not configured at all — surface immediately.
+      console.error(`Failed to send meeting invite to ${attendee.email}:`, err.message);
+    }
+  }
+  db.prepare('UPDATE meetings SET invite_sent_at = ?, ics_sequence = ics_sequence + 1 WHERE id = ?').run(new Date().toISOString(), meetingId);
+  return { sent: true, sentTo };
 }
 
 function todayDateStr() {

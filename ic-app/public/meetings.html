@@ -316,8 +316,7 @@ function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged})
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8}},
         h('div',null,
           h('div',{style:{fontSize:17,fontWeight:700,color:'var(--navy)'}},meeting.title,h('span',{className:`badge badge-${meeting.status}`},meeting.status)),
-          h('div',{className:'muted'},fmtDateTime(meeting.plannedAt)+' · '+meeting.durationMinutes+' min'),
-          meeting.teamsJoinUrl&&h('div',{style:{marginTop:4}},h('a',{href:meeting.teamsJoinUrl,target:'_blank',rel:'noopener',style:{color:'var(--teal)',fontSize:12}},'Join Teams meeting →'))
+          h('div',{className:'muted'},fmtDateTime(meeting.plannedAt)+' · '+meeting.durationMinutes+' min')
         ),
         h('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
           canEditPlan&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setShowEditPlan(true)},'Edit Plan'),
@@ -367,7 +366,7 @@ function MeetingsList({meetings,members,onOpen}){
           h('div',{className:'meeting-title'},m.title,h('span',{className:`badge badge-${m.status}`},m.status)),
           h('div',{className:'muted'},fmtDateTime(m.plannedAt))
         ),
-        m.teamsJoinUrl&&h('span',{className:'muted'},'Teams ✓')
+        m.inviteSentAt&&h('span',{className:'muted'},'Invite sent ✓')
       ))
     )
   );
