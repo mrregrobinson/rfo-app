@@ -18,6 +18,7 @@ const { logAudit, auditRowToJson } = require('./audit');
 const { logApiUsage, usageSummary } = require('./usage');
 const { runBackup, listBackups, scheduleBackups, BACKUPS_DIR } = require('./backup');
 const mailer = require('./mailer');
+const { contentRow, paragraph, emailShell } = require('./email-template');
 const registerTaskRoutes = require('./tasks');
 const { startDigestScheduler } = require('./digest');
 const registerMeetingRoutes = require('./meetings');
@@ -683,10 +684,19 @@ function notifyAdminsOfSubmission(opp, submitterId, recommendation) {
     mailer.sendMail({
       to: admin.email,
       subject: `Review submitted: ${submitter.name} — ${opp.title}`,
-      html: `<p>Hi ${admin.name.split(' ')[0]},</p>` +
-        `<p><strong>${submitter.name}</strong> submitted their review for <strong>${opp.title}</strong>` +
-        (recommendation ? ` — recommendation: <strong>${recommendation}</strong>.` : '.') +
-        `</p><p><a href="${APP_BASE_URL}/due-diligence">Open PQ Introduced Due Diligence</a> to view the full report.</p>`,
+      html: emailShell({
+        eyebrow: 'PQ Introduced Due Diligence',
+        title: 'Review Submitted',
+        bodyRowsHtml: contentRow(
+          paragraph(`Hi ${admin.name.split(' ')[0]},`) +
+            paragraph(
+              `<strong>${submitter.name}</strong> submitted their review for <strong>${opp.title}</strong>` +
+                (recommendation ? ` — recommendation: <strong>${recommendation}</strong>.` : '.')
+            )
+        ),
+        ctaText: 'Open PQ Introduced Due Diligence',
+        ctaUrl: `${APP_BASE_URL}/due-diligence`,
+      }),
     }).catch((err) => {
       if (!(err instanceof mailer.MailNotConfiguredError)) {
         console.error('Failed to send submission notification email:', err.message);
@@ -718,17 +728,24 @@ function notifyFamilyOfClosure(row) {
   const members = db.prepare('SELECT name, email FROM users WHERE is_active = 1').all();
   for (const member of members) {
     if (!member.email) continue;
-    const recLine = report?.recommendation ? `<p>Claude's analytical recommendation: <strong>${report.recommendation}</strong></p>` : '';
-    const summaryLine = report?.executiveSummary ? `<p>${report.executiveSummary}</p>` : '';
+    const recLine = report?.recommendation ? paragraph(`Claude's analytical recommendation: <strong>${report.recommendation}</strong>`) : '';
+    const summaryLine = report?.executiveSummary ? paragraph(report.executiveSummary) : '';
     mailer.sendMail({
       to: member.email,
       subject: `IC Decision: ${row.title} — ${decision.label}`,
-      html: `<p>Hi ${member.name.split(' ')[0]},</p>` +
-        `<p>The IC review for <strong>${row.title}</strong> has been closed.</p>` +
-        `<p style="font-size:16px"><strong>Decision: ${decision.label}</strong></p>` +
-        `<p>${decision.detail}</p>` +
-        recLine + summaryLine +
-        `<p><a href="${APP_BASE_URL}/due-diligence">Open PQ Introduced Due Diligence</a> to view the full report.</p>`,
+      html: emailShell({
+        eyebrow: 'PQ Introduced Due Diligence',
+        title: `Decision: ${decision.label}`,
+        subtitle: row.title,
+        bodyRowsHtml: contentRow(
+          paragraph(`Hi ${member.name.split(' ')[0]}, the IC review for <strong>${row.title}</strong> has been closed.`) +
+            paragraph(decision.detail) +
+            recLine +
+            summaryLine
+        ),
+        ctaText: 'Open PQ Introduced Due Diligence',
+        ctaUrl: `${APP_BASE_URL}/due-diligence`,
+      }),
     }).catch((err) => {
       if (!(err instanceof mailer.MailNotConfiguredError)) {
         console.error('Failed to send closure notification email:', err.message);
@@ -798,9 +815,16 @@ app.post('/api/opportunities/:id/send/:userId', requireAuth, async (req, res) =>
       await mailer.sendMail({
         to: target.email,
         subject: `New opportunity to review: ${row.title}`,
-        html: `<p>Hi ${target.name.split(' ')[0]},</p>` +
-          `<p>A PQ Introduced Due Diligence opportunity has been shared with you for review: <strong>${row.title}</strong>.</p>` +
-          `<p><a href="${APP_BASE_URL}/due-diligence">Open PQ Introduced Due Diligence</a> to review it.</p>`,
+        html: emailShell({
+          eyebrow: 'PQ Introduced Due Diligence',
+          title: 'New Opportunity to Review',
+          subtitle: row.title,
+          bodyRowsHtml: contentRow(
+            paragraph(`Hi ${target.name.split(' ')[0]}, a PQ Introduced Due Diligence opportunity has been shared with you for review: <strong>${row.title}</strong>.`)
+          ),
+          ctaText: 'Open PQ Introduced Due Diligence',
+          ctaUrl: `${APP_BASE_URL}/due-diligence`,
+        }),
       });
       emailSent = true;
     } catch (err) {

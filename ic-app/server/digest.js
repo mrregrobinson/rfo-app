@@ -3,6 +3,7 @@
 // third-party equivalents): a single hourly setInterval compares the current time
 // (in the configured timezone) against the admin-configured cadence.
 const mailer = require('./mailer');
+const { contentRow, sectionLabel, paragraph, bulletList, emailShell } = require('./email-template');
 
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
@@ -66,17 +67,16 @@ function tasksForUser(db, userId) {
 
 function sectionHtml(label, tasks) {
   if (tasks.length === 0) return '';
-  const items = tasks
-    .map((t) => {
-      const quarter = t.targetQuarter ? ` — ${t.targetQuarter}` : '';
-      const allTag = t.assignedToAll ? ' <span style="color:#854F0B;">(shared with all)</span>' : '';
-      return `<li><a href="${APP_BASE_URL}/tasks?task=${t.id}">${t.title}</a>${quarter}${allTag}</li>`;
-    })
-    .join('');
-  return `<h3 style="margin:16px 0 6px;font-size:13px;color:#1B2A4A;">${label}</h3><ul style="margin:0;padding-left:18px;">${items}</ul>`;
+  const items = tasks.map((t) => {
+    const quarter = t.targetQuarter ? ` — ${t.targetQuarter}` : '';
+    const allTag = t.assignedToAll ? ' <span style="color:#854F0B;">(shared with all)</span>' : '';
+    return `<a href="${APP_BASE_URL}/tasks?task=${t.id}" style="color:#2A7D7B;">${t.title}</a>${quarter}${allTag}`;
+  });
+  return sectionLabel(label) + bulletList(items);
 }
 
 function buildDigestHtml(member, buckets) {
+  const hasAnyTasks = Object.values(buckets).some((list) => list.length > 0);
   const sections = [
     sectionHtml('High priority — due this quarter or overdue', buckets.high),
     sectionHtml('Medium priority — due this quarter or overdue', buckets.medium),
@@ -84,7 +84,16 @@ function buildDigestHtml(member, buckets) {
     sectionHtml('Future quarters', buckets.future),
     sectionHtml('Unscheduled', buckets.unscheduled),
   ].join('');
-  return `<p>Hi ${member.name.split(' ')[0]},</p><p>Here's where things stand on your Family Task List items — tasks assigned to you, plus anything shared with everyone:</p>${sections}<p style="margin-top:16px;"><a href="${APP_BASE_URL}/tasks">Open the Family Task List</a></p>`;
+  const intro = paragraph(
+    `Hi ${member.name.split(' ')[0]}, here's where things stand on your Family Task List items — tasks assigned to you, plus anything shared with everyone:`
+  );
+  return emailShell({
+    eyebrow: 'Task List Digest',
+    title: 'Your Family Task List Update',
+    bodyRowsHtml: contentRow(intro + (hasAnyTasks ? sections : paragraph("You're all caught up — nothing open right now."))),
+    ctaText: 'Open the Family Task List',
+    ctaUrl: `${APP_BASE_URL}/tasks`,
+  });
 }
 
 function getSetting(db, key, fallback) {

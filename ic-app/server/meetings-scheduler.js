@@ -5,6 +5,7 @@
 // a one-off admin-triggered event, not a recurring cadence.
 const mailer = require('./mailer');
 const { buildMeetingIcs } = require('./ics');
+const { BRAND, escapeHtml, contentRow, infoRow, sectionLabel, paragraph, bulletList, emailShell } = require('./email-template');
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 const MS_GRAPH_SENDER = process.env.MS_GRAPH_SENDER;
@@ -32,18 +33,9 @@ function allAttendeeNames(db, meetingId) {
   });
 }
 
-function agendaHtmlForInvite(agendaItems) {
-  if (agendaItems.length === 0) return '<p>No agenda items yet.</p>';
-  return `<p>Agenda:</p><ul>${agendaItems.map((a) => `<li>${escapeHtml(a.title)}</li>`).join('')}</ul>`;
-}
-
 function agendaPlainTextForInvite(agendaItems) {
   if (agendaItems.length === 0) return 'No agenda items yet.';
   return 'Agenda:\n' + agendaItems.map((a) => `- ${a.title}`).join('\n');
-}
-
-function escapeHtml(text) {
-  return String(text || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
 // Emails a hand-built .ics meeting request to family attendees only (Section 7.2 —
@@ -86,9 +78,20 @@ async function sendMeetingInvite(db, meetingId) {
     contentType: 'text/calendar',
     contentBase64: Buffer.from(icsContent, 'utf8').toString('base64'),
   };
-  const html = `<p>You're invited to <strong>${escapeHtml(meeting.title)}</strong>.</p>${agendaHtmlForInvite(
-    agendaItems
-  )}<p>See the attached calendar invite to add this to your calendar.</p>`;
+  const dateStr = start.toLocaleString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const html = emailShell({
+    eyebrow: 'Meeting Invite',
+    title: meeting.title,
+    subtitle: dateStr,
+    bodyRowsHtml: contentRow(
+      agendaItems.length
+        ? sectionLabel('Agenda') + bulletList(agendaItems.map((a) => escapeHtml(a.title)))
+        : paragraph('No agenda items yet.')
+    ),
+    ctaText: 'Open in Family Office Meetings',
+    ctaUrl: `${APP_BASE_URL}/meetings?meeting=${meeting.id}`,
+    footerText: 'A calendar invite is attached — open it to add this meeting to your calendar.',
+  });
 
   let sentTo = 0;
   for (const attendee of attendees) {
@@ -140,11 +143,6 @@ function startMeetingsScheduler(db) {
 
 // ---- minutes email (Section 6.3) ----
 
-// Robinson Family Office brand palette, matching the app's own CSS variables
-// (public/*.html :root{--navy...}), so the emailed minutes look like part of the same
-// product rather than a generic system notification.
-const BRAND = { navy: '#1B2A4A', teal: '#2A7D7B', gold: '#C9A84C', muted: '#6B7280', border: '#E5E7EB', bg: '#F9FAFB' };
-
 function quarterBadgeHtml(targetQuarter) {
   if (!targetQuarter) return '';
   return `<span style="display:inline-block;margin-left:8px;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;color:${BRAND.navy};background:#E8ECF3;">${escapeHtml(targetQuarter)}</span>`;
@@ -173,36 +171,28 @@ function actionItemListHtml(items, { showQuarter } = {}) {
     .join('')}</ul>`;
 }
 
-function sectionLabelHtml(label) {
-  return `<div style="font-size:11px;font-weight:700;color:${BRAND.teal};text-transform:uppercase;letter-spacing:.4px;margin:12px 0 4px;">${label}</div>`;
-}
-
 function agendaItemHtml(item, decisions, actionItems) {
   const familyItems = actionItems.filter((a) => a.isFamily);
   const nonFamilyItems = actionItems.filter((a) => !a.isFamily);
-  const parts = [
-    `<tr><td style="padding:18px 24px 4px;border-top:1px solid ${BRAND.border};">`,
-    `<div style="font-size:15px;font-weight:700;color:${BRAND.navy};margin-bottom:6px;">${escapeHtml(item.title)}</div>`,
-  ];
+  const parts = [`<div style="font-size:15px;font-weight:700;color:${BRAND.navy};margin-bottom:6px;">${escapeHtml(item.title)}</div>`];
   parts.push(
     item.discussion_summary
       ? `<p style="margin:0 0 4px;font-size:13px;line-height:1.6;color:#374151;">${escapeHtml(item.discussion_summary)}</p>`
       : `<p style="margin:0 0 4px;font-size:13px;color:${BRAND.muted};font-style:italic;">No discussion summary recorded.</p>`
   );
   if (decisions.length) {
-    parts.push(sectionLabelHtml('Decisions'));
+    parts.push(sectionLabel('Decisions'));
     parts.push(`<ul style="margin:0 0 4px;padding-left:20px;font-size:13px;">${decisions.map((d) => `<li style="margin-bottom:4px;">${escapeHtml(d.description)}</li>`).join('')}</ul>`);
   }
   if (familyItems.length) {
-    parts.push(sectionLabelHtml('Family action items'));
+    parts.push(sectionLabel('Family action items'));
     parts.push(`<div style="font-size:13px;">${actionItemListHtml(familyItems, { showQuarter: true })}</div>`);
   }
   if (nonFamilyItems.length) {
-    parts.push(sectionLabelHtml('Other action items'));
+    parts.push(sectionLabel('Other action items'));
     parts.push(`<div style="font-size:13px;">${actionItemListHtml(nonFamilyItems)}</div>`);
   }
-  parts.push('</td></tr>');
-  return parts.join('');
+  return contentRow(parts.join(''));
 }
 
 function buildMinutesHtml(meeting, attendees, agendaItemsWithDetail) {
@@ -216,28 +206,16 @@ function buildMinutesHtml(meeting, attendees, agendaItemsWithDetail) {
   });
   const attendeeNames = attendees.map((a) => escapeHtml(a.name)).join(', ') || 'None listed';
   const sections = agendaItemsWithDetail.map(({ item, decisions, actionItems }) => agendaItemHtml(item, decisions, actionItems)).join('');
-  const body = sections || `<tr><td style="padding:18px 24px;border-top:1px solid ${BRAND.border};font-size:13px;color:${BRAND.muted};">No agenda items were recorded.</td></tr>`;
-  return `
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};padding:24px 0;">
-  <tr><td align="center">
-    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;font-family:-apple-system,Segoe UI,Arial,sans-serif;">
-      <tr><td style="background:${BRAND.navy};padding:20px 24px;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${BRAND.gold};margin-bottom:6px;">Robinson Family Office · Meeting Minutes</div>
-        <div style="font-size:19px;font-weight:700;color:#ffffff;">${escapeHtml(meeting.title)}</div>
-        <div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:4px;">${dateStr}</div>
-      </td></tr>
-      <tr><td style="padding:14px 24px;border-bottom:1px solid ${BRAND.border};">
-        <div style="font-size:11px;font-weight:700;color:${BRAND.muted};text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Attendees</div>
-        <div style="font-size:13px;color:#374151;">${attendeeNames}</div>
-      </td></tr>
-      ${body}
-      <tr><td style="padding:20px 24px;background:${BRAND.bg};">
-        <a href="${APP_BASE_URL}/meetings?meeting=${meeting.id}" style="display:inline-block;background:${BRAND.teal};color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:9px 18px;border-radius:7px;">Open in Family Office Meetings</a>
-        <div style="font-size:11px;color:${BRAND.muted};margin-top:14px;">This is an automated summary of the minutes recorded for this meeting. Reply to a family member directly with any corrections.</div>
-      </td></tr>
-    </table>
-  </td></tr>
-</table>`;
+  const bodyRowsHtml = infoRow('Attendees', attendeeNames) + (sections || contentRow(`<span style="font-size:13px;color:${BRAND.muted};">No agenda items were recorded.</span>`));
+  return emailShell({
+    eyebrow: 'Meeting Minutes',
+    title: meeting.title,
+    subtitle: dateStr,
+    bodyRowsHtml,
+    ctaText: 'Open in Family Office Meetings',
+    ctaUrl: `${APP_BASE_URL}/meetings?meeting=${meeting.id}`,
+    footerText: 'This is an automated summary of the minutes recorded for this meeting. Reply to a family member directly with any corrections.',
+  });
 }
 
 function meetingMinutesDetail(db, meetingId) {
