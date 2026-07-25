@@ -486,6 +486,16 @@ function computeDecision(opp,roster){
   if(recs.every(r=>r==='Approve'))return{label:'Approved',style:'alert-success',detail:'All '+submitted.length+' submitted review'+(submitted.length===1?'':'s')+' recommended approval.'};
   return{label:'More IC Discussion Required',style:'alert-warn',detail:'Recommendations are mixed (conditional approval and/or abstention) — the IC should discuss before finalizing.'};
 }
+// Bordered content block + teal section label, matching the letterhead treatment used
+// by every outbound email (server/email-template.js) — so the on-screen report and the
+// emailed version of the same content read as the same document.
+function ReportRow({children}){
+  return h('div',{style:{padding:'18px 24px',borderTop:'0.5px solid var(--border)'}},children);
+}
+function ReportSectionLabel({children}){
+  return h('div',{style:{fontSize:11,fontWeight:700,color:'var(--teal)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},children);
+}
+
 function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,roster}){
   const [loading,setLoading]=useState(false);const [error,setError]=useState('');
   const report=opp.report;
@@ -530,19 +540,27 @@ function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,rost
       h('button',{className:'btn btn-gold',disabled:loading,onClick:generate},loading?'Generating…':'✦ Generate Report')
     ),
 
-    report&&h('div',null,
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
-        h('div',{style:{fontSize:11,color:'var(--muted)'}},'Generated '+new Date(report.generatedAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' · '+report.submittedCount+'/'+report.memberCount+' submitted at that time'),
-        h('button',{className:'btn btn-outline btn-sm',disabled:loading,onClick:generate},loading?'Regenerating…':'↻ Regenerate')
+    report&&h('div',{style:{background:'var(--card)',borderRadius:'var(--r)',overflow:'hidden',border:'0.5px solid var(--border)',marginBottom:16}},
+      h('div',{style:{background:'var(--navy)',padding:'20px 24px'}},
+        h('div',{style:{fontSize:11,fontWeight:700,letterSpacing:'.6px',textTransform:'uppercase',color:'var(--gold)',marginBottom:6}},'Robinson Family Office · IC Summary Report'),
+        h('div',{style:{fontSize:19,fontWeight:700,color:'#fff'}},opp.title),
+        h('div',{style:{fontSize:12,color:'rgba(255,255,255,.75)',marginTop:4}},'Generated '+new Date(report.generatedAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))
       ),
-      h('div',{className:`alert ${recStyle.alert}`,style:{fontSize:14,fontWeight:600,marginBottom:16}},recStyle.label),
-      h('div',{className:'card'},h('div',{className:'card-title'},'Executive Summary'),h('p',{style:{fontSize:13,lineHeight:1.7,color:'var(--text)'}},report.executiveSummary)),
-      report.keyStrengths?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Key Strengths'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.keyStrengths.map((s,i)=>h('li',{key:i},s)))),
-      report.keyRisks?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Key Risks & Concerns'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.keyRisks.map((s,i)=>h('li',{key:i},s)))),
-      report.memberSentiment?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'IC Member Sentiment'),report.memberSentiment.map((m,i)=>h('div',{key:i,style:{fontSize:13,marginBottom:6}},h('strong',null,m.member+': '),m.sentence))),
-      report.unresolvedItems?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Unresolved Items'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.unresolvedItems.map((s,i)=>h('li',{key:i},s)))),
-      h('div',{className:'card'},h('div',{className:'card-title'},'Rationale'),report.rationale.split('\n').filter(Boolean).map((p,i)=>h('p',{key:i,style:{fontSize:13,lineHeight:1.7,color:'var(--text)',marginBottom:8}},p))),
-      report.requiredActions?.length>0&&h('div',{className:'card'},h('div',{className:'card-title'},'Required Actions Before Commitment'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.requiredActions.map((s,i)=>h('li',{key:i},s))))
+      h('div',{style:{padding:'14px 24px',borderBottom:'0.5px solid var(--border)'}},
+        h('div',{style:{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:6}},'Recommendation'),
+        h('div',{className:`alert ${recStyle.alert}`,style:{fontSize:14,fontWeight:600,margin:0}},recStyle.label),
+        h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:8}},report.submittedCount+'/'+report.memberCount+' submitted at that time')
+      ),
+      h(ReportRow,null,h(ReportSectionLabel,null,'Executive Summary'),h('p',{style:{fontSize:13,lineHeight:1.7,color:'var(--text)',margin:0}},report.executiveSummary)),
+      report.keyStrengths?.length>0&&h(ReportRow,null,h(ReportSectionLabel,null,'Key Strengths'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.keyStrengths.map((s,i)=>h('li',{key:i},s)))),
+      report.keyRisks?.length>0&&h(ReportRow,null,h(ReportSectionLabel,null,'Key Risks & Concerns'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.keyRisks.map((s,i)=>h('li',{key:i},s)))),
+      report.memberSentiment?.length>0&&h(ReportRow,null,h(ReportSectionLabel,null,'IC Member Sentiment'),report.memberSentiment.map((m,i)=>h('div',{key:i,style:{fontSize:13,marginBottom:6}},h('strong',null,m.member+': '),m.sentence))),
+      report.unresolvedItems?.length>0&&h(ReportRow,null,h(ReportSectionLabel,null,'Unresolved Items'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.unresolvedItems.map((s,i)=>h('li',{key:i},s)))),
+      h(ReportRow,null,h(ReportSectionLabel,null,'Rationale'),report.rationale.split('\n').filter(Boolean).map((p,i)=>h('p',{key:i,style:{fontSize:13,lineHeight:1.7,color:'var(--text)',marginBottom:8}},p))),
+      report.requiredActions?.length>0&&h(ReportRow,null,h(ReportSectionLabel,null,'Required Actions Before Commitment'),h('ul',{style:{margin:0,paddingLeft:18,fontSize:13,lineHeight:1.8}},report.requiredActions.map((s,i)=>h('li',{key:i},s)))),
+      h('div',{style:{padding:'16px 24px',background:'var(--bg)',display:'flex',justifyContent:'flex-end'}},
+        h('button',{className:'btn btn-outline btn-sm',disabled:loading,onClick:generate},loading?'Regenerating…':'↻ Regenerate')
+      )
     )
   );
 }
