@@ -37,6 +37,16 @@ function escapeIcsText(text) {
     .replace(/\n/g, '\\n');
 }
 
+// RFC 5545 §3.2 param-value: unquoted values can't contain COLON/SEMICOLON/COMMA, so any
+// value with those (or just a plain space, which is the common case for "First Last")
+// needs to be a quoted-string — QSTR forbids embedded double-quotes entirely, so those
+// are stripped rather than escaped. Outlook's own .ics parser is markedly less lenient
+// about this than Google Calendar's (which accepted an earlier, unquoted version of this
+// file without complaint) — quoting CN values matches what Outlook itself emits.
+function quoteIcsParam(value) {
+  return `"${String(value || '').replace(/"/g, '')}"`;
+}
+
 function toIcsDateUtc(date) {
   return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 }
@@ -58,10 +68,17 @@ function buildMeetingIcs({ uid, sequence, method, organizerEmail, organizerName,
     `DTEND:${toIcsDateUtc(endDate)}`,
     `SUMMARY:${escapeIcsText(title)}`,
     `DESCRIPTION:${escapeIcsText(descriptionText)}`,
-    `ORGANIZER;CN=${escapeIcsText(organizerName)}:mailto:${organizerEmail}`,
-    ...attendees.map((a) => `ATTENDEE;CN=${escapeIcsText(a.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${a.email}`),
+    `ORGANIZER;CN=${quoteIcsParam(organizerName)}:mailto:${organizerEmail}`,
+    ...attendees.map(
+      (a) => `ATTENDEE;CN=${quoteIcsParam(a.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${a.email}`
+    ),
     'STATUS:CONFIRMED',
     'TRANSP:OPAQUE',
+    'CLASS:PUBLIC',
+    'PRIORITY:5',
+    'X-MICROSOFT-CDO-BUSYSTATUS:BUSY',
+    'X-MICROSOFT-CDO-IMPORTANCE:1',
+    'X-MICROSOFT-DISALLOW-COUNTER:FALSE',
     'END:VEVENT',
     'END:VCALENDAR',
   ];

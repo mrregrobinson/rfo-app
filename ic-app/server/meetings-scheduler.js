@@ -77,8 +77,13 @@ async function sendMeetingInvite(db, meetingId) {
     descriptionText: agendaPlainTextForInvite(agendaItems),
   });
   const icsAttachment = {
+    // Bare MIME type, no parameters — the attachment's contentType field is meant to be
+    // a simple type/subtype; METHOD:REQUEST already lives inside the .ics content itself
+    // (Graph's fileAttachment schema isn't a full Content-Type header, and some clients,
+    // Outlook's own .ics importer included, are pickier about extra parameters here than
+    // Gmail/Google Calendar are).
     name: 'invite.ics',
-    contentType: 'text/calendar; method=REQUEST; charset=UTF-8',
+    contentType: 'text/calendar',
     contentBase64: Buffer.from(icsContent, 'utf8').toString('base64'),
   };
   const html = `<p>You're invited to <strong>${escapeHtml(meeting.title)}</strong>.</p>${agendaHtmlForInvite(
