@@ -3,7 +3,7 @@
 // third-party equivalents): a single hourly setInterval compares the current time
 // (in the configured timezone) against the admin-configured cadence.
 const mailer = require('./mailer');
-const { contentRow, sectionLabel, paragraph, bulletList, emailShell } = require('./email-template');
+const { contentRow, sectionLabel, paragraph, bulletList, emailShell, escapeHtml } = require('./email-template');
 
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
@@ -61,6 +61,7 @@ function tasksForUser(db, userId) {
     title: row.title,
     priority: row.priority,
     targetQuarter: row.target_quarter,
+    notes: row.notes,
     assignedToAll: !!row.assigned_to_all,
   }));
 }
@@ -70,7 +71,10 @@ function sectionHtml(label, tasks) {
   const items = tasks.map((t) => {
     const quarter = t.targetQuarter ? ` — ${t.targetQuarter}` : '';
     const allTag = t.assignedToAll ? ' <span style="color:#854F0B;">(shared with all)</span>' : '';
-    return `<a href="${APP_BASE_URL}/tasks?task=${t.id}" style="color:#2A7D7B;">${t.title}</a>${quarter}${allTag}`;
+    const notes = t.notes
+      ? `<div style="margin-top:2px;font-size:12px;color:#6B7280;">${escapeHtml(t.notes)}</div>`
+      : '';
+    return `<a href="${APP_BASE_URL}/tasks?task=${t.id}" style="color:#2A7D7B;">${escapeHtml(t.title)}</a>${quarter}${allTag}${notes}`;
   });
   return sectionLabel(label) + bulletList(items);
 }
