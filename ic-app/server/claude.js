@@ -95,6 +95,75 @@ async function extractPdf(base64Data) {
   return { result: extractJson(data), usage: data.usage };
 }
 
+// Reads the family's periodic PQ investment report (the whole PDF, tens of pages) and
+// pulls out the portfolio snapshot the app needs: total value, asset-class allocation,
+// currency composition, every unfunded commitment (with its original book-value
+// commitment size, not just what's left unfunded — needed for the 10/10/20/remaining
+// capital-call pacing model), and a liquidity classification of the *liquid* holdings
+// (cash through semi-liquid) that can actually be tapped to fund near-term needs. Private
+// fund NAVs are deliberately left out of the liquidity tiers — they're captured as
+// commitments/uses, not as a source of liquidity. Returned for admin review, never saved
+// directly — see /api/admin/portfolio/extract.
+async function extractPortfolioReport(base64Data) {
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 16000,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } },
+          {
+            type: 'text',
+            text: `This is a Prime Quadrant investment report for the Robinson Family Office. Extract a complete portfolio snapshot.
+
+1. Report date ("as of" date on the cover or summary page) and total portfolio value in CAD.
+2. Asset-class allocation as percentages of the total portfolio, for exactly these 8 classes: Cash, Fixed Income, Public Equity, Private Credit, Diversifying Strategies, Real Assets, Private Equity, Monetary Hedge. Use 0 for any class not present.
+3. Currency composition (CAD/USD/EUR/GBP): percentage and CAD value of each.
+4. From the "USD Position Detail" (or equivalent) pages: EVERY position with an unfunded commitment greater than zero. For each, give the fund name exactly as printed, its IPS asset class (one of the 8 above), the currency it's committed in, the total/original commitment (book value — the whole amount ever committed, not just what's called), the amount called/invested to date, and the amount still unfunded. Do not skip any position with unfunded > 0.
+5. From the "Liquidity Detail" (or equivalent) pages: classify every LIQUID holding (i.e. everything except the illiquid private closed-end funds already captured in unfunded commitments above — private equity, private credit drawdown funds, real assets, etc. do NOT belong here) into exactly these 4 tiers: "Cash" (cash, HISA, cash-management strategies), "Highly Liquid" (publicly traded ETFs/equities, liquid public-market funds, monthly-liquidity income funds), "Medium Liquidity" (semi-liquid credit/hedge fund vehicles, typically quarterly redemption or similar), "Low Liquidity" (semi-liquid vehicles with longer lock-ups/gates than Medium, but still redeemable — not the illiquid drawdown funds). Use the report's own liquidity tier labels as a guide for which of my 4 buckets each holding belongs in. For each holding give its name, dollar amount, and currency.
+
+Return ONLY valid JSON, no markdown fences, no extra prose:
+{"asOf":"MM-DD-YYYY","totalCAD":0,"alloc":{"Cash":0,"Fixed Income":0,"Public Equity":0,"Private Credit":0,"Diversifying Strategies":0,"Real Assets":0,"Private Equity":0,"Monetary Hedge":0},"fx":{"CAD":{"pct":0,"val":0},"USD":{"pct":0,"val":0},"EUR":{"pct":0,"val":0},"GBP":{"pct":0,"val":0}},"unfunded":[{"fund":"name","class":"one of the 8 classes","currency":"USD","commitment":0,"called":0,"unfunded":0}],"liquidityTiers":[{"tier":"Cash","items":[{"name":"holding name","amount":0,"currency":"CAD"}]},{"tier":"Highly Liquid","items":[]},{"tier":"Medium Liquidity","items":[]},{"tier":"Low Liquidity","items":[]}],"notes":"anything unclear, ambiguous, or that needed a judgment call"}`,
+          },
+        ],
+      },
+    ],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
+// Reads the family's periodic "Yield Generating Investments and Projected Income" report —
+// a short table of income-producing positions — so recurring distributions can be added as
+// a liquidity source alongside the asset-tier waterfall in A4. Registered-account holdings
+// are flagged separately (per the report's own yellow-highlight convention) since that
+// income isn't freely available without tax consequences and shouldn't be counted as
+// liquidity on tap for a capital call. Returned for admin review, never saved directly.
+async function extractIncomeReport(base64Data) {
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 8000,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } },
+          {
+            type: 'text',
+            text: `This is a Prime Quadrant "Yield Generating Investments and Projected Income" report for the Robinson Family Office. Extract the "as of" date and every row from the income table(s) — do not skip any.
+
+For each position: name, currency, market value, estimated yield (as a percentage), estimated annual distributions, distribution frequency, and whether it's flagged as held in a registered account (the report highlights these — registered-account income is not freely available without tax implications, so flag it distinctly). Note the report's own currency subtotal groupings (e.g. "CAD Investments" vs "USD Investments" sections) by recording each position's native currency.
+
+Return ONLY valid JSON, no markdown fences, no extra prose:
+{"asOf":"MM-DD-YYYY","positions":[{"name":"position name","currency":"CAD","marketValue":0,"yieldPct":0,"annualDistribution":0,"frequency":"Monthly","isRegistered":false}],"notes":"anything unclear or that needed a judgment call"}`,
+          },
+        ],
+      },
+    ],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
 // Synthesizes IC member checklist responses (whatever has been submitted so far — the
 // caller may trigger this before everyone has responded) into a governance-style summary,
 // per the original build spec's "Claude's Recommendation" logic (system prompt below).
@@ -156,4 +225,4 @@ Format your response as a JSON object with exactly these keys, in this order: {"
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, extractPdf, generateReport, ClaudeNotConfiguredError };
+module.exports = { research, extractPdf, extractPortfolioReport, extractIncomeReport, generateReport, ClaudeNotConfiguredError };

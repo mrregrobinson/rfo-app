@@ -1016,6 +1016,109 @@ app.post('/api/claude/extract-pdf', requireAuth, async (req, res) => {
   }
 });
 
+// ---- portfolio snapshots ----
+// Replaces a hardcoded PORT constant with an admin-updatable, database-backed portfolio
+// snapshot: upload the latest PQ investment report, review/correct what Claude extracted,
+// save it. The rest of the app (Section A checks, the report) reads whatever is current
+// via GET /api/portfolio — a new report just means a new upload, never a code change.
+
+function currentPortfolioSnapshot() {
+  const row = db.prepare('SELECT * FROM portfolio_snapshots ORDER BY created_at DESC LIMIT 1').get();
+  return row ? { id: row.id, asOf: row.as_of, sourceFilename: row.source_filename, createdAt: row.created_at, createdBy: row.created_by, data: JSON.parse(row.data) } : null;
+}
+
+app.get('/api/portfolio', requireAuth, (req, res) => {
+  const snap = currentPortfolioSnapshot();
+  res.json(snap ? snap.data : null);
+});
+
+app.get('/api/admin/portfolio/snapshots', requireAuth, (req, res) => {
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
+  const rows = db.prepare('SELECT id, as_of, source_filename, created_at, created_by FROM portfolio_snapshots ORDER BY created_at DESC LIMIT 50').all();
+  res.json(rows.map((r) => ({ id: r.id, asOf: r.as_of, sourceFilename: r.source_filename, createdAt: r.created_at, createdBy: r.created_by })));
+});
+
+// Extract only — returns the parsed portfolio data for the admin to review/correct in the
+// UI. Nothing is saved until they explicitly confirm via POST /snapshots below.
+app.post('/api/admin/portfolio/extract', requireAuth, async (req, res) => {
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
+  try {
+    const { base64 } = req.body || {};
+    if (!base64) return res.status(400).json({ error: 'base64 is required' });
+    const { result, usage } = await claude.extractPortfolioReport(base64);
+    logApiUsage({ callType: 'extract_portfolio_report', usage, userId: req.session.userId });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof claude.ClaudeNotConfiguredError) {
+      return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+    }
+    res.status(502).json({ error: err.message || 'Claude request failed' });
+  }
+});
+
+app.post('/api/admin/portfolio/snapshots', requireAuth, (req, res) => {
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
+  const b = req.body || {};
+  if (!b.asOf || !b.data || typeof b.data !== 'object') return res.status(400).json({ error: 'asOf and data are required' });
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO portfolio_snapshots (id, as_of, data, source_filename, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(id, b.asOf, JSON.stringify(b.data), b.sourceFilename || null, now, req.session.userId);
+  logAudit({ userId: req.session.userId, action: 'portfolio.snapshot_saved', entityType: 'portfolio_snapshot', entityId: id, details: { asOf: b.asOf, sourceFilename: b.sourceFilename || null } });
+  res.status(201).json(currentPortfolioSnapshot());
+});
+
+// ---- income snapshots ----
+// Mirrors the portfolio snapshot pattern above for the family's "Yield Generating
+// Investments and Projected Income" report — recurring distributions count as a liquidity
+// source in A4 alongside the asset-tier waterfall.
+
+function currentIncomeSnapshot() {
+  const row = db.prepare('SELECT * FROM income_snapshots ORDER BY created_at DESC LIMIT 1').get();
+  return row ? { id: row.id, asOf: row.as_of, sourceFilename: row.source_filename, createdAt: row.created_at, createdBy: row.created_by, data: JSON.parse(row.data) } : null;
+}
+
+app.get('/api/income', requireAuth, (req, res) => {
+  const snap = currentIncomeSnapshot();
+  res.json(snap ? snap.data : null);
+});
+
+app.get('/api/admin/income/snapshots', requireAuth, (req, res) => {
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
+  const rows = db.prepare('SELECT id, as_of, source_filename, created_at, created_by FROM income_snapshots ORDER BY created_at DESC LIMIT 50').all();
+  res.json(rows.map((r) => ({ id: r.id, asOf: r.as_of, sourceFilename: r.source_filename, createdAt: r.created_at, createdBy: r.created_by })));
+});
+
+app.post('/api/admin/income/extract', requireAuth, async (req, res) => {
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
+  try {
+    const { base64 } = req.body || {};
+    if (!base64) return res.status(400).json({ error: 'base64 is required' });
+    const { result, usage } = await claude.extractIncomeReport(base64);
+    logApiUsage({ callType: 'extract_income_report', usage, userId: req.session.userId });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof claude.ClaudeNotConfiguredError) {
+      return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+    }
+    res.status(502).json({ error: err.message || 'Claude request failed' });
+  }
+});
+
+app.post('/api/admin/income/snapshots', requireAuth, (req, res) => {
+  if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
+  const b = req.body || {};
+  if (!b.asOf || !b.data || typeof b.data !== 'object') return res.status(400).json({ error: 'asOf and data are required' });
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO income_snapshots (id, as_of, data, source_filename, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(id, b.asOf, JSON.stringify(b.data), b.sourceFilename || null, now, req.session.userId);
+  logAudit({ userId: req.session.userId, action: 'income.snapshot_saved', entityType: 'income_snapshot', entityId: id, details: { asOf: b.asOf, sourceFilename: b.sourceFilename || null } });
+  res.status(201).json(currentIncomeSnapshot());
+});
+
 app.get('/api/admin/backups', requireAuth, (req, res) => {
   const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
   if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });

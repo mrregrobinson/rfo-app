@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { PORT, ACTIVITY_FX, activityImpact, getEffectivePort } = require('../public/finance.js');
+const { PORT, ACTIVITY_FX, activityImpact, getEffectivePort, capitalCallSchedule, unfundedCallScheduleCAD, incomeByBucketCAD, computeLiquidityPlan, LIQUIDITY_BUCKETS } = require('../public/finance.js');
 
 describe('activityImpact', () => {
   test('outflow from a tracked class shrinks both that class and the total', () => {
@@ -123,5 +123,104 @@ describe('getEffectivePort', () => {
     // Cash's CAD amount should rise by exactly the reallocated amount.
     const baseCash = (PORT.alloc['Cash'] / 100) * PORT.totalCAD;
     assert.ok(Math.abs(eff.allocCAD['Cash'] - (baseCash + 600000)) < 1e-6);
+  });
+});
+
+describe('capitalCallSchedule', () => {
+  test('paces 10/10/20/remaining of the commitment, capped at what is unfunded', () => {
+    const s = capitalCallSchedule(1000000, 836857);
+    assert.equal(s['0-6 months'], 100000);
+    assert.equal(s['6-12 months'], 100000);
+    assert.equal(s['12-24 months'], 200000);
+    assert.equal(s['24+ months'], 436857);
+    const total = Object.values(s).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(total - 836857) < 1e-6, 'bucket totals must sum to exactly the unfunded amount');
+  });
+
+  test('never needs more than what is actually left unfunded, even early', () => {
+    // 90% already called — only $50k of the $500k commitment remains unfunded.
+    const s = capitalCallSchedule(500000, 50000);
+    assert.equal(s['0-6 months'], 50000);
+    assert.equal(s['6-12 months'], 0);
+    assert.equal(s['12-24 months'], 0);
+    assert.equal(s['24+ months'], 0);
+  });
+
+  test('a fully-called commitment needs nothing', () => {
+    const s = capitalCallSchedule(500000, 0);
+    LIQUIDITY_BUCKETS.forEach((b) => assert.equal(s[b], 0));
+  });
+});
+
+describe('unfundedCallScheduleCAD', () => {
+  test('aggregates multiple positions per bucket, converting non-CAD commitments', () => {
+    const port = { unfunded: [
+      { commitment: 1000000, unfunded: 836857, currency: 'CAD' },
+      { commitment: 500000, unfunded: 50000, currency: 'CAD' },
+    ] };
+    const totals = unfundedCallScheduleCAD(port);
+    assert.equal(totals['0-6 months'], 150000);
+    assert.equal(totals['6-12 months'], 100000);
+    assert.equal(totals['12-24 months'], 200000);
+    assert.equal(totals['24+ months'], 436857);
+  });
+});
+
+describe('incomeByBucketCAD', () => {
+  test('splits registered from freely-available income, weighted 0.5/0.5/1/1 years', () => {
+    const income = { positions: [
+      { annualDistribution: 100000, currency: 'CAD', isRegistered: false },
+      { annualDistribution: 20000, currency: 'CAD', isRegistered: true },
+    ] };
+    const { available, registered } = incomeByBucketCAD(income);
+    assert.equal(available['0-6 months'], 50000);
+    assert.equal(available['6-12 months'], 50000);
+    assert.equal(available['12-24 months'], 100000);
+    assert.equal(available['24+ months'], 100000);
+    assert.equal(registered['0-6 months'], 10000);
+    assert.equal(registered['12-24 months'], 20000);
+  });
+});
+
+describe('computeLiquidityPlan', () => {
+  const port = {
+    liquidityTiers: [
+      { tier: 'Cash', items: [{ name: 'cash', amount: 1000000, currency: 'CAD' }] },
+      { tier: 'Highly Liquid', items: [{ name: 'etf', amount: 2000000, currency: 'CAD' }] },
+      { tier: 'Medium Liquidity', items: [] },
+      { tier: 'Low Liquidity', items: [] },
+    ],
+    unfunded: [{ commitment: 1000000, unfunded: 836857, currency: 'CAD' }],
+  };
+
+  test('unlocks tiers cumulatively — cash only in bucket 1, plus highly liquid from bucket 2 on', () => {
+    const plan = computeLiquidityPlan({ port, income: { positions: [] }, activities: [], newCommitmentCAD: 0 });
+    assert.deepEqual(plan.rows[0].newlyUnlockedTiers, ['Cash']);
+    assert.equal(plan.rows[0].cumSources, 1000000);
+    assert.deepEqual(plan.rows[1].newlyUnlockedTiers, ['Highly Liquid']);
+    assert.equal(plan.rows[1].cumSources, 3000000);
+    // Nothing new unlocked in buckets 3/4 for this fixture (no Medium/Low holdings).
+    assert.equal(plan.rows[2].tierSourceThisBucket, 0);
+    assert.equal(plan.rows[3].tierSourceThisBucket, 0);
+  });
+
+  test('a new commitment under review adds to cumulative uses on top of the existing book', () => {
+    const withoutNew = computeLiquidityPlan({ port, income: { positions: [] }, activities: [], newCommitmentCAD: 0 });
+    const withNew = computeLiquidityPlan({ port, income: { positions: [] }, activities: [], newCommitmentCAD: 500000 });
+    // New commitment's own 10% first-bucket call should be fully unfunded (it's brand new).
+    assert.equal(withNew.rows[0].newCallThisBucket, 50000);
+    assert.ok(withNew.rows[0].cumUses > withoutNew.rows[0].cumUses);
+    assert.equal(withNew.rows[0].cumUses - withoutNew.rows[0].cumUses, 50000);
+  });
+
+  test('a planned outflow tagged with a liquidity category reduces that tier\'s available source', () => {
+    const activities = [{ amount: 400000, currency: 'CAD', decreaseClass: 'Cash', increaseClass: null, status: 'Considering', timing: 'Uncertain' }];
+    const plan = computeLiquidityPlan({ port, income: { positions: [] }, activities, newCommitmentCAD: 0 });
+    assert.equal(plan.rows[0].cumSources, 600000);
+  });
+
+  test('flags when no liquidity tier data has been uploaded yet', () => {
+    const empty = computeLiquidityPlan({ port: { unfunded: [] }, income: { positions: [] }, activities: [], newCommitmentCAD: 0 });
+    assert.equal(empty.hasLiquidityData, false);
   });
 });
