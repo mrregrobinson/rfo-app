@@ -536,6 +536,21 @@ const OPP_DOC_FIELD_DEFS=[
 const OPP_DOC_ODD_DIMS=['governance','compliance','operations','alignment','reporting'];
 function oppDocHasValue(v){return v!==null&&v!==undefined&&v!=='';}
 function oppDocFmtValue(v){if(v===null||v===undefined||v==='')return '—';if(typeof v==='boolean')return v?'Yes':'No';return String(v);}
+// A handful of fields feed a fixed-shape UI control (a number input or a <select> with a
+// closed option list) rather than free text. The extraction prompt asks for the right
+// shape, but a model can still slip — this is the backstop: a field that comes back in the
+// wrong shape is shown to the reviewer (never silently dropped) but its checkbox is
+// disabled so it can't be applied, since e.g. a descriptive sentence written into
+// commitment would silently coerce to 0 rather than error.
+const OPP_DOC_VALIDATORS={
+  commitment:v=>typeof v==='number'&&isFinite(v),
+  thesisRating:v=>Number.isInteger(v)&&v>=1&&v<=5,
+  assetClass:v=>ASSET_CLASSES.includes(v),
+  esgProgramme:v=>['Mature','Developing','Nascent','None'].includes(v),
+  esgApproach:v=>['Impact','Integrated','ESG Aware','Opportunistic','None'].includes(v),
+};
+function oppDocFieldValid(key,v){const validator=OPP_DOC_VALIDATORS[key];return validator?validator(v):true;}
+function oppDocOddValid(v){return['Low','Medium','High'].includes(v);}
 
 // Diff view for one freshly-extracted document against the opportunity's current data —
 // only fields the document actually addressed (non-null) show up as rows, each with its
@@ -546,9 +561,9 @@ function OpportunityDocumentReview({opp,fileName,extracted,onUpdateOpportunity,o
   const [summary,setSummary]=useState(extracted.documentSummary||'');
   const changedFields=OPP_DOC_FIELD_DEFS.filter(f=>oppDocHasValue(extracted[f.key]));
   const changedOdd=OPP_DOC_ODD_DIMS.filter(d=>oppDocHasValue(extracted.oddRatings?.[d]));
-  const [selected,setSelected]=useState(()=>{const s={};changedFields.forEach(f=>{s[f.key]=true;});changedOdd.forEach(d=>{s['odd.'+d]=true;});return s;});
+  const [selected,setSelected]=useState(()=>{const s={};changedFields.forEach(f=>{s[f.key]=oppDocFieldValid(f.key,extracted[f.key]);});changedOdd.forEach(d=>{s['odd.'+d]=oppDocOddValid(extracted.oddRatings[d]);});return s;});
   const [saving,setSaving]=useState(false);
-  function toggle(k){setSelected(s=>({...s,[k]:!s[k]}));}
+  function toggle(k,valid){if(valid===false)return;setSelected(s=>({...s,[k]:!s[k]}));}
   function currentValue(f){return f.target==='top'?opp[f.key]:opp.pqData?.[f.key];}
   async function save(){
     setSaving(true);
@@ -572,17 +587,17 @@ function OpportunityDocumentReview({opp,fileName,extracted,onUpdateOpportunity,o
     (changedFields.length>0||changedOdd.length>0)&&h('div',{style:{marginBottom:10}},
       h('div',{style:{fontSize:11,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:6}},'What this document changes — uncheck anything you don\'t want applied'),
       h('div',{style:{border:'0.5px solid var(--border)',borderRadius:8,overflow:'hidden'}},
-        changedFields.map(f=>h('label',{key:f.key,style:{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 10px',borderBottom:'0.5px solid var(--border)',cursor:'pointer',fontSize:12}},
-          h('input',{type:'checkbox',checked:!!selected[f.key],onChange:()=>toggle(f.key),style:{marginTop:2,accentColor:'var(--teal)'}}),
-          h('div',{style:{flex:1}},h('div',{style:{fontWeight:600,color:'var(--navy)'}},f.label),h('div',{style:{color:'var(--muted)',marginTop:2}},'Current: ',oppDocFmtValue(currentValue(f))),h('div',{style:{color:'var(--teal)',marginTop:2}},'New: ',oppDocFmtValue(extracted[f.key])))
-        )),
+        changedFields.map(f=>{const valid=oppDocFieldValid(f.key,extracted[f.key]);return h('label',{key:f.key,style:{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 10px',borderBottom:'0.5px solid var(--border)',cursor:valid?'pointer':'default',fontSize:12,opacity:valid?1:.7}},
+          h('input',{type:'checkbox',checked:!!selected[f.key],disabled:!valid,onChange:()=>toggle(f.key,valid),style:{marginTop:2,accentColor:'var(--teal)'}}),
+          h('div',{style:{flex:1}},h('div',{style:{fontWeight:600,color:'var(--navy)'}},f.label),h('div',{style:{color:'var(--muted)',marginTop:2}},'Current: ',oppDocFmtValue(currentValue(f))),h('div',{style:{color:valid?'var(--teal)':'#991B1B',marginTop:2}},'New: ',oppDocFmtValue(extracted[f.key])),!valid&&h('div',{style:{color:'#991B1B',marginTop:2,fontSize:11}},"⚠ Not the expected format for this field — won't be applied. Copy what you need into a free-text field below if relevant."))
+        );}),
         changedOdd.length>0&&h('div',{style:{padding:'8px 10px'}},
           h('div',{style:{fontWeight:600,color:'var(--navy)',fontSize:12,marginBottom:6}},'ODD Ratings'),
-          changedOdd.map(d=>h('label',{key:d,style:{display:'flex',gap:10,alignItems:'center',padding:'4px 0',cursor:'pointer',fontSize:12}},
-            h('input',{type:'checkbox',checked:!!selected['odd.'+d],onChange:()=>toggle('odd.'+d),style:{accentColor:'var(--teal)'}}),
+          changedOdd.map(d=>{const valid=oppDocOddValid(extracted.oddRatings[d]);return h('label',{key:d,style:{display:'flex',gap:10,alignItems:'center',padding:'4px 0',cursor:valid?'pointer':'default',fontSize:12,opacity:valid?1:.7}},
+            h('input',{type:'checkbox',checked:!!selected['odd.'+d],disabled:!valid,onChange:()=>toggle('odd.'+d,valid),style:{accentColor:'var(--teal)'}}),
             h('span',{style:{textTransform:'capitalize',flex:1}},d),
-            h('span',{style:{color:'var(--muted)'}},opp.pqData?.oddRatings?.[d]||'—'),h('span',null,' → '),h('span',{style:{color:'var(--teal)',fontWeight:600}},extracted.oddRatings[d])
-          ))
+            h('span',{style:{color:'var(--muted)'}},opp.pqData?.oddRatings?.[d]||'—'),h('span',null,' → '),h('span',{style:{color:valid?'var(--teal)':'#991B1B',fontWeight:600}},extracted.oddRatings[d]),!valid&&h('span',{style:{color:'#991B1B',fontSize:11}},'⚠ not Low/Medium/High')
+          );})
         )
       )
     ),

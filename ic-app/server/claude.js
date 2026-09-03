@@ -174,7 +174,12 @@ async function extractOpportunityDocument(base64Data, opportunityTitle) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
   const data = await callClaude({
     model: MODEL,
-    max_tokens: 3000,
+    // A follow-up document can itself be a full research report (this field set matches
+    // extractPdf's), and unlike a brand-new upload, this one also carries a documentSummary
+    // plus explicit nulls for every unaddressed field — comfortably larger than extractPdf's
+    // 3000-token budget for a dense report. See extractPortfolioReport's history: the same
+    // failure mode (stop_reason: 'max_tokens', truncated JSON) showed up there first.
+    max_tokens: 8000,
     messages: [
       {
         role: 'user',
@@ -185,6 +190,8 @@ async function extractOpportunityDocument(base64Data, opportunityTitle) {
             text: `Today is ${today}. This document relates to an investment opportunity already under due diligence review${opportunityTitle ? ` ("${opportunityTitle}")` : ''}. It may be the full PQ research report, or it may be a supplementary document — a side letter, a fee/terms amendment, updated track record data, additional call/meeting notes, a legal opinion, etc.
 
 First, write a one-sentence plain-English summary of what this specific document is (documentSummary). Then extract ONLY the fields below that THIS document actually addresses or updates — use null for any field this document doesn't speak to. Do not guess or carry over values from general knowledge; a document that's purely a side letter about fee terms, for example, should leave everything except the fee/terms fields as null. IMPORTANT: only fill in "title" if the fund/manager's actual legal name has changed — never use this document's own heading or subject line (e.g. "Side Letter — Fee Amendment") as the title; leave it null in every other case, since a wrong value here would rename the opportunity.
+
+Several fields fill a fixed-shape UI control and MUST use exactly the format shown, never a descriptive sentence — leave any of these null rather than writing prose into them: "commitment" is a plain number with no currency symbol or words (e.g. 100000, not "USD 100,000 minimum investment"); "thesisRating" is a bare integer 1-5; "assetClass" must exactly match one of the 8 IPS classes (Cash, Fixed Income, Public Equity, Private Equity, Private Credit, Diversifying Strategies, Real Assets, Monetary Hedge); "esgProgramme" must be exactly one of Mature/Developing/Nascent/None; "esgApproach" must be exactly one of Impact/Integrated/ESG Aware/Opportunistic/None; each oddRatings dimension must be exactly Low/Medium/High. Narrative detail that doesn't fit one of those exact values belongs in the corresponding free-text field instead (e.g. termsSummary, esgNote) or in additionalContext, not stuffed into the constrained field.
 
 Return ONLY valid JSON (no markdown fences): {"documentSummary":"one plain-English sentence describing what this document is","title":null,"assetClass":null,"commitment":null,"currency":null,"thesisSummary":null,"thesisRating":null,"returnTarget":null,"hasTrackRecord":null,"trackRecordDetail":null,"teamSummary":null,"downsideScenarios":null,"esgProgramme":null,"esgApproach":null,"esgNote":null,"oddRatings":{"governance":null,"compliance":null,"operations":null,"alignment":null,"reporting":null},"oddGovernanceNote":null,"feesSummary":null,"termsSummary":null,"lpRightsNote":null,"isOffshore":null,"vehicleType":null,"feesAboveNorm":null,"feesBelowNorm":null,"additionalContext":null}`,
           },
