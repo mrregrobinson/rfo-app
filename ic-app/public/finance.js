@@ -22,19 +22,28 @@ const PORT={asOf:'05-31-2026',totalCAD:31619912,alloc:{'Cash':8.8,'Fixed Income'
 const ACTIVITY_TIMINGS=['0-6 months','6-12 months','12-24 months','24+ months','Uncertain'];
 const NEAR_TERM_TIMINGS=['0-6 months','6-12 months','Uncertain'];
 const ACTIVITY_FX={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};
+// decreaseField/increaseField let callers pick which pair of tags on the activity to
+// bucket by: liquidity category (decreaseClass/increaseClass, the default — used by
+// computeLiquidityPlan for A4) or IPS asset class (decreaseAssetClass/increaseAssetClass —
+// used by getEffectivePort for Section A's allocation checks). Same activities, two
+// independent lenses.
 function activityImpact(activities,opts){
-  const nearTermOnly=!!(opts&&opts.nearTermOnly);let totalDelta=0;const classDelta={};
+  const nearTermOnly=!!(opts&&opts.nearTermOnly);
+  const decField=(opts&&opts.decreaseField)||'decreaseClass';
+  const incField=(opts&&opts.increaseField)||'increaseClass';
+  let totalDelta=0;const classDelta={};
   (activities||[]).forEach(a=>{
     if(a.status==='Completed')return;
     if(nearTermOnly&&!NEAR_TERM_TIMINGS.includes(a.timing))return;
     const amt=a.amount*(ACTIVITY_FX[a.currency]||1);
-    if(a.decreaseClass){classDelta[a.decreaseClass]=(classDelta[a.decreaseClass]||0)-amt;}else{totalDelta+=amt;}
-    if(a.increaseClass){classDelta[a.increaseClass]=(classDelta[a.increaseClass]||0)+amt;}else{totalDelta-=amt;}
+    const dec=a[decField],inc=a[incField];
+    if(dec){classDelta[dec]=(classDelta[dec]||0)-amt;}else{totalDelta+=amt;}
+    if(inc){classDelta[inc]=(classDelta[inc]||0)+amt;}else{totalDelta-=amt;}
   });
   return {totalDelta,classDelta};
 }
 function getEffectivePort(activities,opts){
-  const impact=activityImpact(activities,opts);const classes=Object.keys(PORT.alloc);
+  const impact=activityImpact(activities,{...opts,decreaseField:'decreaseAssetClass',increaseField:'increaseAssetClass'});const classes=Object.keys(PORT.alloc);
   const baseCAD={};classes.forEach(c=>{baseCAD[c]=(PORT.alloc[c]/100)*PORT.totalCAD;});
   const totalCAD=PORT.totalCAD+impact.totalDelta;
   const allocCAD={};classes.forEach(c=>{allocCAD[c]=baseCAD[c]+(impact.classDelta[c]||0);});
@@ -43,14 +52,11 @@ function getEffectivePort(activities,opts){
 }
 
 // ---- liquidity ladder (A4) ----
-// Family Planning Activities now tag a liquidity category (not an IPS asset class) as
-// their source/destination — see LIQUIDITY_CATEGORIES. Known tradeoff: activityImpact()
-// above still feeds Section A's asset-class "Allocation Impact" bars (A2), keyed by
-// PORT.alloc's asset-class names — an activity tagged with a liquidity category (other
-// than the one that happens to also be an asset class, "Cash") no longer moves those
-// bars. Its dollar effect is fully captured everywhere in the liquidity ladder below,
-// which is the tradeoff the family asked for: liquidity category is now the primary lens
-// for these activities.
+// Family Planning Activities tag BOTH a liquidity category (decreaseClass/increaseClass —
+// see LIQUIDITY_CATEGORIES, used below) and an IPS asset class (decreaseAssetClass/
+// increaseAssetClass, used by getEffectivePort above for Section A's allocation checks).
+// Same dollar activity, two independent lenses — see activityImpact's decreaseField/
+// increaseField opts.
 const LIQUIDITY_BUCKETS=['0-6 months','6-12 months','12-24 months','24+ months'];
 const LIQUIDITY_CATEGORIES=['Cash','Highly Liquid','Medium Liquidity','Low Liquidity'];
 // Which tiers are unlocked as an available source by the end of each bucket — a cascading

@@ -108,6 +108,8 @@ function ensureSeeded() {
         currency: 'CAD',
         decreaseClass: 'Cash',
         increaseClass: null,
+        decreaseAssetClass: 'Cash',
+        increaseAssetClass: null,
         impact: 'Withdrawal of cash and other investments to fund a house purchase — reduces capital available for new commitments.',
         status: 'Considering',
         timing: '6-12 months',
@@ -116,8 +118,10 @@ function ensureSeeded() {
         description: 'R&R Keys Corporation — sale of Leader Building',
         amount: 600000,
         currency: 'CAD',
-        decreaseClass: 'Real Assets',
+        decreaseClass: 'Low Liquidity',
         increaseClass: 'Cash',
+        decreaseAssetClass: 'Real Assets',
+        increaseAssetClass: 'Cash',
         impact: 'Sale of the Leader Building property (currently held under Real Assets) — proceeds would convert to cash; does not change total portfolio value.',
         status: 'Considering',
         timing: 'Uncertain',
@@ -128,6 +132,8 @@ function ensureSeeded() {
         currency: 'CAD',
         decreaseClass: 'Cash',
         increaseClass: null,
+        decreaseAssetClass: 'Cash',
+        increaseAssetClass: null,
         impact: 'Capital allocation into Ross\'s company (Rewire Collections, not tracked by PQ) — reduces investable RFO assets.',
         status: 'Considering',
         timing: '12-24 months',
@@ -135,9 +141,9 @@ function ensureSeeded() {
     ];
     for (const a of seedActivities) {
       db.prepare(
-        `INSERT INTO activities (id, description, amount, currency, decrease_class, increase_class, impact, status, timing, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(crypto.randomUUID(), a.description, a.amount, a.currency, a.decreaseClass, a.increaseClass, a.impact, a.status, a.timing, 'reg', aNow, aNow);
+        `INSERT INTO activities (id, description, amount, currency, decrease_class, increase_class, decrease_asset_class, increase_asset_class, impact, status, timing, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(crypto.randomUUID(), a.description, a.amount, a.currency, a.decreaseClass, a.increaseClass, a.decreaseAssetClass, a.increaseAssetClass, a.impact, a.status, a.timing, 'reg', aNow, aNow);
     }
     console.log('Seeded 3 sample family planning activities');
   }

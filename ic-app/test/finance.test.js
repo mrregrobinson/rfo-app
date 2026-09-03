@@ -100,8 +100,8 @@ describe('getEffectivePort', () => {
 
   test('percentages always sum to ~100 regardless of activities', () => {
     const activities = [
-      { amount: 2000000, currency: 'CAD', decreaseClass: 'Cash', increaseClass: null, status: 'Considering', timing: '6-12 months' },
-      { amount: 600000, currency: 'CAD', decreaseClass: 'Real Assets', increaseClass: 'Cash', status: 'Considering', timing: 'Uncertain' },
+      { amount: 2000000, currency: 'CAD', decreaseAssetClass: 'Cash', increaseAssetClass: null, status: 'Considering', timing: '6-12 months' },
+      { amount: 600000, currency: 'CAD', decreaseAssetClass: 'Real Assets', increaseAssetClass: 'Cash', status: 'Considering', timing: 'Uncertain' },
     ];
     const eff = getEffectivePort(activities);
     const sum = Object.values(eff.alloc).reduce((a, b) => a + b, 0);
@@ -110,19 +110,32 @@ describe('getEffectivePort', () => {
 
   test('an outflow from a class shrinks total CAD by the same amount', () => {
     const eff = getEffectivePort([
-      { amount: 2000000, currency: 'CAD', decreaseClass: 'Cash', increaseClass: null, status: 'Considering', timing: '6-12 months' },
+      { amount: 2000000, currency: 'CAD', decreaseAssetClass: 'Cash', increaseAssetClass: null, status: 'Considering', timing: '6-12 months' },
     ]);
     assert.equal(eff.totalCAD, PORT.totalCAD - 2000000);
   });
 
   test('a pure reallocation leaves totalCAD unchanged', () => {
     const eff = getEffectivePort([
-      { amount: 600000, currency: 'CAD', decreaseClass: 'Real Assets', increaseClass: 'Cash', status: 'Considering', timing: 'Uncertain' },
+      { amount: 600000, currency: 'CAD', decreaseAssetClass: 'Real Assets', increaseAssetClass: 'Cash', status: 'Considering', timing: 'Uncertain' },
     ]);
     assert.equal(eff.totalCAD, PORT.totalCAD);
     // Cash's CAD amount should rise by exactly the reallocated amount.
     const baseCash = (PORT.alloc['Cash'] / 100) * PORT.totalCAD;
     assert.ok(Math.abs(eff.allocCAD['Cash'] - (baseCash + 600000)) < 1e-6);
+  });
+
+  test('an activity tagged only with a liquidity category (no asset class) does not move Section A allocation math', () => {
+    // This is the whole point of splitting the two tags: a liquidity-only activity should
+    // still show up in the A4 chart (see computeLiquidityPlan tests) without touching the
+    // IPS asset-class bands here.
+    const eff = getEffectivePort([
+      { amount: 2000000, currency: 'CAD', decreaseClass: 'Cash', increaseClass: null, status: 'Considering', timing: '6-12 months' },
+    ]);
+    assert.equal(eff.totalCAD, PORT.totalCAD);
+    for (const cls of Object.keys(PORT.alloc)) {
+      assert.ok(Math.abs(eff.alloc[cls] - PORT.alloc[cls]) < 1e-9, `${cls} allocation should be unchanged`);
+    }
   });
 });
 

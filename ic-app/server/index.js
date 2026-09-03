@@ -849,6 +849,8 @@ function activityRowToJson(row) {
     currency: row.currency,
     decreaseClass: row.decrease_class,
     increaseClass: row.increase_class,
+    decreaseAssetClass: row.decrease_asset_class,
+    increaseAssetClass: row.increase_asset_class,
     impact: row.impact,
     status: row.status,
     timing: row.timing,
@@ -869,8 +871,8 @@ app.post('/api/activities', requireAuth, (req, res) => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO activities (id, description, amount, currency, decrease_class, increase_class, impact, status, timing, created_by, created_at, updated_at)
-     VALUES (@id, @description, @amount, @currency, @decreaseClass, @increaseClass, @impact, @status, @timing, @createdBy, @createdAt, @updatedAt)`
+    `INSERT INTO activities (id, description, amount, currency, decrease_class, increase_class, decrease_asset_class, increase_asset_class, impact, status, timing, created_by, created_at, updated_at)
+     VALUES (@id, @description, @amount, @currency, @decreaseClass, @increaseClass, @decreaseAssetClass, @increaseAssetClass, @impact, @status, @timing, @createdBy, @createdAt, @updatedAt)`
   ).run({
     id,
     description: b.description,
@@ -878,6 +880,8 @@ app.post('/api/activities', requireAuth, (req, res) => {
     currency: b.currency || 'CAD',
     decreaseClass: b.decreaseClass || null,
     increaseClass: b.increaseClass || null,
+    decreaseAssetClass: b.decreaseAssetClass || null,
+    increaseAssetClass: b.increaseAssetClass || null,
     impact: b.impact || '',
     status: b.status || 'Considering',
     timing: b.timing || 'Uncertain',
@@ -895,7 +899,7 @@ app.put('/api/activities/:id', requireAuth, (req, res) => {
   const b = req.body || {};
   const now = new Date().toISOString();
   db.prepare(
-    `UPDATE activities SET description=@description, amount=@amount, currency=@currency, decrease_class=@decreaseClass, increase_class=@increaseClass, impact=@impact, status=@status, timing=@timing, updated_at=@updatedAt WHERE id=@id`
+    `UPDATE activities SET description=@description, amount=@amount, currency=@currency, decrease_class=@decreaseClass, increase_class=@increaseClass, decrease_asset_class=@decreaseAssetClass, increase_asset_class=@increaseAssetClass, impact=@impact, status=@status, timing=@timing, updated_at=@updatedAt WHERE id=@id`
   ).run({
     id: req.params.id,
     description: b.description ?? row.description,
@@ -903,6 +907,8 @@ app.put('/api/activities/:id', requireAuth, (req, res) => {
     currency: b.currency || row.currency,
     decreaseClass: b.decreaseClass !== undefined ? (b.decreaseClass || null) : row.decrease_class,
     increaseClass: b.increaseClass !== undefined ? (b.increaseClass || null) : row.increase_class,
+    decreaseAssetClass: b.decreaseAssetClass !== undefined ? (b.decreaseAssetClass || null) : row.decrease_asset_class,
+    increaseAssetClass: b.increaseAssetClass !== undefined ? (b.increaseAssetClass || null) : row.increase_asset_class,
     impact: b.impact ?? row.impact,
     status: b.status || row.status,
     timing: b.timing || row.timing,
