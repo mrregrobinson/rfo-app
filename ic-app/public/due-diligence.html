@@ -606,6 +606,7 @@ function OpportunityDocumentsPanel({opp,currentUser,onUpdateOpportunity}){
     finally{setExtracting(false);}
   }
   function afterSaved(){setExtracted(null);setFileB64('');setFileName('');load();}
+  async function removeDoc(d){if(!window.confirm(`Delete "${d.filename||'this document'}"? This only removes the upload record — it does not undo any fields it applied.`))return;await api.del(`/api/opportunities/${opp.id}/documents/${d.id}`);load();}
   return h('div',{className:'card'},
     h('div',{className:'card-title'},'Documents'),
     h('p',{style:{fontSize:11,color:'var(--muted)',marginBottom:10}},'The original PQ document is captured at creation. Upload anything that comes in afterward — side letters, term amendments, updated track record, extra diligence material — and Claude will read it and highlight what it changes.'),
@@ -619,7 +620,7 @@ function OpportunityDocumentsPanel({opp,currentUser,onUpdateOpportunity}){
     loading&&h('p',{style:{fontSize:12,color:'var(--muted)'}},'Loading documents…'),
     !loading&&docs.length===0&&h('p',{style:{fontSize:12,color:'var(--muted)'}},'No follow-up documents uploaded yet.'),
     !loading&&docs.length>0&&h('div',{style:{marginTop:10}},docs.map(d=>h('div',{key:d.id,style:{padding:'8px 10px',borderTop:'0.5px solid var(--border)',fontSize:12}},
-      h('div',{style:{display:'flex',justifyContent:'space-between',gap:8}},h('span',{style:{fontWeight:600,color:'var(--navy)'}},'📄 '+(d.filename||'Untitled document')),h('span',{style:{color:'var(--muted)',fontSize:11}},fmtDate(d.uploadedAt))),
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:8,alignItems:'flex-start'}},h('span',{style:{fontWeight:600,color:'var(--navy)'}},'📄 '+(d.filename||'Untitled document')),h('div',{style:{display:'flex',alignItems:'center',gap:8}},h('span',{style:{color:'var(--muted)',fontSize:11}},fmtDate(d.uploadedAt)),canEdit&&h('button',{className:'activity-icon-btn',title:'Delete',onClick:()=>removeDoc(d)},'🗑'))),
       d.summary&&h('div',{style:{color:'var(--muted)',marginTop:2}},d.summary),
       h('div',{style:{color:d.appliedFields.length?'var(--teal)':'var(--muted)',marginTop:2,fontSize:11}},d.appliedFields.length?'Applied: '+d.appliedFields.join(', '):'Reference only — no fields applied')
     )))

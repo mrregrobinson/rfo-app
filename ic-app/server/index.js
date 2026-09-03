@@ -1095,6 +1095,21 @@ app.post('/api/opportunities/:id/documents', requireAuth, (req, res) => {
   res.status(201).json(documentRowToJson(db.prepare('SELECT * FROM opportunity_documents WHERE id = ?').get(id)));
 });
 
+// Removes the upload record only — never touches pq_data, even if this document's fields
+// were applied at the time. Undoing an applied change (if ever needed) is a manual edit
+// via "Edit Details" or a fresh corrective upload, not an implicit side effect of deleting
+// the record of how a past change got there.
+app.delete('/api/opportunities/:id/documents/:docId', requireAuth, (req, res) => {
+  const opp = db.prepare('SELECT * FROM opportunities WHERE id = ?').get(req.params.id);
+  if (!opp || !canSeeOpportunity(opp, req)) return res.status(404).json({ error: 'Not found' });
+  if (!canEditOpportunity(opp, req.session.userId)) return res.status(403).json({ error: 'Only the initiator or an admin can delete documents on this opportunity' });
+  const doc = db.prepare('SELECT * FROM opportunity_documents WHERE id = ? AND opportunity_id = ?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  db.prepare('DELETE FROM opportunity_documents WHERE id = ?').run(req.params.docId);
+  logAudit({ userId: req.session.userId, action: 'opportunity.document_deleted', entityType: 'opportunity', entityId: req.params.id, details: { filename: doc.filename } });
+  res.json({ deleted: true });
+});
+
 // ---- portfolio snapshots ----
 // Replaces a hardcoded PORT constant with an admin-updatable, database-backed portfolio
 // snapshot: upload the latest PQ investment report, review/correct what Claude extracted,
