@@ -164,6 +164,37 @@ Return ONLY valid JSON, no markdown fences, no extra prose:
   return { result: extractJson(data), usage: data.usage };
 }
 
+// A follow-up document for an opportunity already under review — a side letter, a fee or
+// terms amendment, updated track record, additional call notes, etc. — rather than the
+// full PQ research report handled by extractPdf. Same field shape, but the model is told
+// to leave anything this specific document doesn't address as null rather than guessing,
+// so the caller can diff against the opportunity's current pqData and show the reviewer
+// only what actually changed. Returned for admin/initiator review, never saved directly.
+async function extractOpportunityDocument(base64Data, opportunityTitle) {
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 3000,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } },
+          {
+            type: 'text',
+            text: `Today is ${today}. This document relates to an investment opportunity already under due diligence review${opportunityTitle ? ` ("${opportunityTitle}")` : ''}. It may be the full PQ research report, or it may be a supplementary document — a side letter, a fee/terms amendment, updated track record data, additional call/meeting notes, a legal opinion, etc.
+
+First, write a one-sentence plain-English summary of what this specific document is (documentSummary). Then extract ONLY the fields below that THIS document actually addresses or updates — use null for any field this document doesn't speak to. Do not guess or carry over values from general knowledge; a document that's purely a side letter about fee terms, for example, should leave everything except the fee/terms fields as null. IMPORTANT: only fill in "title" if the fund/manager's actual legal name has changed — never use this document's own heading or subject line (e.g. "Side Letter — Fee Amendment") as the title; leave it null in every other case, since a wrong value here would rename the opportunity.
+
+Return ONLY valid JSON (no markdown fences): {"documentSummary":"one plain-English sentence describing what this document is","title":null,"assetClass":null,"commitment":null,"currency":null,"thesisSummary":null,"thesisRating":null,"returnTarget":null,"hasTrackRecord":null,"trackRecordDetail":null,"teamSummary":null,"downsideScenarios":null,"esgProgramme":null,"esgApproach":null,"esgNote":null,"oddRatings":{"governance":null,"compliance":null,"operations":null,"alignment":null,"reporting":null},"oddGovernanceNote":null,"feesSummary":null,"termsSummary":null,"lpRightsNote":null,"isOffshore":null,"vehicleType":null,"feesAboveNorm":null,"feesBelowNorm":null,"additionalContext":null}`,
+          },
+        ],
+      },
+    ],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
 // Synthesizes IC member checklist responses (whatever has been submitted so far — the
 // caller may trigger this before everyone has responded) into a governance-style summary,
 // per the original build spec's "Claude's Recommendation" logic (system prompt below).
@@ -225,4 +256,4 @@ Format your response as a JSON object with exactly these keys, in this order: {"
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, extractPdf, extractPortfolioReport, extractIncomeReport, generateReport, ClaudeNotConfiguredError };
+module.exports = { research, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, generateReport, ClaudeNotConfiguredError };

@@ -1022,6 +1022,79 @@ app.post('/api/claude/extract-pdf', requireAuth, async (req, res) => {
   }
 });
 
+// ---- opportunity documents ----
+// Lets an opportunity accumulate more than one uploaded document over its life (the
+// initial PQ report handled at creation by /api/claude/extract-pdf above, plus later
+// follow-ups — side letters, term amendments, updated track record, additional diligence
+// material). Same extract-then-review-then-save shape as the portfolio/income snapshot
+// flow: extract never writes anything, the reviewer decides which fields (if any) actually
+// get applied to the opportunity's pq_data via the existing PUT /api/opportunities/:id.
+
+function documentRowToJson(row) {
+  return {
+    id: row.id,
+    filename: row.filename,
+    summary: row.summary,
+    extracted: JSON.parse(row.extracted),
+    appliedFields: JSON.parse(row.applied_fields),
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at,
+  };
+}
+
+function canEditOpportunity(row, userId) {
+  return row.initiated_by === userId || ddRoleOf(userId).isAdmin;
+}
+
+app.get('/api/opportunities/:id/documents', requireAuth, (req, res) => {
+  const opp = db.prepare('SELECT * FROM opportunities WHERE id = ?').get(req.params.id);
+  if (!opp || !canSeeOpportunity(opp, req)) return res.status(404).json({ error: 'Not found' });
+  const rows = db.prepare('SELECT * FROM opportunity_documents WHERE opportunity_id = ? ORDER BY uploaded_at DESC').all(req.params.id);
+  res.json(rows.map(documentRowToJson));
+});
+
+app.post('/api/opportunities/:id/documents/extract', requireAuth, async (req, res) => {
+  const opp = db.prepare('SELECT * FROM opportunities WHERE id = ?').get(req.params.id);
+  if (!opp || !canSeeOpportunity(opp, req)) return res.status(404).json({ error: 'Not found' });
+  if (!canEditOpportunity(opp, req.session.userId)) return res.status(403).json({ error: 'Only the initiator or an admin can upload documents to this opportunity' });
+  try {
+    const { base64 } = req.body || {};
+    if (!base64) return res.status(400).json({ error: 'base64 is required' });
+    const { result, usage } = await claude.extractOpportunityDocument(base64, opp.title);
+    logApiUsage({ callType: 'extract_opportunity_document', usage, opportunityId: opp.id, userId: req.session.userId });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof claude.ClaudeNotConfiguredError) {
+      return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+    }
+    res.status(502).json({ error: err.message || 'Claude request failed' });
+  }
+});
+
+app.post('/api/opportunities/:id/documents', requireAuth, (req, res) => {
+  const opp = db.prepare('SELECT * FROM opportunities WHERE id = ?').get(req.params.id);
+  if (!opp || !canSeeOpportunity(opp, req)) return res.status(404).json({ error: 'Not found' });
+  if (!canEditOpportunity(opp, req.session.userId)) return res.status(403).json({ error: 'Only the initiator or an admin can upload documents to this opportunity' });
+  const b = req.body || {};
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO opportunity_documents (id, opportunity_id, filename, summary, extracted, applied_fields, uploaded_by, uploaded_at)
+     VALUES (@id, @opportunityId, @filename, @summary, @extracted, @appliedFields, @uploadedBy, @uploadedAt)`
+  ).run({
+    id,
+    opportunityId: req.params.id,
+    filename: b.filename || null,
+    summary: b.summary || '',
+    extracted: JSON.stringify(b.extracted || {}),
+    appliedFields: JSON.stringify(b.appliedFields || []),
+    uploadedBy: req.session.userId,
+    uploadedAt: now,
+  });
+  logAudit({ userId: req.session.userId, action: 'opportunity.document_uploaded', entityType: 'opportunity', entityId: req.params.id, details: { filename: b.filename, appliedFields: b.appliedFields || [] } });
+  res.status(201).json(documentRowToJson(db.prepare('SELECT * FROM opportunity_documents WHERE id = ?').get(id)));
+});
+
 // ---- portfolio snapshots ----
 // Replaces a hardcoded PORT constant with an admin-updatable, database-backed portfolio
 // snapshot: upload the latest PQ investment report, review/correct what Claude extracted,

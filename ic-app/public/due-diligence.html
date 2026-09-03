@@ -485,6 +485,7 @@ function ChecklistPage({opp,currentUser,onSave,onSubmit,onBack,activities,onCrea
       !closed&&h('div',{className:'alert alert-purple'},'✦ ',h('strong',null,'Live intelligence: '),'Web research fires automatically in Sections B (manager + industry) and D (Canadian regulatory) as you scroll down.'),
       h(SharingPanel,{opp,currentUser,onSend:onSendTo}),
       h(FamilyActivitiesPanel,{activities,onCreate:onCreateActivity,onUpdate:onUpdateActivity,onDelete:onDeleteActivity}),
+      h(OpportunityDocumentsPanel,{opp,currentUser,onUpdateOpportunity}),
       SECTIONS.map((s,i)=>h(SectionCard,{key:s.id,section:s,responses,claudeAnswers:ca,onChange:upd,initialOpen:i===0,opp,readOnly:closed,activities})),
       h('div',{className:'card'},h('div',{className:'card-title'},'Your Overall Recommendation'),h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'Anchor in D4 (risk-return) and E1 (values). Factor in any red flags from the live research.'),h('div',{className:'overall-wrap'},['Approve','Conditional Approval','Decline','Abstain'].map(r=>h('button',{key:r,className:`overall-btn sel-${rec===r?r.replace(' ','-'):''}`,disabled:closed,onClick:()=>!closed&&setRec(r)},r))),
         h('div',{style:{marginTop:14}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Overall comments'),h('textarea',{className:'textarea',style:{minHeight:80},placeholder:'Key reasons for your recommendation…',value:comments,disabled:closed,onChange:e=>setComments(e.target.value)})),
@@ -502,6 +503,128 @@ async function extractFromPDF(base64Data){
 }
 
 function blankPqData(){return{thesisSummary:'',thesisRating:4,returnTarget:'',hasTrackRecord:true,trackRecordDetail:'',teamSummary:'',downsideScenarios:'',esgProgramme:'Developing',esgApproach:'Opportunistic',esgNote:'',oddRatings:{governance:'Low',compliance:'Low',operations:'Low',alignment:'Low',reporting:'Low'},oddGovernanceNote:'',feesSummary:'',termsSummary:'',lpRightsNote:'',isOffshore:false,vehicleType:'',mltaRequired:false,feesAboveNorm:false,feesBelowNorm:false};}
+
+// Maps each field the extractor can populate to where it actually lives: opportunity's
+// own row ('top' — title/assetClass/commitment/currency/additionalContext) vs pqData
+// ('pq'). Drives OpportunityDocumentReview's diff so applying a checked field writes to
+// the right place. oddRatings is handled separately since it's a nested object.
+const OPP_DOC_FIELD_DEFS=[
+  {key:'title',label:'Fund / Manager Name',target:'top'},
+  {key:'assetClass',label:'Asset Class',target:'top'},
+  {key:'commitment',label:'Commitment',target:'top'},
+  {key:'currency',label:'Currency',target:'top'},
+  {key:'additionalContext',label:'Additional Context',target:'top'},
+  {key:'thesisSummary',label:'Thesis Summary',target:'pq'},
+  {key:'thesisRating',label:'Thesis Rating (1-5)',target:'pq'},
+  {key:'returnTarget',label:'Return Target',target:'pq'},
+  {key:'hasTrackRecord',label:'Has Track Record',target:'pq'},
+  {key:'trackRecordDetail',label:'Track Record Detail',target:'pq'},
+  {key:'teamSummary',label:'Team Summary',target:'pq'},
+  {key:'downsideScenarios',label:'Downside Scenarios',target:'pq'},
+  {key:'esgProgramme',label:'ESG Programme',target:'pq'},
+  {key:'esgApproach',label:'ESG Approach',target:'pq'},
+  {key:'esgNote',label:'ESG Note',target:'pq'},
+  {key:'oddGovernanceNote',label:'Governance ODD Note',target:'pq'},
+  {key:'feesSummary',label:'Fees Summary',target:'pq'},
+  {key:'termsSummary',label:'Terms / LP Rights',target:'pq'},
+  {key:'lpRightsNote',label:'LP Rights Note',target:'pq'},
+  {key:'isOffshore',label:'Offshore / Cayman Structure',target:'pq'},
+  {key:'vehicleType',label:'Vehicle Type',target:'pq'},
+  {key:'feesAboveNorm',label:'Fees Above Market Norm',target:'pq'},
+  {key:'feesBelowNorm',label:'Fees Below Market Norm',target:'pq'},
+];
+const OPP_DOC_ODD_DIMS=['governance','compliance','operations','alignment','reporting'];
+function oppDocHasValue(v){return v!==null&&v!==undefined&&v!=='';}
+function oppDocFmtValue(v){if(v===null||v===undefined||v==='')return '—';if(typeof v==='boolean')return v?'Yes':'No';return String(v);}
+
+// Diff view for one freshly-extracted document against the opportunity's current data —
+// only fields the document actually addressed (non-null) show up as rows, each with its
+// own checkbox so the reviewer decides field-by-field what to apply. Saving always records
+// the upload (opportunity_documents); it only touches pq_data/opp fields for checked rows
+// — leaving everything unchecked records the document as reference-only.
+function OpportunityDocumentReview({opp,fileName,extracted,onUpdateOpportunity,onCancel,onSaved}){
+  const [summary,setSummary]=useState(extracted.documentSummary||'');
+  const changedFields=OPP_DOC_FIELD_DEFS.filter(f=>oppDocHasValue(extracted[f.key]));
+  const changedOdd=OPP_DOC_ODD_DIMS.filter(d=>oppDocHasValue(extracted.oddRatings?.[d]));
+  const [selected,setSelected]=useState(()=>{const s={};changedFields.forEach(f=>{s[f.key]=true;});changedOdd.forEach(d=>{s['odd.'+d]=true;});return s;});
+  const [saving,setSaving]=useState(false);
+  function toggle(k){setSelected(s=>({...s,[k]:!s[k]}));}
+  function currentValue(f){return f.target==='top'?opp[f.key]:opp.pqData?.[f.key];}
+  async function save(){
+    setSaving(true);
+    try{
+      const anySelected=changedFields.some(f=>selected[f.key])||changedOdd.some(d=>selected['odd.'+d]);
+      if(anySelected){
+        const mergedPqData={...opp.pqData};const top={title:opp.title,assetClass:opp.assetClass,commitment:opp.commitment,currency:opp.currency,additionalContext:opp.additionalContext};
+        changedFields.forEach(f=>{if(!selected[f.key])return;if(f.target==='top')top[f.key]=extracted[f.key];else mergedPqData[f.key]=extracted[f.key];});
+        if(changedOdd.some(d=>selected['odd.'+d])){mergedPqData.oddRatings={...mergedPqData.oddRatings};changedOdd.forEach(d=>{if(selected['odd.'+d])mergedPqData.oddRatings[d]=extracted.oddRatings[d];});}
+        await onUpdateOpportunity(opp.id,{title:top.title,assetClass:top.assetClass,commitment:top.commitment,currency:top.currency,deadline:opp.deadline,additionalContext:top.additionalContext,notifyLucas:opp.notifyLucas,pqSummary:opp.pqSummary,pqData:mergedPqData});
+      }
+      const appliedFields=[...changedFields.filter(f=>selected[f.key]).map(f=>f.key),...changedOdd.filter(d=>selected['odd.'+d]).map(d=>'oddRatings.'+d)];
+      await api.post(`/api/opportunities/${opp.id}/documents`,{filename:fileName,summary,extracted,appliedFields});
+      onSaved();
+    }catch(e){alert(e.message||'Failed to save document');}
+    finally{setSaving(false);}
+  }
+  return h('div',{style:{marginTop:12}},
+    h('div',{className:'form-group'},h('label',{className:'form-label'},'Document summary'),h('input',{className:'form-input',value:summary,onChange:e=>setSummary(e.target.value)})),
+    changedFields.length===0&&changedOdd.length===0&&h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},"This document didn't map to any specific field — it'll be saved as a reference-only record."),
+    (changedFields.length>0||changedOdd.length>0)&&h('div',{style:{marginBottom:10}},
+      h('div',{style:{fontSize:11,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:6}},'What this document changes — uncheck anything you don\'t want applied'),
+      h('div',{style:{border:'0.5px solid var(--border)',borderRadius:8,overflow:'hidden'}},
+        changedFields.map(f=>h('label',{key:f.key,style:{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 10px',borderBottom:'0.5px solid var(--border)',cursor:'pointer',fontSize:12}},
+          h('input',{type:'checkbox',checked:!!selected[f.key],onChange:()=>toggle(f.key),style:{marginTop:2,accentColor:'var(--teal)'}}),
+          h('div',{style:{flex:1}},h('div',{style:{fontWeight:600,color:'var(--navy)'}},f.label),h('div',{style:{color:'var(--muted)',marginTop:2}},'Current: ',oppDocFmtValue(currentValue(f))),h('div',{style:{color:'var(--teal)',marginTop:2}},'New: ',oppDocFmtValue(extracted[f.key])))
+        )),
+        changedOdd.length>0&&h('div',{style:{padding:'8px 10px'}},
+          h('div',{style:{fontWeight:600,color:'var(--navy)',fontSize:12,marginBottom:6}},'ODD Ratings'),
+          changedOdd.map(d=>h('label',{key:d,style:{display:'flex',gap:10,alignItems:'center',padding:'4px 0',cursor:'pointer',fontSize:12}},
+            h('input',{type:'checkbox',checked:!!selected['odd.'+d],onChange:()=>toggle('odd.'+d),style:{accentColor:'var(--teal)'}}),
+            h('span',{style:{textTransform:'capitalize',flex:1}},d),
+            h('span',{style:{color:'var(--muted)'}},opp.pqData?.oddRatings?.[d]||'—'),h('span',null,' → '),h('span',{style:{color:'var(--teal)',fontWeight:600}},extracted.oddRatings[d])
+          ))
+        )
+      )
+    ),
+    h('div',{style:{display:'flex',gap:8}},h('button',{className:'btn btn-outline btn-sm',onClick:onCancel,disabled:saving},'Discard'),h('button',{className:'btn btn-teal btn-sm',onClick:save,disabled:saving},saving?'Saving…':'Save Document'))
+  );
+}
+
+function OpportunityDocumentsPanel({opp,currentUser,onUpdateOpportunity}){
+  const canEdit=opp.status!=='closed'&&(currentUser.ddAdmin||currentUser.id===opp.initiatedBy);
+  const [docs,setDocs]=useState([]);const [loading,setLoading]=useState(true);
+  const [fileName,setFileName]=useState('');const [fileB64,setFileB64]=useState('');
+  const [extracting,setExtracting]=useState(false);const [extracted,setExtracted]=useState(null);const [error,setError]=useState('');
+  function load(){setLoading(true);api.get(`/api/opportunities/${opp.id}/documents`).then(setDocs).catch(()=>{}).finally(()=>setLoading(false));}
+  useEffect(()=>{load();},[opp.id]);
+  function handleFile(e){const f=e.target.files?.[0];if(!f)return;if(f.type!=='application/pdf'){alert('PDF only.');return;}setFileName(f.name);setError('');const r=new FileReader();r.onload=ev=>setFileB64(ev.target.result.split(',')[1]);r.readAsDataURL(f);}
+  async function extract(){
+    if(!fileB64){alert('Select a PDF first.');return;}
+    setExtracting(true);setError('');
+    try{const x=await api.post(`/api/opportunities/${opp.id}/documents/extract`,{base64:fileB64});setExtracted(x);}
+    catch(err){setError(err.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':(err.message||'Extraction failed'));}
+    finally{setExtracting(false);}
+  }
+  function afterSaved(){setExtracted(null);setFileB64('');setFileName('');load();}
+  return h('div',{className:'card'},
+    h('div',{className:'card-title'},'Documents'),
+    h('p',{style:{fontSize:11,color:'var(--muted)',marginBottom:10}},'The original PQ document is captured at creation. Upload anything that comes in afterward — side letters, term amendments, updated track record, extra diligence material — and Claude will read it and highlight what it changes.'),
+    canEdit&&!extracted&&h('div',null,
+      h('label',{className:`upload-zone${fileB64?' has-file':''}`,style:{marginBottom:10,display:'block',padding:'14px'}},fileB64?h('div',{style:{fontSize:13}},'📄 '+fileName):h('div',{style:{fontSize:13}},'☁ Upload a follow-up document (PDF)'),h('input',{type:'file',accept:'.pdf',style:{display:'none'},onChange:handleFile})),
+      h('button',{className:'btn btn-gold btn-sm',disabled:!fileB64||extracting,onClick:extract},extracting?'Reading document…':'✦ Extract & Review')
+    ),
+    error==='NOT_CONFIGURED'&&h('div',{className:'alert alert-warn',style:{marginBottom:10}},'Live extraction is not configured. The server has no ANTHROPIC_API_KEY set.'),
+    error&&error!=='NOT_CONFIGURED'&&h('div',{className:'alert alert-danger',style:{marginBottom:10}},error),
+    extracted&&h(OpportunityDocumentReview,{opp,fileName,extracted,onUpdateOpportunity,onCancel:()=>{setExtracted(null);setFileB64('');setFileName('');},onSaved:afterSaved}),
+    loading&&h('p',{style:{fontSize:12,color:'var(--muted)'}},'Loading documents…'),
+    !loading&&docs.length===0&&h('p',{style:{fontSize:12,color:'var(--muted)'}},'No follow-up documents uploaded yet.'),
+    !loading&&docs.length>0&&h('div',{style:{marginTop:10}},docs.map(d=>h('div',{key:d.id,style:{padding:'8px 10px',borderTop:'0.5px solid var(--border)',fontSize:12}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:8}},h('span',{style:{fontWeight:600,color:'var(--navy)'}},'📄 '+(d.filename||'Untitled document')),h('span',{style:{color:'var(--muted)',fontSize:11}},fmtDate(d.uploadedAt))),
+      d.summary&&h('div',{style:{color:'var(--muted)',marginTop:2}},d.summary),
+      h('div',{style:{color:d.appliedFields.length?'var(--teal)':'var(--muted)',marginTop:2,fontSize:11}},d.appliedFields.length?'Applied: '+d.appliedFields.join(', '):'Reference only — no fields applied')
+    )))
+  );
+}
 
 const RECOMMENDATION_STYLE={
   'APPROVE':{alert:'alert-success',label:'✓ Approve'},
