@@ -13,6 +13,7 @@ const { requireAuth } = require('./auth');
 const claude = require('./claude');
 const fx = require('./fx');
 const mailer = require('./mailer');
+const { logApiUsage } = require('./usage');
 const { escapeHtml, contentRow, paragraph, emailShell } = require('./email-template');
 const { buildReportPdf } = require('./expenditure-report');
 
@@ -251,6 +252,49 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     return db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = 'Transfers'").get(ledgerId)?.id || null;
   }
 
+  // ---- payee research (web search, opt-in per payee — never run automatically) ----
+
+  // Distinct descriptions still sitting in Miscellaneous/Unknown, with how many
+  // transactions share each one — the review queue for research/manual categorization.
+  // Grouping by description matters: the same payee (e.g. a recurring grocery run)
+  // typically posts many times, so researching it once and creating a rule from it
+  // clears every occurrence at once rather than one at a time.
+  app.get('/api/expenditure/unknown-payees', requireAuth, requireLedger, (req, res) => {
+    const unknownId = unknownCategoryId(req.expenditureLedger.id);
+    if (!unknownId) return res.json([]);
+    const rows = db.prepare(
+      `SELECT t.raw_description AS description, COUNT(*) AS count
+       FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id
+       WHERE a.ledger_id = ? AND t.category_id = ? AND t.is_transfer = 0
+       GROUP BY t.raw_description ORDER BY count DESC`
+    ).all(req.expenditureLedger.id, unknownId);
+    res.json(rows);
+  });
+
+  // Web-search-backed category suggestion for one payee description — never applied
+  // automatically; the caller reviews it and, if they agree, creates a rule from it via
+  // the existing POST /api/expenditure/category-rules (same flow as a manual "+Rule").
+  // This is a real Anthropic API cost per call (small, but real), so it only ever runs
+  // when a person clicks something — no automatic research on import.
+  app.post('/api/expenditure/research-payee', requireAuth, requireLedger, async (req, res) => {
+    const description = (req.body?.description || '').trim();
+    if (!description) return res.status(400).json({ error: 'description is required' });
+    const categoryNames = db.prepare(
+      "SELECT name FROM expenditure_categories WHERE ledger_id = ? AND is_expenditure = 1 ORDER BY sort_order"
+    ).all(req.expenditureLedger.id).map((r) => r.name);
+    try {
+      const { result, usage } = await claude.suggestCategory(description, categoryNames);
+      logApiUsage({ callType: 'expenditure_suggest_category', usage, userId: req.session.userId });
+      const categoryRow = db.prepare('SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = ?').get(req.expenditureLedger.id, result.category);
+      res.json({ ...result, categoryId: categoryRow ? categoryRow.id : null });
+    } catch (err) {
+      if (err instanceof claude.ClaudeNotConfiguredError) {
+        return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+      }
+      res.status(502).json({ error: err.message || 'Research failed' });
+    }
+  });
+
   // ---- import (zip or individual PDFs) ----
 
   // Body: { files: [{ filename, base64 }] }. A .zip is expanded server-side (skipping
@@ -332,6 +376,22 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     const detected = detectAccountFromFilename(filename);
     if (!detected) return { filename, ok: false, error: 'Unrecognized statement filename — this account pattern isn\'t known yet.' };
     const account = findOrCreateAccount(ledgerId, detected);
+
+    // Fast-path dedup, before spending a Claude call: this household's real statement
+    // filenames end in the statement's own period-end date (confirmed against real RBC
+    // exports), so a re-uploaded or overlapping-zip duplicate can usually be caught for
+    // free. This is a guess only — a renamed or differently-formatted filename just falls
+    // through to extraction as normal — so the authoritative check below (by the
+    // statement's own reported period, after extraction) still always runs too.
+    const filenameDateMatch = /(\d{4}-\d{2}-\d{2})/.exec(filename);
+    if (filenameDateMatch) {
+      const likelyDuplicate = db.prepare(
+        'SELECT period_start, period_end FROM expenditure_statements WHERE account_id = ? AND period_end = ?'
+      ).get(account.id, filenameDateMatch[1]);
+      if (likelyDuplicate) {
+        return { filename, ok: true, skipped: true, reason: 'Already imported', accountName: account.name, periodStart: likelyDuplicate.period_start, periodEnd: likelyDuplicate.period_end };
+      }
+    }
 
     let extraction;
     try {

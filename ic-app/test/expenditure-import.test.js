@@ -104,6 +104,46 @@ describe('POST /api/expenditure/import', () => {
     }
   });
 
+  test('re-importing the same statement filename skips it without calling Claude again', async () => {
+    const extractMock = mock.method(claude, 'extractStatement', async () => ({
+      result: {
+        periodStart: '2026-02-01', periodEnd: '2026-02-28',
+        summary: { openingBalance: 500, closingBalance: 400, totalDeposits: 0, totalWithdrawals: 100 },
+        transactions: [{ date: '2026-02-15', postDate: null, description: 'TEST PHARMACY', amount: 100 }],
+      },
+      usage: {},
+    }));
+    const filename = 'R&S CAD Chequing 5000344 Statement-0344 2026-02-28.pdf';
+    try {
+      async function runImport() {
+        const postRes = await fetch(`${baseUrl}/api/expenditure/import`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: [{ filename, base64: 'ZmFrZQ==' }] }),
+        });
+        const { jobId } = await postRes.json();
+        let job;
+        for (let i = 0; i < 20; i++) {
+          await delay(50);
+          job = await (await fetch(`${baseUrl}/api/expenditure/import/${jobId}`)).json();
+          if (job.status !== 'running') break;
+        }
+        return job;
+      }
+
+      const first = await runImport();
+      assert.equal(first.results[0].ok, true);
+      assert.equal(first.results[0].skipped, undefined);
+      assert.equal(extractMock.mock.calls.length, 1, 'first import should call extraction once');
+
+      const second = await runImport();
+      assert.equal(second.results[0].skipped, true, 'the fast-path filename-date check should catch this without extracting');
+      assert.equal(second.results[0].reason, 'Already imported');
+      assert.equal(extractMock.mock.calls.length, 1, 'second import of the same filename should NOT call extraction again');
+    } finally {
+      extractMock.mock.restore();
+    }
+  });
+
   test('an unrecognized filename is reported as a per-file error, not a whole-job failure', async () => {
     const postRes = await fetch(`${baseUrl}/api/expenditure/import`, {
       method: 'POST',

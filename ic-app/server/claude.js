@@ -87,6 +87,40 @@ async function research(type, opp) {
   return { result: extractJson(data), usage: data.usage };
 }
 
+// Suggests which of the household's own expenditure categories a bank/credit-card
+// transaction description belongs in — used when a manual substring/regex rule hasn't
+// matched (the Household Expenditure app's "research this payee" action, see
+// server/expenditure.js). A statement description is often an abbreviated or messy
+// merchant name (franchise location codes, a payment-processor prefix like "SQ *" or
+// "SP ", a city/province suffix), so this searches the web to identify what the payee
+// actually is rather than pattern-matching the raw text alone — the same reasoning as
+// the `research` function above, applied to a much smaller, cheaper lookup.
+async function suggestCategory(description, categoryNames) {
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const categoryList = categoryNames.map((c) => `"${c}"`).join(', ');
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 2048,
+    system: `You are helping categorize a household's bank and credit-card transactions for a personal expenditure tracker. Today is ${today}.`,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [
+      {
+        role: 'user',
+        content: `A bank/credit-card statement shows this transaction description exactly as printed: "${description}"
+
+This is often an abbreviated or messy merchant name — it may include a city/province suffix, a franchise location code, or a payment-processor prefix (e.g. "SQ *", "SP "). Search the web if needed to identify what kind of business or payee this actually is.
+
+Pick exactly ONE category from this list that best fits ongoing household spending at this payee: ${categoryList}. If you're not reasonably confident, or the payee is genuinely ambiguous (a generic-sounding e-Transfer to a person, a bare reference number, something you can't identify), use "Miscellaneous/Unknown" rather than guessing — a wrong specific category is worse than an honest "don't know."
+
+Also suggest a short, stable substring from the description — the merchant name itself, not a location, date, or reference number — that would reliably match OTHER transactions from the same payee in future statements. For example, from "HERITAGE COOP ERIC GROC ERICKSON MB" suggest "HERITAGE COOP", not the whole string.
+
+Return ONLY valid JSON, no markdown fences: {"payeeSummary":"one short sentence on what this business/payee actually is","category":"exact name from the list above","confidence":"high","reasoning":"one short sentence explaining the pick","suggestedPattern":"short stable substring"}. confidence must be exactly "high", "medium", or "low".`,
+      },
+    ],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
 async function extractPdf(base64Data) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
   const data = await callClaude({
@@ -330,4 +364,4 @@ Format your response as a JSON object with exactly these keys, in this order: {"
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, generateReport, ClaudeNotConfiguredError };
+module.exports = { research, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, ClaudeNotConfiguredError };

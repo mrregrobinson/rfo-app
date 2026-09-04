@@ -337,6 +337,81 @@ function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onDel
   );
 }
 
+// ---- payee research (web search) ----
+// One row per distinct payee still sitting in Miscellaneous/Unknown. "Research" calls
+// Claude (with web search) to identify the payee and suggest a category + a stable
+// match pattern; the suggestion is only ever a starting point — the category and
+// pattern stay editable, and nothing is applied until "Create Rule" is clicked
+// (applyToExisting reclassifies every other transaction from the same payee at once).
+function PayeeRow({payee,categories,onResearched}){
+  const [suggestion,setSuggestion]=useState(null);
+  const [category,setCategory]=useState('');
+  const [pattern,setPattern]=useState(payee.description);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [done,setDone]=useState(false);
+  async function research(){
+    setBusy(true);setError('');
+    try{
+      const res=await api.post('/api/expenditure/research-payee',{description:payee.description});
+      setSuggestion(res);
+      setCategory(res.categoryId||'');
+      setPattern(res.suggestedPattern||payee.description);
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+  async function createRule(){
+    if(!category)return;
+    setBusy(true);setError('');
+    try{
+      await api.post('/api/expenditure/category-rules',{pattern,categoryId:category,applyToExisting:true});
+      setDone(true);
+      onResearched();
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+  if(done)return null;
+  return h('div',{style:{borderBottom:'0.5px solid var(--border)',padding:'10px 0'}},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}},
+      h('div',null,h('strong',null,payee.description),h('span',{className:'muted'},` — ${payee.count} transaction${payee.count===1?'':'s'}`)),
+      !suggestion&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:research},busy?'Researching…':'Research')
+    ),
+    error&&h('div',{className:'alert alert-danger',style:{marginTop:6}},error),
+    suggestion&&h('div',{style:{marginTop:8,paddingLeft:4,borderLeft:'2px solid var(--border)'}},
+      h('div',{className:'muted',style:{marginBottom:6}},suggestion.payeeSummary,` (confidence: ${suggestion.confidence})`),
+      h('div',{style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
+        h('select',{className:'form-select',value:category,onChange:e=>setCategory(e.target.value)},
+          h('option',{value:''},'— pick a category —'),
+          categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
+        ),
+        h('input',{className:'form-input',style:{width:180},value:pattern,onChange:e=>setPattern(e.target.value),title:'Rule pattern — future transactions containing this text will use this category'}),
+        h('button',{className:'btn btn-gold btn-sm',disabled:!category||busy,onClick:createRule},'Create Rule')
+      )
+    )
+  );
+}
+function ResearchModal({categories,onClose,onChanged}){
+  const [payees,setPayees]=useState(null);
+  const [error,setError]=useState('');
+  const [researchingAll,setResearchingAll]=useState(false);
+  function load(){api.get('/api/expenditure/unknown-payees').then(setPayees).catch(err=>setError(err.message));}
+  useEffect(load,[]);
+  function refresh(){load();onChanged();}
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',style:{maxWidth:640},onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Research uncategorized payees'),
+      h('div',{className:'muted',style:{marginBottom:12}},'Each "Research" looks the payee up on the web via Claude and suggests a category — review it, adjust if needed, then create a rule to apply it (including to every other transaction from the same payee already sitting in Miscellaneous/Unknown).'),
+      error&&h('div',{className:'alert alert-danger'},error),
+      !payees?h('div',{className:'muted'},'Loading…'):
+      payees.length===0?h('div',{className:'muted'},'Nothing in Miscellaneous/Unknown right now.'):
+      h('div',{style:{maxHeight:420,overflowY:'auto'}},
+        payees.map(p=>h(PayeeRow,{key:p.description,payee:p,categories,onResearched:refresh}))
+      ),
+      h('div',{style:{textAlign:'right',marginTop:14}},h('button',{className:'btn btn-outline',onClick:onClose},'Close'))
+    )
+  );
+}
+
 // ---- app ----
 function ExpenditureApp({ledger}){
   const [categories,setCategories]=useState([]);
@@ -348,6 +423,7 @@ function ExpenditureApp({ledger}){
   const [transactions,setTransactions]=useState([]);
   const [showEmail,setShowEmail]=useState(false);
   const [showCategories,setShowCategories]=useState(false);
+  const [showResearch,setShowResearch]=useState(false);
 
   function loadRules(){api.get('/api/expenditure/category-rules').then(setRules).catch(()=>{});}
 
@@ -408,6 +484,7 @@ function ExpenditureApp({ledger}){
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
       h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
+      h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
       h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories')
     ),
     compareMode&&compareSummary
@@ -418,7 +495,8 @@ function ExpenditureApp({ledger}){
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
-    showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onDeleteRule:deleteRule})
+    showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onDeleteRule:deleteRule}),
+    showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();}})
   );
 }
 
