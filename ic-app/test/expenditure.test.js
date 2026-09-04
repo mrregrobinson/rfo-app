@@ -19,6 +19,17 @@ describe('isTransferOrIncome', () => {
     assert.equal(isTransferOrIncome('Interest WMILP Operating', 'chequing', -0.24), true);
   });
 
+  test('payroll/salary/dividend deposits are excluded as income, not just interest', () => {
+    assert.equal(isTransferOrIncome('PAYROLL DEP ACME CORP', 'chequing', -3200), true);
+    assert.equal(isTransferOrIncome('Direct Deposit Payroll', 'chequing', -2900), true);
+    assert.equal(isTransferOrIncome('ACME CORP SALARY', 'chequing', -3200), true);
+    assert.equal(isTransferOrIncome('Dividend RBC Direct Investing', 'chequing', -412.50), true);
+  });
+
+  test('a word like "payroll" in an outgoing payment is NOT excluded — the income patterns only apply to money coming in', () => {
+    assert.equal(isTransferOrIncome('ADP PAYROLL SERVICES FEE', 'chequing', 45), false);
+  });
+
   test('a genuine recurring household cost is NOT excluded, even if it sounds transfer-adjacent', () => {
     assert.equal(isTransferOrIncome('Property Tax CityOf Waterloo', 'chequing', 1900), false);
   });

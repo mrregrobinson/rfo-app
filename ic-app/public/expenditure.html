@@ -202,7 +202,7 @@ function SummaryBlock({label,summary,dateFrom,dateTo}){
 // the transaction's own description) mapped to whatever category is currently selected,
 // and re-applies it to every other transaction still sitting in Unknown so the correction
 // doesn't have to be repeated by hand for the same payee.
-function TransactionRow({t,categories,onUpdate,onCreateRule}){
+function TransactionRow({t,categories,onUpdate,onCreateRule,selected,onToggleSelect}){
   const categoryName=(categories.find(c=>c.id===t.categoryId)||{}).name||'';
   async function createRule(){
     const pattern=window.prompt('Categorize future transactions containing this text as "'+categoryName+'":',t.description);
@@ -210,6 +210,7 @@ function TransactionRow({t,categories,onUpdate,onCreateRule}){
     await onCreateRule(pattern,t.categoryId);
   }
   return h('tr',null,
+    h('td',null,h('input',{type:'checkbox',checked:selected,onChange:()=>onToggleSelect(t.id)})),
     h('td',null,t.txnDate),
     h('td',null,t.accountName),
     h('td',null,t.description,t.isTransfer&&h('span',{className:'badge-transfer'},'transfer/excluded')),
@@ -227,13 +228,27 @@ function TransactionRow({t,categories,onUpdate,onCreateRule}){
   );
 }
 
-function TransactionsTable({transactions,categories,onUpdate,onCreateRule}){
+// Selection is "select all currently filtered/visible transactions" — e.g. search
+// payee for "PAYROLL", select all, exclude in one action — rather than a global select
+// across the whole unfiltered history.
+function TransactionsTable({transactions,categories,onUpdate,onCreateRule,selectedIds,onToggleSelect,onToggleSelectAll,onBulkAction}){
+  const allSelected=transactions.length>0&&transactions.every(t=>selectedIds.has(t.id));
   return h('div',{className:'card'},
-    h('div',{className:'section-title'},'Transactions'),
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+      h('div',{className:'section-title',style:{marginBottom:0}},'Transactions'),
+      selectedIds.size>0&&h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+        h('span',{className:'muted'},`${selectedIds.size} selected`),
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>onBulkAction({isTransfer:true})},'Mark Excluded'),
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>onBulkAction({isTransfer:false})},'Mark Included'),
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>onToggleSelectAll(false)},'Clear')
+      )
+    ),
     h('div',{style:{maxHeight:480,overflowY:'auto'}},
       h('table',null,
-        h('thead',null,h('tr',null,h('th',null,'Date'),h('th',null,'Account'),h('th',null,'Description'),h('th',null,'Amount'),h('th',null,'Category'),h('th',null,'Excluded'))),
-        h('tbody',null,transactions.map(t=>h(TransactionRow,{key:t.id,t,categories,onUpdate,onCreateRule})))
+        h('thead',null,h('tr',null,
+          h('th',null,h('input',{type:'checkbox',checked:allSelected,onChange:e=>onToggleSelectAll(e.target.checked)})),
+          h('th',null,'Date'),h('th',null,'Account'),h('th',null,'Description'),h('th',null,'Amount'),h('th',null,'Category'),h('th',null,'Excluded'))),
+        h('tbody',null,transactions.map(t=>h(TransactionRow,{key:t.id,t,categories,onUpdate,onCreateRule,selected:selectedIds.has(t.id),onToggleSelect})))
       )
     )
   );
@@ -390,21 +405,59 @@ function PayeeRow({payee,categories,onResearched}){
     )
   );
 }
+// Add a rule by hand, without going through AI research or a specific transaction's
+// "+Rule" button — for when you already know the payee/category mapping you want.
+function ManualRuleForm({categories,onAdd}){
+  const [pattern,setPattern]=useState('');
+  const [categoryId,setCategoryId]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [message,setMessage]=useState('');
+  async function add(){
+    if(!pattern.trim()||!categoryId)return;
+    setBusy(true);setError('');setMessage('');
+    try{
+      const res=await onAdd(pattern.trim(),categoryId);
+      setMessage(`Rule saved.${res.reclassified?' Re-categorized '+res.reclassified+' matching transaction'+(res.reclassified===1?'':'s')+'.':''}`);
+      setPattern('');setCategoryId('');
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+  return h('div',{style:{border:'0.5px solid var(--border)',borderRadius:8,padding:10,marginBottom:14,background:'var(--bg)'}},
+    h('div',{className:'form-label'},'Add a rule manually'),
+    h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+      h('input',{className:'form-input',style:{flex:1,minWidth:160},placeholder:'Text to match in the description',value:pattern,onChange:e=>setPattern(e.target.value),onKeyDown:e=>e.key==='Enter'&&add()}),
+      h('select',{className:'form-select',value:categoryId,onChange:e=>setCategoryId(e.target.value)},
+        h('option',{value:''},'— pick a category —'),
+        categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
+      ),
+      h('button',{className:'btn btn-gold btn-sm',disabled:!pattern.trim()||!categoryId||busy,onClick:add},'Add Rule')
+    ),
+    error&&h('div',{className:'alert alert-danger',style:{marginTop:8}},error),
+    message&&h('div',{className:'alert alert-success',style:{marginTop:8}},message)
+  );
+}
+
 function ResearchModal({categories,onClose,onChanged}){
   const [payees,setPayees]=useState(null);
   const [error,setError]=useState('');
-  const [researchingAll,setResearchingAll]=useState(false);
   function load(){api.get('/api/expenditure/unknown-payees').then(setPayees).catch(err=>setError(err.message));}
   useEffect(load,[]);
   function refresh(){load();onChanged();}
+  async function addManualRule(pattern,categoryId){
+    const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
+    refresh();
+    return res;
+  }
   return h('div',{className:'modal-overlay',onClick:onClose},
     h('div',{className:'modal',style:{maxWidth:640},onClick:e=>e.stopPropagation()},
       h('div',{className:'modal-title'},'Research uncategorized payees'),
-      h('div',{className:'muted',style:{marginBottom:12}},'Each "Research" looks the payee up on the web via Claude and suggests a category — review it, adjust if needed, then create a rule to apply it (including to every other transaction from the same payee already sitting in Miscellaneous/Unknown).'),
+      h(ManualRuleForm,{categories,onAdd:addManualRule}),
+      h('div',{className:'muted',style:{marginBottom:12}},'Or, each "Research" below looks the payee up on the web via Claude and suggests a category — review it, adjust if needed, then create a rule to apply it (including to every other transaction from the same payee already sitting in Miscellaneous/Unknown).'),
       error&&h('div',{className:'alert alert-danger'},error),
       !payees?h('div',{className:'muted'},'Loading…'):
       payees.length===0?h('div',{className:'muted'},'Nothing in Miscellaneous/Unknown right now.'):
-      h('div',{style:{maxHeight:420,overflowY:'auto'}},
+      h('div',{style:{maxHeight:360,overflowY:'auto'}},
         payees.map(p=>h(PayeeRow,{key:p.description,payee:p,categories,onResearched:refresh}))
       ),
       h('div',{style:{textAlign:'right',marginTop:14}},h('button',{className:'btn btn-outline',onClick:onClose},'Close'))
@@ -424,6 +477,7 @@ function ExpenditureApp({ledger}){
   const [showEmail,setShowEmail]=useState(false);
   const [showCategories,setShowCategories]=useState(false);
   const [showResearch,setShowResearch]=useState(false);
+  const [selectedIds,setSelectedIds]=useState(()=>new Set());
 
   function loadRules(){api.get('/api/expenditure/category-rules').then(setRules).catch(()=>{});}
 
@@ -453,6 +507,10 @@ function ExpenditureApp({ledger}){
     }
   }
   useEffect(load,[filters,compareMode]);
+  // A stale selection from a previous filter view (e.g. selecting a payee search's
+  // results, then changing the search) shouldn't silently carry over to a bulk action
+  // against a now-different transaction list.
+  useEffect(()=>{setSelectedIds(new Set());},[filters,compareMode]);
   useEffect(loadRules,[]);
 
   async function addCategory(name){await api.post('/api/expenditure/categories',{name});load();}
@@ -464,6 +522,18 @@ function ExpenditureApp({ledger}){
     const updated=await api.put('/api/expenditure/transactions/'+id,patch);
     setTransactions(list=>list.map(t=>t.id===id?updated:t));
     api.get('/api/expenditure/summary?'+query()).then(setSummary).catch(()=>{});
+  }
+
+  function toggleSelect(id){
+    setSelectedIds(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
+  }
+  function toggleSelectAll(select){
+    setSelectedIds(select?new Set(transactions.map(t=>t.id)):new Set());
+  }
+  async function bulkAction(patch){
+    await api.put('/api/expenditure/transactions/bulk',{ids:[...selectedIds],...patch});
+    setSelectedIds(new Set());
+    load();
   }
 
   async function createRuleFromTransaction(pattern,categoryId){
@@ -493,7 +563,7 @@ function ExpenditureApp({ledger}){
           h('div',{className:'card'},h(SummaryBlock,{label:'Period B',summary:compareSummary,dateFrom:filters.compareDateFrom,dateTo:filters.compareDateTo}))
         )
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
-    h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction}),
+    h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onDeleteRule:deleteRule}),
     showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();}})

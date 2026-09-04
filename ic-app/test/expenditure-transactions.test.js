@@ -1,0 +1,117 @@
+// Exercises the transaction update endpoints — in particular the bulk "select all and
+// exclude" action added after a real user asked for a faster way to mark a batch of
+// transactions (e.g. every payroll deposit) excluded than one checkbox at a time.
+const os = require('node:os');
+const path = require('node:path');
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const { test, describe, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const express = require('express');
+
+const tmpDbPath = path.join(os.tmpdir(), `ic-exptxns-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+process.env.IC_DB_PATH = tmpDbPath;
+
+const db = require('../server/db');
+const registerExpenditureRoutes = require('../server/expenditure');
+
+const USER_ID = 'test-user';
+const LEDGER_ID = 'test-ledger';
+const ACCOUNT_ID = crypto.randomUUID();
+const STATEMENT_ID = crypto.randomUUID();
+let categoryAId, categoryBId;
+const txnIds = [];
+
+db.prepare("INSERT INTO users (id, name, role, initials, color) VALUES (?, 'Test User', 'Required', 'TU', '#000000')").run(USER_ID);
+db.prepare('INSERT INTO expenditure_ledgers (id, name, created_at) VALUES (?, ?, ?)').run(LEDGER_ID, 'Test Ledger', new Date().toISOString());
+db.prepare('INSERT INTO expenditure_ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)').run(LEDGER_ID, USER_ID, 'admin');
+categoryAId = crypto.randomUUID();
+categoryBId = crypto.randomUUID();
+db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 0)').run(categoryAId, LEDGER_ID, 'Category A');
+db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 1)').run(categoryBId, LEDGER_ID, 'Category B');
+const now = new Date().toISOString();
+db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(ACCOUNT_ID, LEDGER_ID, now);
+db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-01-01', '2026-01-31', ?)`).run(STATEMENT_ID, ACCOUNT_ID, now);
+for (let i = 0; i < 3; i++) {
+  const id = crypto.randomUUID();
+  txnIds.push(id);
+  db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-01-1${i}', 'Test payee', 'Test payee', 50, 'CAD', 50, ?, 0, ?)`).run(id, ACCOUNT_ID, STATEMENT_ID, categoryAId, now);
+}
+
+// One transaction belonging to a different ledger, to confirm bulk update can't reach
+// across ledgers even if its id is included in the request.
+const OTHER_LEDGER_ID = 'other-ledger';
+const OTHER_ACCOUNT_ID = crypto.randomUUID();
+const OTHER_STATEMENT_ID = crypto.randomUUID();
+const otherTxnId = crypto.randomUUID();
+db.prepare('INSERT INTO expenditure_ledgers (id, name, created_at) VALUES (?, ?, ?)').run(OTHER_LEDGER_ID, 'Other Ledger', now);
+db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Other Account', 'chequing', 'CAD', ?)`).run(OTHER_ACCOUNT_ID, OTHER_LEDGER_ID, now);
+db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-01-01', '2026-01-31', ?)`).run(OTHER_STATEMENT_ID, OTHER_ACCOUNT_ID, now);
+db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, is_transfer, created_at) VALUES (?, ?, ?, '2026-01-15', 'Other ledger payee', 'Other ledger payee', 50, 'CAD', 50, 0, ?)`).run(otherTxnId, OTHER_ACCOUNT_ID, OTHER_STATEMENT_ID, now);
+
+const app = express();
+app.use(express.json());
+app.use((req, res, next) => { req.session = { userId: USER_ID }; next(); });
+registerExpenditureRoutes(app, { db, logAudit: () => {} });
+
+let server, baseUrl;
+before(() => new Promise((resolve) => {
+  server = app.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
+}));
+
+after(() => new Promise((resolve) => {
+  server.close(() => {
+    db.close();
+    for (const suffix of ['', '-wal', '-shm']) {
+      const p = tmpDbPath + suffix;
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+    resolve();
+  });
+}));
+
+async function putBulk(body) {
+  const r = await fetch(`${baseUrl}/api/expenditure/transactions/bulk`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return { status: r.status, body: await r.json() };
+}
+
+describe('PUT /api/expenditure/transactions/bulk', () => {
+  test('marks every selected transaction excluded in one call', async () => {
+    const { status, body } = await putBulk({ ids: txnIds, isTransfer: true });
+    assert.equal(status, 200);
+    assert.equal(body.updated, 3);
+    for (const id of txnIds) {
+      const row = db.prepare('SELECT is_transfer FROM expenditure_transactions WHERE id = ?').get(id);
+      assert.equal(row.is_transfer, 1);
+    }
+  });
+
+  test('can also bulk re-include and bulk recategorize in the same call', async () => {
+    const { status, body } = await putBulk({ ids: txnIds, isTransfer: false, categoryId: categoryBId });
+    assert.equal(status, 200);
+    assert.equal(body.updated, 3);
+    for (const id of txnIds) {
+      const row = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(id);
+      assert.equal(row.is_transfer, 0);
+      assert.equal(row.category_id, categoryBId);
+    }
+  });
+
+  test('cannot reach a transaction belonging to a different ledger', async () => {
+    const { status, body } = await putBulk({ ids: [otherTxnId], isTransfer: true });
+    assert.equal(status, 200);
+    assert.equal(body.updated, 0, 'should not update a transaction outside the caller\'s ledger');
+    const row = db.prepare('SELECT is_transfer FROM expenditure_transactions WHERE id = ?').get(otherTxnId);
+    assert.equal(row.is_transfer, 0, 'unchanged');
+  });
+
+  test('rejects an empty ids array', async () => {
+    const { status } = await putBulk({ ids: [], isTransfer: true });
+    assert.equal(status, 400);
+  });
+
+  test('rejects a request with neither isTransfer nor categoryId', async () => {
+    const { status } = await putBulk({ ids: txnIds });
+    assert.equal(status, 400);
+  });
+});

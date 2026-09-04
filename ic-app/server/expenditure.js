@@ -22,12 +22,21 @@ const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 
 // A transaction description is treated as a transfer/non-expenditure item (and excluded
 // from spending totals, though still stored and visible — see the build spec's
-// "Transfer / non-expenditure detection" section) if it matches one of these prefixes,
-// or — on the credit card only — is a negative amount whose description reads as a
-// payment (paying down the card from chequing; the actual purchases behind that payment
-// already appear as their own line items, so excluding the payment avoids double
-// counting). A refund/credit for a returned purchase is a negative amount that does NOT
-// mention "payment" and stays a real (negative) expenditure.
+// "Transfer / non-expenditure detection" section) if it matches one of the internal-
+// transfer patterns below, or is income (interest, payroll/salary, dividends — anything
+// that isn't a transfer between the household's own accounts but is still out of scope
+// for a spending tracker) and the amount is actually money coming IN, or — on the credit
+// card only — is a negative amount whose description reads as a payment (paying down the
+// card from chequing; the actual purchases behind that payment already appear as their
+// own line items, so excluding the payment avoids double counting). A refund/credit for
+// a returned purchase is a negative amount that does NOT mention "payment" and stays a
+// real (negative) expenditure.
+//
+// The amount<0 guard on income patterns (but not on the internal-transfer patterns,
+// which legitimately go either direction — see the real statement data: an "Account
+// transfer" shows up as both a deposit and a withdrawal) exists so an outgoing payment
+// that happens to mention one of these words by coincidence (e.g. paying a payroll-
+// processing vendor) isn't swept up as if it were income.
 //
 // Deliberately NOT matched here: e-Transfers to a named vendor/person for real goods or
 // services (landscaping, contractors, etc.) — those are legitimate spending even though
@@ -35,20 +44,29 @@ const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 // should be excluded. Since a statement description alone can't always distinguish "sent
 // to my own other account" from "sent to a vendor," this errs toward keeping an
 // ambiguous e-Transfer as a categorized expenditure rather than silently excluding real
-// spending — see the build spec for the reasoning.
-const TRANSFER_PATTERNS = [
+// spending — see the build spec for the reasoning. Anything this misses either way is
+// correctable per-transaction (the "excl." checkbox, individually or in bulk via
+// PUT /api/expenditure/transactions/bulk) without waiting on a code change.
+const INTERNAL_TRANSFER_PATTERNS = [
   /^online banking transfer/i,
   /^online banking payment/i,
   /^account transfer/i,
   /^funds transfer/i,
   /^investment /i,
+];
+const INCOME_PATTERNS = [
   /^deposit interest/i,
   /^interest /i,
+  /payroll/i,
+  /\bsalary\b/i,
+  /^direct deposit/i,
+  /\bdividend\b/i,
 ];
 
 function isTransferOrIncome(description, accountType, amount) {
   const desc = (description || '').trim();
-  if (TRANSFER_PATTERNS.some((re) => re.test(desc))) return true;
+  if (INTERNAL_TRANSFER_PATTERNS.some((re) => re.test(desc))) return true;
+  if (amount < 0 && INCOME_PATTERNS.some((re) => re.test(desc))) return true;
   if (accountType === 'credit_card' && amount < 0 && /payment/i.test(desc)) return true;
   return false;
 }
@@ -522,6 +540,33 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   app.get('/api/expenditure/transactions', requireAuth, requireLedger, (req, res) => {
     const rows = queryTransactions(req.expenditureLedger.id, req.query);
     res.json(rows.map(txnRowToJson));
+  });
+
+  // Bulk update — e.g. "select all" a filtered/searched set of transactions and mark
+  // them all excluded (or all included) in one call, instead of one checkbox at a time.
+  // Registered before the /:id route below so Express doesn't match "bulk" as an :id.
+  // Scoped to the caller's own ledger via the JOIN, same as every other route here — an
+  // id from another ledger is silently ignored rather than erroring, matching how a
+  // partially-stale client-side selection (e.g. a transaction deleted by someone else
+  // mid-session) should behave.
+  app.put('/api/expenditure/transactions/bulk', requireAuth, requireLedger, (req, res) => {
+    const b = req.body || {};
+    const ids = Array.isArray(b.ids) ? b.ids.filter(Boolean) : [];
+    if (ids.length === 0) return res.status(400).json({ error: 'ids (non-empty array) is required' });
+    if (b.isTransfer === undefined && b.categoryId === undefined) {
+      return res.status(400).json({ error: 'isTransfer and/or categoryId is required' });
+    }
+    const sets = [];
+    const params = [];
+    if (b.isTransfer !== undefined) { sets.push('is_transfer = ?'); params.push(b.isTransfer ? 1 : 0); }
+    if (b.categoryId !== undefined) { sets.push('category_id = ?'); params.push(b.categoryId); }
+    const placeholders = ids.map(() => '?').join(',');
+    const result = db.prepare(
+      `UPDATE expenditure_transactions SET ${sets.join(', ')}
+       WHERE id IN (${placeholders})
+         AND account_id IN (SELECT id FROM expenditure_accounts WHERE ledger_id = ?)`
+    ).run(...params, ...ids, req.expenditureLedger.id);
+    res.json({ updated: result.changes });
   });
 
   app.put('/api/expenditure/transactions/:id', requireAuth, requireLedger, (req, res) => {
