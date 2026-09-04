@@ -147,6 +147,40 @@ function ensureSeeded() {
     }
     console.log('Seeded 3 sample family planning activities');
   }
+
+  // Household Expenditures: seeds exactly one ledger for Reg and Sheri-Dawn (the only
+  // two users of this app for now), with a starter category list — kept under ~20
+  // categories per the build spec, so the "Miscellaneous/Unknown" bucket stays
+  // meaningful. A future Ross- and/or Lucas-only ledger is just another row in
+  // expenditure_ledgers with its own members and its own categories — no schema change
+  // needed, and no visibility into this one. Seeded here (after the users above exist),
+  // not in migration 023's schema-only migration — see that file's header comment.
+  const ledgerCount = db.prepare('SELECT COUNT(*) AS n FROM expenditure_ledgers').get().n;
+  if (ledgerCount === 0) {
+    const eNow = new Date().toISOString();
+    const ledgerId = 'reg-sd-household';
+    db.prepare('INSERT INTO expenditure_ledgers (id, name, created_at) VALUES (?, ?, ?)').run(ledgerId, 'Reg & Sheri-Dawn Household', eNow);
+    for (const userId of ['reg', 'sd']) {
+      db.prepare('INSERT OR IGNORE INTO expenditure_ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)').run(ledgerId, userId, 'admin');
+    }
+    const STARTER_CATEGORIES = [
+      ['groceries', 'Groceries'], ['dining', 'Dining & Takeout'], ['utilities', 'Utilities'],
+      ['housing', 'Housing (Mortgage/Rent/Property Tax)'], ['home-maintenance', 'Home Maintenance & Landscaping'],
+      ['insurance', 'Insurance'], ['healthcare', 'Healthcare & Medical'], ['transportation', 'Transportation & Auto'],
+      ['travel', 'Travel'], ['entertainment', 'Entertainment & Subscriptions'], ['shopping', 'Shopping & Retail'],
+      ['personal-care', 'Personal Care'], ['professional-services', 'Professional Services'],
+      ['gifts-donations', 'Gifts & Donations'], ['kids-family', 'Kids & Family'], ['pets', 'Pets'],
+      ['bank-fees', 'Bank/Card Fees'], ['taxes', 'Taxes'], ['unknown', 'Miscellaneous/Unknown'],
+    ];
+    STARTER_CATEGORIES.forEach(([slug, name], i) => {
+      db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, ?)').run(`${ledgerId}-${slug}`, ledgerId, name, i);
+    });
+    // Transfers are tracked (every excluded item is tagged is_transfer and kept, per the
+    // build spec) but not counted as expenditure — is_expenditure=0 keeps it out of
+    // spending totals while still selectable as a category for anything not auto-detected.
+    db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 0, ?)').run(`${ledgerId}-transfers`, ledgerId, 'Transfers', STARTER_CATEGORIES.length);
+    console.log('Seeded Household Expenditures ledger for Reg & Sheri-Dawn');
+  }
 }
 
 module.exports = { ensureSeeded, issueSetupCode, IC_MEMBERS };

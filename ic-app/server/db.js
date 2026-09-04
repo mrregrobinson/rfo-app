@@ -6,7 +6,9 @@ const { runMigrations } = require('./migrate');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const DB_PATH = path.join(DATA_DIR, 'ic.db');
+// IC_DB_PATH lets tests point at an isolated, throwaway database file instead of the
+// real data/ic.db — set before requiring this module (or anything that requires it).
+const DB_PATH = process.env.IC_DB_PATH || path.join(DATA_DIR, 'ic.db');
 
 // One-time escape hatch: set RESEED=true on the host to wipe and reseed on next boot
 // (e.g. to recover fresh passcodes if the initial seed's console output was missed).

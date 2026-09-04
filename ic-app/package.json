@@ -13,12 +13,17 @@
     "test": "node --test"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
+    "chart.js": "^4.5.1",
+    "chartjs-node-canvas": "^5.0.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^8.5.2",
     "express-session": "^1.18.0",
     "helmet": "^8.2.0",
+    "pdfkit": "^0.20.2",
     "qrcode": "^1.5.4",
-    "session-file-store": "^1.5.0"
+    "session-file-store": "^1.5.0",
+    "undici": "^8.10.2"
   }
 }

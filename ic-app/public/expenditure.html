@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — Household Expenditures</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.nav-brand a{color:#fff;text-decoration:none}
+.nav-brand span{color:var(--gold);font-size:11px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.page{padding:20px;max-width:1100px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}
+.btn-danger{background:#fff;color:#991B1B;border:0.5px solid #F3D6D6}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.muted{color:var(--muted);font-size:12px}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select{border:0.5px solid var(--border);border-radius:7px;padding:7px 10px;font-size:12px;color:var(--text);background:#fff;font-family:inherit}
+.filters{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+.filter-group{display:flex;flex-direction:column;gap:4px}
+.cat-list{display:flex;flex-wrap:wrap;gap:6px;max-width:420px}
+.cat-chip{border:0.5px solid var(--border);border-radius:14px;padding:3px 10px;font-size:11px;cursor:pointer;user-select:none}
+.cat-chip.active{background:var(--teal);color:#fff;border-color:var(--teal)}
+.section-title{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:6px 8px;border-bottom:0.5px solid var(--border);vertical-align:middle}
+tr:hover td{background:var(--bg)}
+.amt{text-align:right;font-variant-numeric:tabular-nums}
+.badge-transfer{display:inline-block;background:var(--amber-l);color:#92400E;border-radius:8px;padding:1px 7px;font-size:9px;font-weight:600;margin-left:6px}
+.import-drop{border:1.5px dashed var(--border);border-radius:10px;padding:20px;text-align:center;color:var(--muted);font-size:12px}
+.alert{padding:8px 12px;border-radius:8px;font-size:11px;margin-bottom:6px;border:0.5px solid}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+.alert-muted{background:var(--bg);border-color:var(--border);color:var(--muted)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;max-width:440px;width:100%}
+.modal-title{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:14px}
+@media print{.no-print{display:none!important}.page{max-width:none;padding:0}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef,useCallback}=React;
+const h=React.createElement;
+const api={
+  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(url,body){return api.send('POST',url,body)},
+  put(url,body){return api.send('PUT',url,body)},
+  async del(url){const r=await fetch(url,{method:'DELETE',credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+};
+function fmtCAD(n){return (n||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0})}
+function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
+
+// ---- charts ----
+function ChartCanvas({type,data,options,height}){
+  const ref=useRef(null);const chartRef=useRef(null);
+  useEffect(()=>{
+    if(!ref.current)return;
+    chartRef.current=new Chart(ref.current,{type,data,options:options||{}});
+    return ()=>chartRef.current&&chartRef.current.destroy();
+  },[JSON.stringify(data),type]);
+  return h('canvas',{ref,height:height||220});
+}
+function categoryChartData(byCategory){
+  const entries=Object.entries(byCategory||{}).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  return {labels:entries.map(e=>e[0]),datasets:[{label:'Spend (CAD)',data:entries.map(e=>e[1]),backgroundColor:'#2A7D7B'}]};
+}
+function trendChartData(byMonth){
+  const months=Object.keys(byMonth||{}).sort();
+  return {labels:months,datasets:[{label:'Spend (CAD)',data:months.map(m=>byMonth[m]),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,0.15)',fill:true,tension:.2}]};
+}
+
+// ---- import ----
+function ImportPanel({onImported}){
+  const [busy,setBusy]=useState(false);const [results,setResults]=useState(null);const [error,setError]=useState('');
+  async function handleFiles(fileList){
+    setBusy(true);setError('');setResults(null);
+    try{
+      const files=await Promise.all(Array.from(fileList).map(async f=>({filename:f.name,base64:await fileToBase64(f)})));
+      const res=await api.post('/api/expenditure/import',{files});
+      setResults(res.results);
+      onImported();
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+  return h('div',{className:'card no-print'},
+    h('div',{className:'section-title'},'Import statements'),
+    h('div',{className:'import-drop'},
+      busy?'Importing — this can take a minute per statement (each one is read by Claude)…':
+        h('div',null,
+          h('div',{style:{marginBottom:8}},'Select one or more statement PDFs, or a zip of statements'),
+          h('input',{type:'file',accept:'.pdf,.zip',multiple:true,onChange:e=>e.target.files.length&&handleFiles(e.target.files)})
+        )
+    ),
+    error&&h('div',{className:'alert alert-danger',style:{marginTop:10}},error),
+    results&&h('div',{style:{marginTop:10}},results.map((r,i)=>
+      h('div',{key:i,className:'alert '+(!r.ok?'alert-danger':r.skipped?'alert-muted':r.reconciliationStatus==='mismatch'?'alert-danger':'alert-success')},
+        h('strong',null,r.filename),': ',
+        !r.ok?r.error:
+        r.skipped?`${r.reason} (${r.accountName}, ${r.periodStart} to ${r.periodEnd})`:
+        `${r.accountName}, ${r.periodStart} to ${r.periodEnd} — ${r.transactionCount} transactions (${r.transferCount} excluded as transfers/income)`+
+          (r.reconciliationStatus==='mismatch'?` — RECONCILIATION MISMATCH: ${r.reconciliationNote}`:r.reconciliationStatus==='ok'?' — reconciled ✓':'')
+      )
+    ))
+  );
+}
+
+// ---- filters ----
+function DateRange({label,from,to,onFrom,onTo}){
+  return h('div',{className:'filter-group'},
+    h('label',{className:'form-label'},label),
+    h('div',{style:{display:'flex',gap:6}},
+      h('input',{type:'date',className:'form-input',value:from||'',onChange:e=>onFrom(e.target.value)}),
+      h('input',{type:'date',className:'form-input',value:to||'',onChange:e=>onTo(e.target.value)})
+    )
+  );
+}
+
+function FiltersBar({categories,filters,setFilters,compareMode,setCompareMode}){
+  function toggleCategory(id){
+    const set=new Set(filters.categoryIds);
+    set.has(id)?set.delete(id):set.add(id);
+    setFilters({...filters,categoryIds:[...set]});
+  }
+  return h('div',{className:'card no-print'},
+    h('div',{className:'filters'},
+      h(DateRange,{label:'Period A',from:filters.dateFrom,to:filters.dateTo,onFrom:v=>setFilters({...filters,dateFrom:v}),onTo:v=>setFilters({...filters,dateTo:v})}),
+      compareMode&&h(DateRange,{label:'Period B (comparison)',from:filters.compareDateFrom,to:filters.compareDateTo,onFrom:v=>setFilters({...filters,compareDateFrom:v}),onTo:v=>setFilters({...filters,compareDateTo:v})}),
+      h('div',{className:'filter-group'},
+        h('label',{className:'form-label'},'Payee search'),
+        h('input',{type:'text',className:'form-input',placeholder:'e.g. Costco',value:filters.payee||'',onChange:e=>setFilters({...filters,payee:e.target.value})})
+      ),
+      h('div',{className:'filter-group'},
+        h('label',{className:'form-label'},' '),
+        h('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer'}},
+          h('input',{type:'checkbox',checked:compareMode,onChange:e=>setCompareMode(e.target.checked)}),
+          'Compare two periods'
+        )
+      )
+    ),
+    h('div',{style:{marginTop:10}},
+      h('label',{className:'form-label'},'Categories (none selected = all)'),
+      h('div',{className:'cat-list'},categories.map(c=>
+        h('div',{key:c.id,className:'cat-chip'+(filters.categoryIds.includes(c.id)?' active':''),onClick:()=>toggleCategory(c.id)},c.name)
+      ))
+    )
+  );
+}
+
+// ---- summary ----
+function SummaryBlock({label,summary,dateFrom,dateTo}){
+  if(!summary)return h('div',{className:'muted'},'Loading…');
+  // The filter bar (where the date range is chosen) is hidden when printing, so the
+  // period needs to be visible here too — otherwise a printed/emailed report shows
+  // totals with no indication of what date range they cover.
+  const periodLabel=(dateFrom||dateTo)?`${dateFrom||'Earliest'} to ${dateTo||'Latest'}`:'All time';
+  return h('div',null,
+    label&&h('div',{className:'section-title'},label),
+    h('div',{className:'muted',style:{marginBottom:4}},periodLabel),
+    h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)',marginBottom:2}},fmtCAD(summary.total)),
+    h('div',{className:'muted',style:{marginBottom:10}},`${summary.count} transaction${summary.count===1?'':'s'}`),
+    Object.keys(summary.byCategory).length>0&&h(ChartCanvas,{type:'bar',data:categoryChartData(summary.byCategory),options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}}),
+    Object.keys(summary.byMonth).length>1&&h('div',{style:{marginTop:14}},h(ChartCanvas,{type:'line',data:trendChartData(summary.byMonth),options:{plugins:{legend:{display:false}}}}))
+  );
+}
+
+// ---- transactions table ----
+// "+Rule" turns a one-off manual recategorization into a reusable rule (the build spec's
+// review-Unknown-items-into-rules workflow): it offers a payee substring (defaulting to
+// the transaction's own description) mapped to whatever category is currently selected,
+// and re-applies it to every other transaction still sitting in Unknown so the correction
+// doesn't have to be repeated by hand for the same payee.
+function TransactionRow({t,categories,onUpdate,onCreateRule}){
+  const categoryName=(categories.find(c=>c.id===t.categoryId)||{}).name||'';
+  async function createRule(){
+    const pattern=window.prompt('Categorize future transactions containing this text as "'+categoryName+'":',t.description);
+    if(!pattern)return;
+    await onCreateRule(pattern,t.categoryId);
+  }
+  return h('tr',null,
+    h('td',null,t.txnDate),
+    h('td',null,t.accountName),
+    h('td',null,t.description,t.isTransfer&&h('span',{className:'badge-transfer'},'transfer/excluded')),
+    h('td',{className:'amt'},t.currency!=='CAD'?`${t.amount.toFixed(2)} ${t.currency} → `:'',fmtCAD(t.amountCad)),
+    h('td',null,
+      h('select',{className:'form-select',value:t.categoryId||'',onChange:e=>onUpdate(t.id,{categoryId:e.target.value})},
+        h('option',{value:''},'—'),
+        categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
+      ),
+      t.categoryId&&h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},title:'Save this categorization as a rule for future imports',onClick:createRule},'+Rule')
+    ),
+    h('td',null,h('label',{style:{display:'flex',alignItems:'center',gap:4,fontSize:11}},
+      h('input',{type:'checkbox',checked:t.isTransfer,onChange:e=>onUpdate(t.id,{isTransfer:e.target.checked})}),'excl.'
+    ))
+  );
+}
+
+function TransactionsTable({transactions,categories,onUpdate,onCreateRule}){
+  return h('div',{className:'card'},
+    h('div',{className:'section-title'},'Transactions'),
+    h('div',{style:{maxHeight:480,overflowY:'auto'}},
+      h('table',null,
+        h('thead',null,h('tr',null,h('th',null,'Date'),h('th',null,'Account'),h('th',null,'Description'),h('th',null,'Amount'),h('th',null,'Category'),h('th',null,'Excluded'))),
+        h('tbody',null,transactions.map(t=>h(TransactionRow,{key:t.id,t,categories,onUpdate,onCreateRule})))
+      )
+    )
+  );
+}
+
+// ---- email modal ----
+function EmailModal({filters,compareMode,onClose}){
+  const [to,setTo]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [sent,setSent]=useState(false);
+  async function send(){
+    setBusy(true);setError('');
+    try{
+      await api.post('/api/expenditure/report/email',{
+        to,message,
+        dateFrom:filters.dateFrom,dateTo:filters.dateTo,payee:filters.payee,categoryIds:filters.categoryIds.join(','),
+        ...(compareMode?{compareDateFrom:filters.compareDateFrom,compareDateTo:filters.compareDateTo}:{}),
+      });
+      setSent(true);
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Email report as PDF'),
+      sent?h('div',{className:'alert alert-success'},'Sent.'):
+      h('div',null,
+        h('label',{className:'form-label'},'Recipient email'),
+        h('input',{type:'email',className:'form-input',style:{width:'100%',marginBottom:10},value:to,onChange:e=>setTo(e.target.value)}),
+        h('label',{className:'form-label'},'Message (optional)'),
+        h('input',{type:'text',className:'form-input',style:{width:'100%',marginBottom:14},value:message,onChange:e=>setMessage(e.target.value)}),
+        error&&h('div',{className:'alert alert-danger'},error),
+        h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end'}},
+          h('button',{className:'btn btn-outline',onClick:onClose},'Cancel'),
+          h('button',{className:'btn btn-gold',disabled:!to||busy,onClick:send},busy?'Sending…':'Send')
+        )
+      )
+    )
+  );
+}
+
+// ---- app ----
+function ExpenditureApp({ledger}){
+  const [categories,setCategories]=useState([]);
+  const [filters,setFilters]=useState({dateFrom:'',dateTo:'',compareDateFrom:'',compareDateTo:'',payee:'',categoryIds:[]});
+  const [compareMode,setCompareMode]=useState(false);
+  const [summary,setSummary]=useState(null);
+  const [compareSummary,setCompareSummary]=useState(null);
+  const [transactions,setTransactions]=useState([]);
+  const [showEmail,setShowEmail]=useState(false);
+
+  const query=useCallback((extra)=>{
+    const q=new URLSearchParams();
+    if(filters.dateFrom)q.set('dateFrom',filters.dateFrom);
+    if(filters.dateTo)q.set('dateTo',filters.dateTo);
+    if(filters.payee)q.set('payee',filters.payee);
+    if(filters.categoryIds.length)q.set('categoryIds',filters.categoryIds.join(','));
+    Object.entries(extra||{}).forEach(([k,v])=>q.set(k,v));
+    return q.toString();
+  },[filters]);
+
+  function load(){
+    api.get('/api/expenditure/categories').then(setCategories).catch(()=>{});
+    api.get('/api/expenditure/transactions?'+query()).then(setTransactions).catch(()=>{});
+    api.get('/api/expenditure/summary?'+query()).then(setSummary).catch(()=>{});
+    if(compareMode&&(filters.compareDateFrom||filters.compareDateTo)){
+      const q2=new URLSearchParams();
+      if(filters.compareDateFrom)q2.set('dateFrom',filters.compareDateFrom);
+      if(filters.compareDateTo)q2.set('dateTo',filters.compareDateTo);
+      if(filters.payee)q2.set('payee',filters.payee);
+      if(filters.categoryIds.length)q2.set('categoryIds',filters.categoryIds.join(','));
+      api.get('/api/expenditure/summary?'+q2.toString()).then(setCompareSummary).catch(()=>{});
+    }else{
+      setCompareSummary(null);
+    }
+  }
+  useEffect(load,[filters,compareMode]);
+
+  async function updateTransaction(id,patch){
+    const updated=await api.put('/api/expenditure/transactions/'+id,patch);
+    setTransactions(list=>list.map(t=>t.id===id?updated:t));
+    api.get('/api/expenditure/summary?'+query()).then(setSummary).catch(()=>{});
+  }
+
+  async function createRuleFromTransaction(pattern,categoryId){
+    const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
+    load();
+    window.alert(`Rule saved.${res.reclassified?' Re-categorized '+res.reclassified+' other transaction'+(res.reclassified===1?'':'s')+' that matched.':''}`);
+  }
+
+  function downloadPdf(){
+    const params=query(compareMode?{compareDateFrom:filters.compareDateFrom,compareDateTo:filters.compareDateTo}:{});
+    window.open('/api/expenditure/report/pdf?'+params,'_blank');
+  }
+
+  return h('div',{className:'page'},
+    h(ImportPanel,{onImported:load}),
+    h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
+    h('div',{className:'card no-print',style:{display:'flex',gap:8}},
+      h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
+      h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
+      h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF')
+    ),
+    compareMode&&compareSummary
+      ?h('div',{className:'two-col'},
+          h('div',{className:'card'},h(SummaryBlock,{label:'Period A',summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
+          h('div',{className:'card'},h(SummaryBlock,{label:'Period B',summary:compareSummary,dateFrom:filters.compareDateFrom,dateTo:filters.compareDateTo}))
+        )
+      :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
+    h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction}),
+    showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)})
+  );
+}
+
+function Shell(){
+  const [me,setMe]=useState(null);
+  const [ledger,setLedger]=useState(null);
+  const [accessDenied,setAccessDenied]=useState(false);
+  const [checking,setChecking]=useState(true);
+  const [showMenu,setShowMenu]=useState(false);
+  useEffect(()=>{
+    api.get('/api/me').then(async u=>{
+      setMe(u);
+      try{setLedger(await api.get('/api/expenditure/ledger'));}
+      catch(err){setAccessDenied(true);}
+    }).catch(()=>{
+      const target=location.pathname+location.search;
+      location.href='/due-diligence?returnTo='+encodeURIComponent(target);
+    }).finally(()=>setChecking(false));
+  },[]);
+  async function logout(){await api.post('/api/logout');location.href='/due-diligence';}
+  if(checking||!me)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  if(accessDenied)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'You do not have access to Household Expenditures.');
+  if(!ledger)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  return h('div',null,
+    h('nav',{className:'nav no-print'},
+      h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Household Expenditures')),
+      h('div',{className:'nav-user',onClick:()=>setShowMenu(!showMenu)},me.name.split(' ')[0]),
+    ),
+    showMenu&&h('div',{className:'no-print',style:{position:'fixed',top:58,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:180,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
+      h('div',{style:{padding:'8px 10px',fontSize:13,fontWeight:600,color:'var(--navy)'}},me.name),
+      h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},ledger.name),
+      h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')
+    ),
+    h(ExpenditureApp,{ledger})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(Shell));
+</script>
+</body>
+</html>

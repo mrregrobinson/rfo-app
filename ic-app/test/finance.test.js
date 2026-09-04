@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { PORT, ACTIVITY_FX, activityImpact, getEffectivePort, capitalCallSchedule, unfundedCallScheduleCAD, incomeByBucketCAD, computeLiquidityPlan, LIQUIDITY_BUCKETS } = require('../public/finance.js');
+const { PORT, ACTIVITY_FX, fxRateFor, activityImpact, getEffectivePort, capitalCallSchedule, unfundedCallScheduleCAD, incomeByBucketCAD, computeLiquidityPlan, LIQUIDITY_BUCKETS } = require('../public/finance.js');
 
 describe('activityImpact', () => {
   test('outflow from a tracked class shrinks both that class and the total', () => {
@@ -86,6 +86,38 @@ describe('activityImpact', () => {
   test('empty or missing activities list is a no-op', () => {
     assert.deepEqual(activityImpact([]), { totalDelta: 0, classDelta: {} });
     assert.deepEqual(activityImpact(undefined), { totalDelta: 0, classDelta: {} });
+  });
+
+  test('a per-activity fxRate (the day-of-transaction rate resolved server-side) overrides the static ACTIVITY_FX fallback', () => {
+    const { totalDelta } = activityImpact([
+      { amount: 1000, currency: 'USD', fxRate: 1.4, decreaseClass: 'Cash', increaseClass: null, status: 'Considering', timing: 'Uncertain' },
+    ]);
+    assert.equal(totalDelta, -1400, 'should use the stored fxRate, not ACTIVITY_FX.USD');
+  });
+
+  test('falls back to ACTIVITY_FX when an activity has no fxRate stored (e.g. a pre-existing row)', () => {
+    const { totalDelta } = activityImpact([
+      { amount: 1000, currency: 'USD', decreaseClass: 'Cash', increaseClass: null, status: 'Considering', timing: 'Uncertain' },
+    ]);
+    assert.equal(totalDelta, -1000 * ACTIVITY_FX.USD);
+  });
+});
+
+describe('fxRateFor', () => {
+  test('prefers a rate from the supplied table over the ACTIVITY_FX fallback', () => {
+    assert.equal(fxRateFor('USD', { USD: 1.41 }), 1.41);
+  });
+
+  test('falls back to ACTIVITY_FX when the table is missing the currency', () => {
+    assert.equal(fxRateFor('EUR', { USD: 1.41 }), ACTIVITY_FX.EUR);
+  });
+
+  test('falls back to ACTIVITY_FX when no table is supplied at all', () => {
+    assert.equal(fxRateFor('USD', undefined), ACTIVITY_FX.USD);
+  });
+
+  test('a table rate of exactly 0 is still honoured, not treated as missing', () => {
+    assert.equal(fxRateFor('USD', { USD: 0 }), 0);
   });
 });
 
@@ -177,6 +209,13 @@ describe('unfundedCallScheduleCAD', () => {
     assert.equal(totals['12-24 months'], 200000);
     assert.equal(totals['24+ months'], 436857);
   });
+
+  test('uses the snapshot\'s own dated fxRates (resolved for its asOf date) over the static fallback', () => {
+    const port = { fxRates: { USD: 1.4 }, unfunded: [{ commitment: 100000, unfunded: 100000, currency: 'USD' }] };
+    const totals = unfundedCallScheduleCAD(port);
+    const total = Object.values(totals).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(total - 100000 * 1.4) < 1e-6, 'should convert at the snapshot\'s own USD rate, not ACTIVITY_FX.USD');
+  });
 });
 
 describe('incomeByBucketCAD', () => {
@@ -192,6 +231,12 @@ describe('incomeByBucketCAD', () => {
     assert.equal(available['24+ months'], 100000);
     assert.equal(registered['0-6 months'], 10000);
     assert.equal(registered['12-24 months'], 20000);
+  });
+
+  test('uses the snapshot\'s own dated fxRates over the static fallback', () => {
+    const income = { fxRates: { USD: 1.4 }, positions: [{ annualDistribution: 10000, currency: 'USD', isRegistered: false }] };
+    const { available } = incomeByBucketCAD(income);
+    assert.equal(available['12-24 months'], 14000);
   });
 });
 

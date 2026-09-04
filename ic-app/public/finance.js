@@ -21,7 +21,22 @@
 const PORT={asOf:'05-31-2026',totalCAD:31619912,alloc:{'Cash':8.8,'Fixed Income':16.7,'Public Equity':27.9,'Private Credit':17.0,'Diversifying Strategies':5.5,'Real Assets':9.9,'Private Equity':14.2,'Monetary Hedge':0},ips:{'Cash':{min:0,target:3,max:54},'Fixed Income':{min:0,target:3,max:13},'Public Equity':{min:13,target:23,max:33},'Private Credit':{min:18,target:28,max:38},'Diversifying Strategies':{min:0,target:8,max:18},'Real Assets':{min:5,target:15,max:25},'Private Equity':{min:10,target:20,max:30},'Monetary Hedge':{min:0,target:3,max:5}},unfunded:[{fund:'Fortress Private Lending',class:'Private Credit',currency:'CAD',commitment:172185,called:0,unfunded:172185},{fund:'CarVal Clean Energy Fund II',class:'Private Credit',currency:'CAD',commitment:86079,called:0,unfunded:86079},{fund:'iCap Millennium International',class:'Diversifying Strategies',currency:'CAD',commitment:251223,called:0,unfunded:251223},{fund:'Blackstone SP Infrastructure IV',class:'Real Assets',currency:'CAD',commitment:705236,called:0,unfunded:705236},{fund:'Dalfen Last Mile Industrial V',class:'Real Assets',currency:'CAD',commitment:156389,called:0,unfunded:156389},{fund:'PQ SPVR 2022 LP',class:'Real Assets',currency:'CAD',commitment:234383,called:0,unfunded:234383},{fund:'Blue Owl GP Stakes VI',class:'Private Equity',currency:'CAD',commitment:1239722,called:0,unfunded:1239722},{fund:'Genstar Capital Partners XI',class:'Private Equity',currency:'CAD',commitment:1158797,called:0,unfunded:1158797},{fund:'Khosla Ventures Opp. II',class:'Private Equity',currency:'CAD',commitment:61905,called:0,unfunded:61905},{fund:'Khosla Ventures VIII',class:'Private Equity',currency:'CAD',commitment:151497,called:0,unfunded:151497},{fund:'Velocity Fund II',class:'Private Equity',currency:'CAD',commitment:340915,called:0,unfunded:340915},{fund:'Vista Equity Partners VIII-A',class:'Private Equity',currency:'CAD',commitment:240118,called:0,unfunded:240118}],liquidityTiers:[],fx:{'CAD':{pct:48.3,val:15272418},'USD':{pct:51.7,val:16347494},'EUR':{pct:0,val:0},'GBP':{pct:0,val:0}},feeNorms:{'Private Equity':'1.5–2.0% mgmt / 20% carry / 8% hurdle','Private Credit':'1.0–1.5% mgmt / 15–20% carry / 6–8% hurdle','Real Assets':'1.25–1.75% mgmt / 20% carry / 8% hurdle','Diversifying Strategies':'1.0–2.0% mgmt / 10–20% carry / varies','Public Equity':'0.5–1.0% mgmt / varies','Fixed Income':'0.3–0.75% mgmt','Cash':'<0.3% mgmt','Monetary Hedge':'varies'}};
 const ACTIVITY_TIMINGS=['0-6 months','6-12 months','12-24 months','24+ months','Uncertain'];
 const NEAR_TERM_TIMINGS=['0-6 months','6-12 months','Uncertain'];
+// Fallback only, used when no dated rate is available (a record saved before this table
+// existed, or a lookup that never resolved) — the real source of truth is a per-record
+// rate looked up for the day in question via server/fx.js (Bank of Canada Valet API) and
+// stored at write time: activities carry their own `fxRate`, and an uploaded
+// portfolio/income snapshot carries `fxRates` resolved once for that snapshot's asOf
+// date. See fxRateFor below.
 const ACTIVITY_FX={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};
+// CURRENT_FX is today's rate table, mutated in place from GET /api/fx-rates once at page
+// load (same pattern as PORT/INCOME below) — used for converting a *new* commitment
+// under review (opp.commitment/opp.currency), which is a present-day transaction, not a
+// historical one.
+const CURRENT_FX={...ACTIVITY_FX};
+function fxRateFor(currency,ratesTable){
+  if(ratesTable&&ratesTable[currency]!=null)return ratesTable[currency];
+  return ACTIVITY_FX[currency]||1;
+}
 // decreaseField/increaseField let callers pick which pair of tags on the activity to
 // bucket by: liquidity category (decreaseClass/increaseClass, the default — used by
 // computeLiquidityPlan for A4) or IPS asset class (decreaseAssetClass/increaseAssetClass —
@@ -35,7 +50,9 @@ function activityImpact(activities,opts){
   (activities||[]).forEach(a=>{
     if(a.status==='Completed')return;
     if(nearTermOnly&&!NEAR_TERM_TIMINGS.includes(a.timing))return;
-    const amt=a.amount*(ACTIVITY_FX[a.currency]||1);
+    // a.fxRate is resolved server-side, once, for the day the activity was saved (see
+    // POST/PUT /api/activities in server/index.js) — preferred over the static fallback.
+    const amt=a.amount*(a.fxRate!=null?a.fxRate:(ACTIVITY_FX[a.currency]||1));
     const dec=a[decField],inc=a[incField];
     if(dec){classDelta[dec]=(classDelta[dec]||0)-amt;}else{totalDelta+=amt;}
     if(inc){classDelta[inc]=(classDelta[inc]||0)+amt;}else{totalDelta-=amt;}
@@ -77,7 +94,7 @@ const INCOME={asOf:null,positions:[]};
 function tierTotalsCAD(port){
   const totals={};LIQUIDITY_CATEGORIES.forEach(c=>{totals[c]=0;});
   (port.liquidityTiers||[]).forEach(t=>{
-    const sum=(t.items||[]).reduce((s,it)=>s+(it.amount||0)*(ACTIVITY_FX[it.currency]||1),0);
+    const sum=(t.items||[]).reduce((s,it)=>s+(it.amount||0)*fxRateFor(it.currency,port.fxRates),0);
     totals[t.tier]=(totals[t.tier]||0)+sum;
   });
   return totals;
@@ -98,7 +115,7 @@ function capitalCallSchedule(commitmentCAD,unfundedCAD){
 function unfundedCallScheduleCAD(port){
   const totals={};LIQUIDITY_BUCKETS.forEach(b=>{totals[b]=0;});
   (port.unfunded||[]).forEach(u=>{
-    const fx=ACTIVITY_FX[u.currency]||1;
+    const fx=fxRateFor(u.currency,port.fxRates);
     const unfundedAmt=u.unfunded!=null?u.unfunded:(u.unfundedCAD||0);
     const sched=capitalCallSchedule((u.commitment||0)*fx,unfundedAmt*fx);
     LIQUIDITY_BUCKETS.forEach(b=>{totals[b]+=sched[b];});
@@ -117,7 +134,7 @@ function incomeByBucketCAD(income){
   const available={};const registered={};
   LIQUIDITY_BUCKETS.forEach(b=>{available[b]=0;registered[b]=0;});
   ((income&&income.positions)||[]).forEach(p=>{
-    const annualCAD=(p.annualDistribution||0)*(ACTIVITY_FX[p.currency]||1);
+    const annualCAD=(p.annualDistribution||0)*fxRateFor(p.currency,income&&income.fxRates);
     const perBucket={'0-6 months':annualCAD*0.5,'6-12 months':annualCAD*0.5,'12-24 months':annualCAD,'24+ months':annualCAD};
     const target=p.isRegistered?registered:available;
     LIQUIDITY_BUCKETS.forEach(b=>{target[b]+=perBucket[b];});
@@ -162,5 +179,5 @@ function computeLiquidityPlan(opts){
 }
 
 if(typeof module!=='undefined'){
-  module.exports={PORT,INCOME,ACTIVITY_TIMINGS,NEAR_TERM_TIMINGS,ACTIVITY_FX,LIQUIDITY_BUCKETS,LIQUIDITY_CATEGORIES,activityImpact,getEffectivePort,tierTotalsCAD,capitalCallSchedule,unfundedCallScheduleCAD,incomeByBucketCAD,computeLiquidityPlan};
+  module.exports={PORT,INCOME,ACTIVITY_TIMINGS,NEAR_TERM_TIMINGS,ACTIVITY_FX,CURRENT_FX,fxRateFor,LIQUIDITY_BUCKETS,LIQUIDITY_CATEGORIES,activityImpact,getEffectivePort,tierTotalsCAD,capitalCallSchedule,unfundedCallScheduleCAD,incomeByBucketCAD,computeLiquidityPlan};
 }

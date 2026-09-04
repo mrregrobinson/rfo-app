@@ -209,7 +209,7 @@ function fmtDate(d){return new Date(d).toLocaleDateString('en-CA',{year:'numeric
 function pct(n){return n.toFixed(1)+'%'}
 
 function computeClaudeAnswers(opp,activities){
-  const p=opp.pqData||{};const cur=opp.currency;const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[cur]||1.35);const ac=opp.assetClass;const ips=PORT.ips[ac]||{min:0,target:10,max:20};
+  const p=opp.pqData||{};const cur=opp.currency;const cadCommit=opp.commitment*(CURRENT_FX[cur]||1.35);const ac=opp.assetClass;const ips=PORT.ips[ac]||{min:0,target:10,max:20};
   const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const effAll=getEffectivePort(nonCompleted);
   const curPct=effAll.alloc[ac]||0;const projPct=curPct+(cadCommit/effAll.totalCAD)*100;const manPct=(cadCommit/effAll.totalCAD)*100;const oddR=p.oddRatings||{};const highF=Object.entries(oddR).filter(([,v])=>v==='High').map(([k])=>k);const medF=Object.entries(oddR).filter(([,v])=>v==='Medium').map(([k])=>k);const govR=oddR.governance||'Low';const compR=oddR.compliance||'Low';const addUSD=cur==='USD';const usdAfter=addUSD?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const ans={};
   ans.A1={value:ASSET_CLASSES.includes(ac)?'Yes':'No',display:ASSET_CLASSES.includes(ac)?'Yes — IPS approved':'No — not an approved class',rationale:`${ac} is ${ASSET_CLASSES.includes(ac)?'one of the eight IPS-approved asset classes.':'NOT on the IPS approved list.'}`,locked:true,warning:!ASSET_CLASSES.includes(ac)};
@@ -320,9 +320,9 @@ const SECTIONS=[
 ];
 
 function getCtxSummary(ctxKey,opp,activities){
-  const p=opp.pqData||{};const oddR=p.oddRatings||{};const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[opp.currency]||1.35);const assetTargets={'Private Equity':'15–20% net IRR','Private Credit':'8–12%','Real Assets':'10–15% net IRR','Diversifying Strategies':'8–12%','Public Equity':'Market + 2–3%'};
+  const p=opp.pqData||{};const oddR=p.oddRatings||{};const cadCommit=opp.commitment*(CURRENT_FX[opp.currency]||1.35);const assetTargets={'Private Equity':'15–20% net IRR','Private Credit':'8–12%','Real Assets':'10–15% net IRR','Diversifying Strategies':'8–12%','Public Equity':'Market + 2–3%'};
   switch(ctxKey){
-    case'A5':{const aU=opp.currency==='USD';const uA=aU?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const derivation=`Derivation: PQ's "Currency Composition" chart (Robinson Family Portfolio report, as of ${PORT.asOf}) states CAD ${PORT.fx.CAD.pct.toFixed(1)}% / USD ${PORT.fx.USD.pct.toFixed(1)}% of total portfolio ${fmtCAD(PORT.totalCAD)}. Cross-checked against PQ's own CAD Position Detail (~C$15.28M) and USD Position Detail (~US$11.86M × 1.3775 CAD/USD ≈ C$16.34M) — both independently confirm the same ~${PORT.fx.CAD.pct.toFixed(0)}/${PORT.fx.USD.pct.toFixed(0)} split, within rounding. EUR and GBP are currently 0% — no exposure held.`;return aU?`Portfolio is ${PORT.fx.USD.pct.toFixed(1)}% USD (${fmtCAD(PORT.fx.USD.val)}). This USD commitment would increase USD to ~${uA.toFixed(1)}%. CAD: ${PORT.fx.CAD.pct.toFixed(1)}%.\n\n${derivation}`:`${opp.currency} commitment — USD exposure stays at ${PORT.fx.USD.pct.toFixed(1)}%.\n\n${derivation}`;}
+    case'A5':{const aU=opp.currency==='USD';const uA=aU?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const usdRate=CURRENT_FX.USD;const impliedUsdM=(PORT.fx.USD.val/usdRate/1e6).toFixed(2);const derivation=`Derivation: PQ's "Currency Composition" chart (Robinson Family Portfolio report, as of ${PORT.asOf}) states CAD ${PORT.fx.CAD.pct.toFixed(1)}% / USD ${PORT.fx.USD.pct.toFixed(1)}% of total portfolio ${fmtCAD(PORT.totalCAD)}. Cross-checked against PQ's own CAD Position Detail (~${fmtCAD(PORT.fx.CAD.val)}) and USD Position Detail (~US$${impliedUsdM}M × ${usdRate.toFixed(4)} CAD/USD, today's Bank of Canada rate, ≈ ${fmtCAD(PORT.fx.USD.val)}) — both independently confirm the same ~${PORT.fx.CAD.pct.toFixed(0)}/${PORT.fx.USD.pct.toFixed(0)} split, within rounding. EUR and GBP are currently 0% — no exposure held.`;return aU?`Portfolio is ${PORT.fx.USD.pct.toFixed(1)}% USD (${fmtCAD(PORT.fx.USD.val)}). This USD commitment would increase USD to ~${uA.toFixed(1)}%. CAD: ${PORT.fx.CAD.pct.toFixed(1)}%.\n\n${derivation}`:`${opp.currency} commitment — USD exposure stays at ${PORT.fx.USD.pct.toFixed(1)}%.\n\n${derivation}`;}
     case'B2':return `PQ target: ${p.returnTarget||'see PQ doc'}. IPS target for ${opp.assetClass}: ${assetTargets[opp.assetClass]||'see IPS'}. Track record: ${p.hasTrackRecord?(p.trackRecordDetail||'per PQ'):'Not cited — first-time fund'}.`;
     case'B3':return p.downsideScenarios||'See PQ downside/risk scenarios section.';
     case'C3':return p.teamSummary||'See PQ team overview section.';
@@ -387,7 +387,7 @@ function QuestionRow({q,ca,response,onChange,opp,readOnly,activities}){
 }
 
 function SectionAPanel({opp,activities}){
-  const cadFx={CAD:1,USD:1.3775,EUR:1.6075,GBP:1.72};const cadCommit=opp.commitment*(cadFx[opp.currency]||1.35);const ips=PORT.ips[opp.assetClass]||{min:0,target:10,max:20};
+  const cadCommit=opp.commitment*(CURRENT_FX[opp.currency]||1.35);const ips=PORT.ips[opp.assetClass]||{min:0,target:10,max:20};
   const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const effAll=getEffectivePort(nonCompleted);
   const cur=effAll.alloc[opp.assetClass]||0;const proj=Math.min(cur+(cadCommit/effAll.totalCAD)*100,ips.max+5);const scale=Math.max(ips.max*1.3,proj*1.1,20);
   const unfundedRows=PORT.unfunded.map(u=>{const fx=ACTIVITY_FX[u.currency]||1;const unfundedCAD=(u.unfunded!=null?u.unfunded:(u.unfundedCAD||0))*fx;const commitmentCAD=(u.commitment||0)*fx;return{...u,unfundedCAD,commitmentCAD,near:capitalCallSchedule(commitmentCAD,unfundedCAD)['0-6 months']};});
@@ -1223,13 +1223,19 @@ function App(){
   // otherwise show up
   // in quorum calculations elsewhere without a full page reload.
   useEffect(()=>{if(user){loadOpportunities();loadActivities();api.get('/api/settings').then(s=>setQuorumThreshold(s.quorumThreshold)).catch(()=>{});api.get('/api/members?_='+Date.now()).then(setRoster).catch(()=>{});
-    // PORT/INCOME are mutated in place (not reassigned) so every function in finance.js
-    // that already closes over the module-level constant keeps working unchanged once
-    // real data loads — see finance.js's header comment. Gate the whole app's render on
-    // this so no component can render against stale bootstrap defaults for even a frame.
+    // PORT/INCOME/CURRENT_FX are mutated in place (not reassigned) so every function in
+    // finance.js that already closes over the module-level constant keeps working
+    // unchanged once real data loads — see finance.js's header comment. Gate the whole
+    // app's render on this so no component can render against stale bootstrap defaults
+    // for even a frame. CURRENT_FX is today's Bank of Canada rate table (server/fx.js),
+    // used to convert a *new* commitment under review (a present-day transaction) — not
+    // to be confused with a saved snapshot's own dated `fxRates`, resolved once for that
+    // snapshot's asOf date and included directly in the /api/portfolio and /api/income
+    // payloads above.
     Promise.all([
       api.get('/api/portfolio').then(data=>{if(data)Object.assign(PORT,data);}).catch(()=>{}),
       api.get('/api/income').then(data=>{if(data)Object.assign(INCOME,data);}).catch(()=>{}),
+      api.get('/api/fx-rates').then(data=>{if(data&&data.rates)Object.assign(CURRENT_FX,data.rates);}).catch(()=>{}),
     ]).finally(()=>setPortfolioReady(true));
   }},[user]);
   async function sendToMember(oppId,userId){const res=await api.post(`/api/opportunities/${oppId}/send/${userId}`,{});const patch=o=>o&&o.id===oppId?{...o,responses:{...o.responses,[userId]:{...o.responses[userId],sentAt:res.sentAt}}}:o;setOpportunities(list=>list.map(patch));setOpp(patch);return res;}

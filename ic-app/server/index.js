@@ -14,6 +14,7 @@ const { hashSecret, verifySecret, encryptSecret, decryptSecret, requireAuth } = 
 const totp = require('./totp');
 const { ensureSeeded, issueSetupCode } = require('./seed');
 const claude = require('./claude');
+const fx = require('./fx');
 const { logAudit, auditRowToJson } = require('./audit');
 const { logApiUsage, usageSummary } = require('./usage');
 const { runBackup, listBackups, scheduleBackups, BACKUPS_DIR } = require('./backup');
@@ -23,6 +24,7 @@ const registerTaskRoutes = require('./tasks');
 const { startDigestScheduler } = require('./digest');
 const registerMeetingRoutes = require('./meetings');
 const { startMeetingsScheduler } = require('./meetings-scheduler');
+const registerExpenditureRoutes = require('./expenditure');
 
 ensureSeeded();
 scheduleBackups();
@@ -218,6 +220,44 @@ function oppRowToJson(row) {
     responses,
   };
 }
+
+// ---- FX rate lookups (server/fx.js — Bank of Canada Valet API) ----
+
+const FX_PAIRS = { USD: 'USDCAD', EUR: 'EURCAD', GBP: 'GBPCAD' };
+
+function isoDateOnly(d) {
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+// Resolves today's (or a given date's) full CAD rate table — used both by this endpoint
+// (for the Due Diligence frontend's CURRENT_FX bootstrap, converting a new commitment
+// under review) and internally by the activity/snapshot handlers below.
+async function fxRatesFor(dateStr) {
+  const rates = { CAD: 1 };
+  for (const [currency, pair] of Object.entries(FX_PAIRS)) {
+    try {
+      rates[currency] = await fx.getDailyRate(dateStr, pair);
+    } catch (err) {
+      console.error(`FX lookup failed for ${pair} on ${dateStr}:`, err.message);
+    }
+  }
+  return rates;
+}
+
+app.get('/api/fx-rates', requireAuth, async (req, res) => {
+  const date = req.query.date ? isoDateOnly(req.query.date) : isoDateOnly(new Date());
+  if (req.query.pair) {
+    const currency = Object.keys(FX_PAIRS).find((c) => FX_PAIRS[c] === req.query.pair);
+    if (!currency && req.query.pair !== 'CADCAD') return res.status(400).json({ error: 'Unknown pair' });
+    try {
+      const rate = currency ? await fx.getDailyRate(date, FX_PAIRS[currency]) : 1;
+      return res.json({ date, pair: req.query.pair, rate });
+    } catch (err) {
+      return res.status(502).json({ error: err.message || 'FX lookup failed' });
+    }
+  }
+  res.json({ date, rates: await fxRatesFor(date) });
+});
 
 // ---- auth routes ----
 //
@@ -847,6 +887,7 @@ function activityRowToJson(row) {
     description: row.description,
     amount: row.amount,
     currency: row.currency,
+    fxRate: row.fx_rate,
     decreaseClass: row.decrease_class,
     increaseClass: row.increase_class,
     decreaseAssetClass: row.decrease_asset_class,
@@ -860,24 +901,44 @@ function activityRowToJson(row) {
   };
 }
 
+// Resolves the day-of-transaction CAD rate for a family planning activity, using the
+// date it's being saved on (there's no separate "transaction date" field on an
+// activity — see the build spec's discussion of this). CAD activities need no lookup.
+// Falls back to null (public/finance.js's activityImpact then uses its static
+// ACTIVITY_FX fallback) if the currency isn't one we look up or the lookup fails.
+async function resolveActivityFxRate(currency) {
+  if (!currency || currency === 'CAD') return null;
+  const pair = FX_PAIRS[currency];
+  if (!pair) return null;
+  try {
+    return await fx.getDailyRate(isoDateOnly(new Date()), pair);
+  } catch (err) {
+    console.error(`Activity FX lookup failed for ${currency}:`, err.message);
+    return null;
+  }
+}
+
 app.get('/api/activities', requireAuth, (req, res) => {
   const rows = db.prepare('SELECT * FROM activities ORDER BY created_at DESC').all();
   res.json(rows.map(activityRowToJson));
 });
 
-app.post('/api/activities', requireAuth, (req, res) => {
+app.post('/api/activities', requireAuth, async (req, res) => {
   const b = req.body || {};
   if (!b.description) return res.status(400).json({ error: 'description is required' });
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const currency = b.currency || 'CAD';
+  const fxRate = await resolveActivityFxRate(currency);
   db.prepare(
-    `INSERT INTO activities (id, description, amount, currency, decrease_class, increase_class, decrease_asset_class, increase_asset_class, impact, status, timing, created_by, created_at, updated_at)
-     VALUES (@id, @description, @amount, @currency, @decreaseClass, @increaseClass, @decreaseAssetClass, @increaseAssetClass, @impact, @status, @timing, @createdBy, @createdAt, @updatedAt)`
+    `INSERT INTO activities (id, description, amount, currency, fx_rate, decrease_class, increase_class, decrease_asset_class, increase_asset_class, impact, status, timing, created_by, created_at, updated_at)
+     VALUES (@id, @description, @amount, @currency, @fxRate, @decreaseClass, @increaseClass, @decreaseAssetClass, @increaseAssetClass, @impact, @status, @timing, @createdBy, @createdAt, @updatedAt)`
   ).run({
     id,
     description: b.description,
     amount: Number(b.amount) || 0,
-    currency: b.currency || 'CAD',
+    currency,
+    fxRate,
     decreaseClass: b.decreaseClass || null,
     increaseClass: b.increaseClass || null,
     decreaseAssetClass: b.decreaseAssetClass || null,
@@ -893,18 +954,24 @@ app.post('/api/activities', requireAuth, (req, res) => {
   res.status(201).json(activityRowToJson(db.prepare('SELECT * FROM activities WHERE id = ?').get(id)));
 });
 
-app.put('/api/activities/:id', requireAuth, (req, res) => {
+app.put('/api/activities/:id', requireAuth, async (req, res) => {
   const row = db.prepare('SELECT * FROM activities WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Activity not found' });
   const b = req.body || {};
   const now = new Date().toISOString();
+  const currency = b.currency || row.currency;
+  // Re-resolve today's rate whenever the currency changes (or amount/currency were both
+  // just entered for the first time) — but skip an unnecessary lookup on every unrelated
+  // edit if the currency hasn't changed and a rate is already stored.
+  const fxRate = currency !== row.currency || row.fx_rate == null ? await resolveActivityFxRate(currency) : row.fx_rate;
   db.prepare(
-    `UPDATE activities SET description=@description, amount=@amount, currency=@currency, decrease_class=@decreaseClass, increase_class=@increaseClass, decrease_asset_class=@decreaseAssetClass, increase_asset_class=@increaseAssetClass, impact=@impact, status=@status, timing=@timing, updated_at=@updatedAt WHERE id=@id`
+    `UPDATE activities SET description=@description, amount=@amount, currency=@currency, fx_rate=@fxRate, decrease_class=@decreaseClass, increase_class=@increaseClass, decrease_asset_class=@decreaseAssetClass, increase_asset_class=@increaseAssetClass, impact=@impact, status=@status, timing=@timing, updated_at=@updatedAt WHERE id=@id`
   ).run({
     id: req.params.id,
     description: b.description ?? row.description,
     amount: b.amount != null ? Number(b.amount) : row.amount,
-    currency: b.currency || row.currency,
+    currency,
+    fxRate,
     decreaseClass: b.decreaseClass !== undefined ? (b.decreaseClass || null) : row.decrease_class,
     increaseClass: b.increaseClass !== undefined ? (b.increaseClass || null) : row.increase_class,
     decreaseAssetClass: b.decreaseAssetClass !== undefined ? (b.decreaseAssetClass || null) : row.decrease_asset_class,
@@ -1150,15 +1217,28 @@ app.post('/api/admin/portfolio/extract', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/admin/portfolio/snapshots', requireAuth, (req, res) => {
+// Report "asOf" dates come from Claude's extraction as MM-DD-YYYY (see claude.js);
+// server/fx.js expects YYYY-MM-DD. Falls back to today's date if asOf doesn't parse as
+// expected, rather than failing the whole snapshot save over a formatting quirk.
+function mdyToIso(mdy) {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(mdy || '');
+  return m ? `${m[3]}-${m[1]}-${m[2]}` : isoDateOnly(new Date());
+}
+
+app.post('/api/admin/portfolio/snapshots', requireAuth, async (req, res) => {
   if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
   const b = req.body || {};
   if (!b.asOf || !b.data || typeof b.data !== 'object') return res.status(400).json({ error: 'asOf and data are required' });
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  // Resolved once, for this snapshot's own report date, and stored on the snapshot data
+  // itself — every unfunded commitment/liquidity-tier item in CAD math (finance.js)
+  // shares this one snapshot, so one rate per currency for the whole snapshot is
+  // correct, not a per-item lookup.
+  const data = { ...b.data, fxRates: await fxRatesFor(mdyToIso(b.asOf)) };
   db.prepare(
     `INSERT INTO portfolio_snapshots (id, as_of, data, source_filename, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, b.asOf, JSON.stringify(b.data), b.sourceFilename || null, now, req.session.userId);
+  ).run(id, b.asOf, JSON.stringify(data), b.sourceFilename || null, now, req.session.userId);
   logAudit({ userId: req.session.userId, action: 'portfolio.snapshot_saved', entityType: 'portfolio_snapshot', entityId: id, details: { asOf: b.asOf, sourceFilename: b.sourceFilename || null } });
   res.status(201).json(currentPortfolioSnapshot());
 });
@@ -1200,15 +1280,16 @@ app.post('/api/admin/income/extract', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/admin/income/snapshots', requireAuth, (req, res) => {
+app.post('/api/admin/income/snapshots', requireAuth, async (req, res) => {
   if (!ddRoleOf(req.session.userId).isAdmin) return res.status(403).json({ error: 'Due Diligence admin only' });
   const b = req.body || {};
   if (!b.asOf || !b.data || typeof b.data !== 'object') return res.status(400).json({ error: 'asOf and data are required' });
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const data = { ...b.data, fxRates: await fxRatesFor(mdyToIso(b.asOf)) };
   db.prepare(
     `INSERT INTO income_snapshots (id, as_of, data, source_filename, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, b.asOf, JSON.stringify(b.data), b.sourceFilename || null, now, req.session.userId);
+  ).run(id, b.asOf, JSON.stringify(data), b.sourceFilename || null, now, req.session.userId);
   logAudit({ userId: req.session.userId, action: 'income.snapshot_saved', entityType: 'income_snapshot', entityId: id, details: { asOf: b.asOf, sourceFilename: b.sourceFilename || null } });
   res.status(201).json(currentIncomeSnapshot());
 });
@@ -1265,6 +1346,10 @@ startDigestScheduler(db);
 registerMeetingRoutes(app, { db, logAudit });
 startMeetingsScheduler(db);
 
+// ---- household expenditure routes ----
+
+registerExpenditureRoutes(app, { db, logAudit });
+
 // ---- static frontend ----
 //
 // Umbrella shell (Section 3.2): "/" is the RFO home page (links to both apps), with the
@@ -1279,6 +1364,7 @@ app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'home.html')));
 app.get('/due-diligence', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'due-diligence.html')));
 app.get('/tasks', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'tasks.html')));
 app.get('/meetings', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'meetings.html')));
+app.get('/expenditure', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'expenditure.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
 
 const PORT = process.env.PORT || 3000;

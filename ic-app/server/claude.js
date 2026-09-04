@@ -1,5 +1,18 @@
+const { Agent, setGlobalDispatcher } = require('undici');
+
 const MODEL = 'claude-sonnet-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
+
+// Node's fetch (built on undici) defaults to a 300s headers timeout — the time allowed
+// between sending the request and receiving the *start* of the response. A non-streaming
+// call with a large max_tokens budget (extractStatement's 40000, for a dense multi-page
+// credit card statement) can take longer than that to generate before the API sends
+// anything back, since the whole JSON body arrives as one response — this isn't a slow
+// network, it's a genuinely long generation. Verified empirically: a real 9-page
+// statement hit UND_ERR_HEADERS_TIMEOUT at the default. Raised globally (affects every
+// fetch call in this process, including the much shorter mailer.js/Graph calls, which
+// finish in a couple seconds either way — a higher ceiling doesn't slow them down).
+setGlobalDispatcher(new Agent({ headersTimeout: 20 * 60 * 1000, bodyTimeout: 20 * 60 * 1000 }));
 
 class ClaudeNotConfiguredError extends Error {}
 
@@ -87,6 +100,60 @@ async function extractPdf(base64Data) {
           {
             type: 'text',
             text: `You are reading a Prime Quadrant investment research report. Today is ${today}. Extract all fields and return ONLY valid JSON (no markdown): {"title":"fund name","assetClass":"one of the 8 IPS classes","commitment":0,"currency":"USD","thesisSummary":"1-2 sentences","thesisRating":4,"returnTarget":"e.g. 12-16% net IRR","hasTrackRecord":true,"trackRecordDetail":"prior fund returns","teamSummary":"team overview","downsideScenarios":"2-4 sentence summary of the downside/risk scenarios PQ describes (valuation risk, key-person risk, downside return case, etc.)","esgProgramme":"Mature/Developing/Nascent/None","esgApproach":"Impact/Integrated/ESG Aware/Opportunistic/None","esgNote":"","oddRatings":{"governance":"Low","compliance":"Low","operations":"Low","alignment":"Low","reporting":"Low"},"oddGovernanceNote":"","feesSummary":"fees","termsSummary":"LP rights","lpRightsNote":"","isOffshore":false,"vehicleType":"Delaware LP","feesAboveNorm":false,"feesBelowNorm":false,"additionalContext":""}. For commitment: use 0 if not stated. For thesisRating: 1-5 based on clarity. For fees: compare to norms (PE: 2%/20%, Credit: 1.5%/15-20%, Real Assets: 1.5%/20%). Use null for missing strings, false for missing booleans.`,
+          },
+        ],
+      },
+    ],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
+// Reads one household bank/credit-card statement PDF for the Household Expenditure app
+// (see RFO_Expenditure_App_BuildSpec_v1.md) and returns every transaction as structured
+// JSON, the same extract-with-a-document-block approach as extractPortfolioReport below.
+// This sidesteps a real problem with these particular statements: RBC lays them out in
+// two visual columns (the transaction table plus a sidebar of promotional/points/rate
+// content), so a plain text-extraction library interleaves the two and produces garbage
+// — Claude reads the layout visually instead of depending on text order, so this doesn't
+// arise. accountType is 'chequing' or 'credit_card' since the two layouts differ
+// (chequing: running balance, no separate post date; credit card: transaction + posting
+// date, grouped by cardholder, paginated).
+//
+// Sign convention: amount is positive for money LEAVING the account (a chequing
+// withdrawal, or a card purchase/debit) and negative for money ENTERING it (a chequing
+// deposit, or a card payment/credit) — this makes "sum of amounts" line up directly with
+// how much was spent, and lets the caller reconcile a chequing statement as
+// openingBalance - sum(amounts) ≈ closingBalance, or a card statement as
+// previousBalance + sum(amounts) ≈ newBalance, without trusting a separately-reported
+// aggregate.
+async function extractStatement(base64Data, accountType) {
+  const isCard = accountType === 'credit_card';
+  const summaryShape = isCard
+    ? `"previousBalance":0,"newBalance":0,"paymentsAndCredits":0,"purchasesAndDebits":0,"interest":0,"fees":0`
+    : `"openingBalance":0,"closingBalance":0,"totalDeposits":0,"totalWithdrawals":0`;
+  const data = await callClaude({
+    model: MODEL,
+    // These statements can run several pages (the credit card statement paginates as
+    // "1 OF 9" etc.) with a transaction on nearly every line. Verified empirically against
+    // a real 9-page statement: 16000 (extractPortfolioReport's budget) was NOT enough and
+    // got cut off mid-JSON (extractJson's stop_reason==='max_tokens' case) — a card
+    // statement's transaction count plus the model's own thinking tokens can run well
+    // past that, so this needs a much larger ceiling than any other extraction call here.
+    max_tokens: 40000,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } },
+          {
+            type: 'text',
+            text: `This is a Royal Bank of Canada ${isCard ? 'Visa credit card' : 'chequing account'} statement. Extract every transaction and the statement's own summary totals.
+
+For each transaction: the date (and, for a credit card, the separate posting date — chequing statements don't have one, use null), the description exactly as printed (if a description wraps onto a second line or has a reference code below it, join those into one description), and the signed amount using this convention: POSITIVE for money leaving the account (a withdrawal on chequing, a purchase/debit on the card), NEGATIVE for money entering it (a deposit on chequing, a payment/credit on the card). Do not skip any transaction, including ones on a continued/second page. A chequing statement occasionally shows a row with no date printed on it — that row continues the same date as the row above it; carry that date forward rather than leaving it null.
+
+Also extract the statement's own reported summary totals so the caller can verify nothing was missed: ${summaryShape}. And the statement period: "periodStart" and "periodEnd" (the date range printed at the top, e.g. "From July 21, 2026 to August 21, 2026" or "STATEMENT FROM JUL 23 TO AUG 24, 2026").
+
+Return ONLY valid JSON, no markdown fences, no extra prose: {"periodStart":"YYYY-MM-DD","periodEnd":"YYYY-MM-DD","summary":{${summaryShape}},"transactions":[{"date":"YYYY-MM-DD","postDate":${isCard ? '"YYYY-MM-DD"' : 'null'},"description":"text","amount":0}]}`,
           },
         ],
       },
@@ -263,4 +330,4 @@ Format your response as a JSON object with exactly these keys, in this order: {"
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, generateReport, ClaudeNotConfiguredError };
+module.exports = { research, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, generateReport, ClaudeNotConfiguredError };

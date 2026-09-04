@@ -50,6 +50,19 @@ async function init() {
           <div class="tile-title">Manage Members</div>
           <div class="tile-desc">Family Office administration — add or deactivate members, set admin access and app-level roles, reset logins.</div>
         </a>` : '';
+  // Household Expenditures isn't a per-app role like the other three tiles — it's
+  // partitioned into ledgers (see migration 023), so whether to show this tile at all
+  // depends on ledger membership, checked separately rather than via user.* flags.
+  // is_fo_admin does NOT imply membership here, unlike every other tile on this page.
+  let expenditureTile = '';
+  try {
+    await api.get('/api/expenditure/ledger');
+    expenditureTile = `
+        <a class="tile" href="/expenditure">
+          <div class="tile-title">Household Expenditures</div>
+          <div class="tile-desc">Track household spending from bank and credit card statements, by category and time period.</div>
+        </a>`;
+  } catch (err) { /* not a member of any expenditure ledger — tile stays hidden */ }
   document.getElementById('root').innerHTML = `
     <nav class="nav">
       <div class="nav-brand">Robinson Family Office</div>
@@ -70,7 +83,7 @@ async function init() {
         <a class="tile" href="/meetings">
           <div class="tile-title">Family Office Meetings</div>
           <div class="tile-desc">Schedule meetings with an agenda, send Teams invitations to family attendees, and record minutes.</div>
-        </a>${adminTile}
+        </a>${expenditureTile}${adminTile}
       </div>
     </div>
   `;
