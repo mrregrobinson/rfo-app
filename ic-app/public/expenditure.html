@@ -88,21 +88,37 @@ function trendChartData(byMonth){
 
 // ---- import ----
 function ImportPanel({onImported}){
-  const [busy,setBusy]=useState(false);const [results,setResults]=useState(null);const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);const [progress,setProgress]=useState(null);const [results,setResults]=useState(null);const [error,setError]=useState('');
+  // Import runs as a background job on the server (see server/expenditure.js) — a zip of
+  // many statements can take many minutes overall (each one is a separate Claude call),
+  // well past what a hosting platform's own reverse-proxy timeout allows for one
+  // synchronous request. Kick it off, get a jobId back immediately, then poll for
+  // progress instead of holding one long request open.
+  async function pollJob(jobId){
+    const job=await api.get('/api/expenditure/import/'+jobId);
+    setProgress({completed:job.completed,total:job.total});
+    setResults(job.results);
+    onImported(); // refresh the transaction list/summary as each statement lands, not just at the end
+    if(job.status==='running'){
+      setTimeout(()=>pollJob(jobId),3000);
+    }else{
+      setBusy(false);
+      if(job.status==='error')setError(job.error||'Import job failed');
+    }
+  }
   async function handleFiles(fileList){
-    setBusy(true);setError('');setResults(null);
+    setBusy(true);setError('');setResults(null);setProgress(null);
     try{
       const files=await Promise.all(Array.from(fileList).map(async f=>({filename:f.name,base64:await fileToBase64(f)})));
       const res=await api.post('/api/expenditure/import',{files});
-      setResults(res.results);
-      onImported();
-    }catch(err){setError(err.message);}
-    setBusy(false);
+      setProgress({completed:0,total:res.total});
+      pollJob(res.jobId);
+    }catch(err){setError(err.message);setBusy(false);}
   }
   return h('div',{className:'card no-print'},
     h('div',{className:'section-title'},'Import statements'),
     h('div',{className:'import-drop'},
-      busy?'Importing — this can take a minute per statement (each one is read by Claude)…':
+      busy?`Importing${progress?` — ${progress.completed} of ${progress.total} statement${progress.total===1?'':'s'} done`:''}… each statement is read by Claude and can take a minute or two; safe to leave this page open or come back later.`:
         h('div',null,
           h('div',{style:{marginBottom:8}},'Select one or more statement PDFs, or a zip of statements'),
           h('input',{type:'file',accept:'.pdf,.zip',multiple:true,onChange:e=>e.target.files.length&&handleFiles(e.target.files)})

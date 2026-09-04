@@ -69,6 +69,15 @@ function detectAccountFromFilename(filename) {
 }
 
 module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
+  // In-memory import job tracking — see the POST /api/expenditure/import handler below
+  // for why this isn't a synchronous request. Lives for the process's lifetime; a
+  // finished job is swept out after an hour so this doesn't grow without bound over
+  // months of occasional use (results have long since been read by then).
+  const importJobs = new Map();
+  function scheduleJobCleanup(jobId) {
+    setTimeout(() => importJobs.delete(jobId), 60 * 60 * 1000).unref();
+  }
+
   function myLedger(userId) {
     return db.prepare(
       `SELECT l.id, l.name, m.role FROM expenditure_ledgers l
@@ -221,7 +230,19 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   // extraction), reconciled against its own reported totals, and — if the account
   // pattern isn't recognized — skipped with an error the caller can surface, rather than
   // guessing which account it belongs to.
-  app.post('/api/expenditure/import', requireAuth, requireLedger, async (req, res) => {
+  //
+  // Import runs as a background job, not inline in this request: extracting even one
+  // dense statement can take minutes, and a zip of a full year's statements does that
+  // several times over — comfortably past the hosting platform's own reverse-proxy
+  // timeout (independent of anything this app's own code does, so a longer server-side
+  // timeout alone doesn't fix it). This route does the fast, synchronous part (parse the
+  // zip, validate files) and returns a jobId immediately; the actual per-statement
+  // extraction runs after the response is sent, tracked in the in-memory `importJobs`
+  // map below and polled via GET /api/expenditure/import/:jobId. Job state is
+  // intentionally not persisted to the database — it's fine if a mid-import server
+  // restart loses progress, since already-imported statements are already in the
+  // database and re-uploading the same zip just skips them (dedup by account+period).
+  app.post('/api/expenditure/import', requireAuth, requireLedger, (req, res) => {
     const files = req.body?.files;
     if (!Array.isArray(files) || files.length === 0) return res.status(400).json({ error: 'files is required' });
 
@@ -242,17 +263,39 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
         pdfEntries.push({ filename: f.filename, base64: f.base64 });
       }
     }
+    if (pdfEntries.length === 0) return res.status(400).json({ error: 'No PDF statements found in the uploaded file(s).' });
 
-    const results = [];
-    for (const entry of pdfEntries) {
-      if (entry.error) { results.push({ filename: entry.filename, ok: false, error: entry.error }); continue; }
-      try {
-        results.push(await importOneStatement(req.expenditureLedger.id, entry.filename, entry.base64, req.session.userId));
-      } catch (err) {
-        results.push({ filename: entry.filename, ok: false, error: err.message || 'Import failed' });
+    const jobId = crypto.randomUUID();
+    const job = { id: jobId, ledgerId: req.expenditureLedger.id, status: 'running', total: pdfEntries.length, completed: 0, results: [], startedAt: new Date().toISOString() };
+    importJobs.set(jobId, job);
+    res.status(202).json({ jobId, total: job.total });
+
+    (async () => {
+      for (const entry of pdfEntries) {
+        if (entry.error) {
+          job.results.push({ filename: entry.filename, ok: false, error: entry.error });
+        } else {
+          try {
+            job.results.push(await importOneStatement(req.expenditureLedger.id, entry.filename, entry.base64, req.session.userId));
+          } catch (err) {
+            job.results.push({ filename: entry.filename, ok: false, error: err.message || 'Import failed' });
+          }
+        }
+        job.completed++;
       }
-    }
-    res.json({ results });
+      job.status = 'done';
+      scheduleJobCleanup(jobId);
+    })().catch((err) => {
+      job.status = 'error';
+      job.error = err.message || 'Import job failed';
+      scheduleJobCleanup(jobId);
+    });
+  });
+
+  app.get('/api/expenditure/import/:jobId', requireAuth, requireLedger, (req, res) => {
+    const job = importJobs.get(req.params.jobId);
+    if (!job || job.ledgerId !== req.expenditureLedger.id) return res.status(404).json({ error: 'Import job not found' });
+    res.json({ status: job.status, total: job.total, completed: job.completed, results: job.results, error: job.error || null });
   });
 
   async function importOneStatement(ledgerId, filename, base64, userId) {
