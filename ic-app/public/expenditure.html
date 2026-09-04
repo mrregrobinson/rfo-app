@@ -536,6 +536,17 @@ function ExpenditureApp({ledger}){
     load();
   }
 
+  // Re-applies the current transfer/income detection to everything already imported —
+  // for data brought in before a detection improvement (e.g. payroll/salary exclusion)
+  // existed. One-directional (only ever excludes, never un-excludes) and safe to run
+  // more than once.
+  async function cleanUpExistingData(){
+    if(!window.confirm('Re-check every existing transaction against the current transfer/income detection (e.g. payroll, salary, dividends)? This only ever excludes transactions that should be — it never re-includes anything, and every change stays visible and reversible in the table.'))return;
+    const res=await api.post('/api/expenditure/reclassify',{});
+    load();
+    window.alert(res.updated===0?'Nothing to clean up — everything already matches the current rules.':`Excluded ${res.updated} transaction${res.updated===1?'':'s'} as transfers/income:\n\n${res.examples.join('\n')}${res.updated>res.examples.length?'\n…and more':''}`);
+  }
+
   async function createRuleFromTransaction(pattern,categoryId){
     const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
     load();loadRules();
@@ -555,6 +566,7 @@ function ExpenditureApp({ledger}){
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
       h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
       h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
+      h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection'},'Clean Up Existing Data'),
       h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories')
     ),
     compareMode&&compareSummary

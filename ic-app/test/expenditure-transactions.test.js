@@ -27,6 +27,8 @@ db.prepare('INSERT INTO expenditure_ledgers (id, name, created_at) VALUES (?, ?,
 db.prepare('INSERT INTO expenditure_ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)').run(LEDGER_ID, USER_ID, 'admin');
 categoryAId = crypto.randomUUID();
 categoryBId = crypto.randomUUID();
+const transfersId = crypto.randomUUID();
+db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 0, 99)').run(transfersId, LEDGER_ID, 'Transfers');
 db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 0)').run(categoryAId, LEDGER_ID, 'Category A');
 db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 1)').run(categoryBId, LEDGER_ID, 'Category B');
 const now = new Date().toISOString();
@@ -113,5 +115,37 @@ describe('PUT /api/expenditure/transactions/bulk', () => {
   test('rejects a request with neither isTransfer nor categoryId', async () => {
     const { status } = await putBulk({ ids: txnIds });
     assert.equal(status, 400);
+  });
+});
+
+describe('POST /api/expenditure/reclassify', () => {
+  test('excludes a payroll deposit imported before that detection existed, and leaves ordinary spending alone', async () => {
+    const payrollId = crypto.randomUUID();
+    const groceryId = crypto.randomUUID();
+    const alreadyExcludedId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-03-01', 'PAYROLL DEP ACME CORP', 'PAYROLL DEP ACME CORP', -3200, 'CAD', -3200, ?, 0, ?)`).run(payrollId, ACCOUNT_ID, STATEMENT_ID, categoryAId, now);
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-03-02', 'HERITAGE COOP GROC', 'HERITAGE COOP GROC', 76.81, 'CAD', 76.81, ?, 0, ?)`).run(groceryId, ACCOUNT_ID, STATEMENT_ID, categoryAId, now);
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-03-03', 'Some already-excluded transfer', 'Some already-excluded transfer', 500, 'CAD', 500, NULL, 1, ?)`).run(alreadyExcludedId, ACCOUNT_ID, STATEMENT_ID, now);
+
+    const res = await fetch(`${baseUrl}/api/expenditure/reclassify`, { method: 'POST' });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.updated, 1);
+    assert.deepEqual(body.examples, ['PAYROLL DEP ACME CORP']);
+
+    const payroll = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(payrollId);
+    assert.equal(payroll.is_transfer, 1);
+    assert.equal(payroll.category_id, transfersId);
+
+    const grocery = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(groceryId);
+    assert.equal(grocery.is_transfer, 0, 'ordinary spending must not be touched');
+    assert.equal(grocery.category_id, categoryAId, 'and its category must not change');
+  });
+
+  test('running it again is a no-op once everything is already reclassified', async () => {
+    const res = await fetch(`${baseUrl}/api/expenditure/reclassify`, { method: 'POST' });
+    const body = await res.json();
+    assert.equal(body.updated, 0);
   });
 });

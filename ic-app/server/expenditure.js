@@ -313,6 +313,33 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     }
   });
 
+  // Re-applies the current transfer/income detection (isTransferOrIncome) to every
+  // transaction already imported under an older version of that logic — e.g. payroll/
+  // salary/dividend detection was added after some statements were already imported, so
+  // those deposits are sitting there uncategorized as if they were spending instead of
+  // being excluded like the rest of income. One-directional and safe to re-run any time:
+  // it only ever flips a transaction from included to excluded (never the reverse), since
+  // that's the only way detection logic has changed so far. Anything it excludes lands in
+  // the Transfers category and stays fully visible/reversible via the per-row "excl."
+  // checkbox, same as anything excluded at import time.
+  app.post('/api/expenditure/reclassify', requireAuth, requireLedger, (req, res) => {
+    const transfersId = transfersCategoryId(req.expenditureLedger.id);
+    const rows = db.prepare(
+      `SELECT t.id, t.raw_description, t.amount, a.account_type
+       FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id
+       WHERE a.ledger_id = ? AND t.is_transfer = 0`
+    ).all(req.expenditureLedger.id);
+    const changed = [];
+    for (const r of rows) {
+      if (isTransferOrIncome(r.raw_description, r.account_type, r.amount)) {
+        db.prepare('UPDATE expenditure_transactions SET is_transfer = 1, category_id = ? WHERE id = ?').run(transfersId, r.id);
+        changed.push(r.raw_description);
+      }
+    }
+    logAudit({ userId: req.session.userId, action: 'expenditure.reclassified', entityType: 'expenditure_ledger', entityId: req.expenditureLedger.id, details: { updated: changed.length } });
+    res.json({ updated: changed.length, examples: changed.slice(0, 20) });
+  });
+
   // ---- import (zip or individual PDFs) ----
 
   // Body: { files: [{ filename, base64 }] }. A .zip is expanded server-side (skipping
