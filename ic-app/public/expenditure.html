@@ -273,15 +273,83 @@ function EmailModal({filters,compareMode,onClose}){
   );
 }
 
+// ---- categories & rules management ----
+function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onDeleteRule}){
+  const [newName,setNewName]=useState('');
+  const [editing,setEditing]=useState(null); // {id,name}
+  const [error,setError]=useState('');
+  function categoryName(id){return (categories.find(c=>c.id===id)||{}).name||'(deleted)';}
+  async function add(){
+    if(!newName.trim())return;
+    setError('');
+    try{await onAdd(newName.trim());setNewName('');}catch(err){setError(err.message);}
+  }
+  async function saveRename(){
+    setError('');
+    try{await onRename(editing.id,editing.name);setEditing(null);}catch(err){setError(err.message);}
+  }
+  async function del(cat){
+    if(!window.confirm(`Delete category "${cat.name}"?`))return;
+    setError('');
+    try{await onDelete(cat.id);}catch(err){setError(err.message);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',style:{maxWidth:560},onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Manage categories'),
+      error&&h('div',{className:'alert alert-danger'},error),
+      h('div',{style:{maxHeight:280,overflowY:'auto',marginBottom:14}},
+        h('table',null,
+          h('thead',null,h('tr',null,h('th',null,'Category'),h('th',null,'Counts as spending'),h('th',null,''))),
+          h('tbody',null,categories.map(c=>h('tr',{key:c.id},
+            h('td',null,editing&&editing.id===c.id
+              ?h('input',{className:'form-input',style:{margin:0},value:editing.name,autoFocus:true,onChange:e=>setEditing({...editing,name:e.target.value}),onKeyDown:e=>e.key==='Enter'&&saveRename()})
+              :c.name),
+            h('td',null,c.isExpenditure?'Yes':'No — excluded'),
+            h('td',{style:{whiteSpace:'nowrap'}},
+              editing&&editing.id===c.id
+                ?h(React.Fragment,null,
+                    h('button',{className:'btn btn-outline btn-sm',onClick:saveRename},'Save'),
+                    h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:4},onClick:()=>setEditing(null)},'Cancel')
+                  )
+                :h(React.Fragment,null,
+                    h('button',{className:'btn btn-outline btn-sm',onClick:()=>setEditing({id:c.id,name:c.name})},'Rename'),
+                    h('button',{className:'btn btn-danger btn-sm',style:{marginLeft:4},onClick:()=>del(c)},'Delete')
+                  )
+            )
+          )))
+        )
+      ),
+      h('div',{style:{display:'flex',gap:6,marginBottom:16}},
+        h('input',{className:'form-input',style:{flex:1,margin:0},placeholder:'New category name',value:newName,onChange:e=>setNewName(e.target.value),onKeyDown:e=>e.key==='Enter'&&add()}),
+        h('button',{className:'btn btn-gold',onClick:add},'Add')
+      ),
+      rules.length>0&&h('div',null,
+        h('div',{className:'form-label'},'Categorization rules'),
+        h('div',{style:{maxHeight:160,overflowY:'auto',marginBottom:14}},
+          rules.map(r=>h('div',{key:r.id,className:'item-line',style:{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}},
+            h('span',null,`"${r.pattern}" → ${categoryName(r.categoryId)}`),
+            h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteRule(r.id)},'Remove')
+          ))
+        )
+      ),
+      h('div',{style:{textAlign:'right'}},h('button',{className:'btn btn-outline',onClick:onClose},'Close'))
+    )
+  );
+}
+
 // ---- app ----
 function ExpenditureApp({ledger}){
   const [categories,setCategories]=useState([]);
+  const [rules,setRules]=useState([]);
   const [filters,setFilters]=useState({dateFrom:'',dateTo:'',compareDateFrom:'',compareDateTo:'',payee:'',categoryIds:[]});
   const [compareMode,setCompareMode]=useState(false);
   const [summary,setSummary]=useState(null);
   const [compareSummary,setCompareSummary]=useState(null);
   const [transactions,setTransactions]=useState([]);
   const [showEmail,setShowEmail]=useState(false);
+  const [showCategories,setShowCategories]=useState(false);
+
+  function loadRules(){api.get('/api/expenditure/category-rules').then(setRules).catch(()=>{});}
 
   const query=useCallback((extra)=>{
     const q=new URLSearchParams();
@@ -309,6 +377,12 @@ function ExpenditureApp({ledger}){
     }
   }
   useEffect(load,[filters,compareMode]);
+  useEffect(loadRules,[]);
+
+  async function addCategory(name){await api.post('/api/expenditure/categories',{name});load();}
+  async function renameCategory(id,name){await api.put('/api/expenditure/categories/'+id,{name});load();}
+  async function deleteCategory(id){await api.del('/api/expenditure/categories/'+id);load();}
+  async function deleteRule(id){await api.del('/api/expenditure/category-rules/'+id);loadRules();}
 
   async function updateTransaction(id,patch){
     const updated=await api.put('/api/expenditure/transactions/'+id,patch);
@@ -318,7 +392,7 @@ function ExpenditureApp({ledger}){
 
   async function createRuleFromTransaction(pattern,categoryId){
     const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
-    load();
+    load();loadRules();
     window.alert(`Rule saved.${res.reclassified?' Re-categorized '+res.reclassified+' other transaction'+(res.reclassified===1?'':'s')+' that matched.':''}`);
   }
 
@@ -333,7 +407,8 @@ function ExpenditureApp({ledger}){
     h('div',{className:'card no-print',style:{display:'flex',gap:8}},
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
-      h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF')
+      h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
+      h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories')
     ),
     compareMode&&compareSummary
       ?h('div',{className:'two-col'},
@@ -342,7 +417,8 @@ function ExpenditureApp({ledger}){
         )
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction}),
-    showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)})
+    showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
+    showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onDeleteRule:deleteRule})
   );
 }
 

@@ -144,6 +144,36 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     res.status(201).json(categoryRowToJson(db.prepare('SELECT * FROM expenditure_categories WHERE id = ?').get(id)));
   });
 
+  // Rename and/or flip whether a category counts toward spending totals (the "Transfers"
+  // category is the one that ships with isExpenditure=false; a household could
+  // conceivably want another one treated the same way).
+  app.put('/api/expenditure/categories/:id', requireAuth, requireLedger, (req, res) => {
+    const row = db.prepare('SELECT * FROM expenditure_categories WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
+    if (!row) return res.status(404).json({ error: 'Category not found' });
+    const name = req.body?.name !== undefined ? String(req.body.name).trim() : row.name;
+    if (!name) return res.status(400).json({ error: 'name cannot be empty' });
+    const isExpenditure = req.body?.isExpenditure !== undefined ? (req.body.isExpenditure ? 1 : 0) : row.is_expenditure;
+    db.prepare('UPDATE expenditure_categories SET name = ?, is_expenditure = ? WHERE id = ?').run(name, isExpenditure, req.params.id);
+    res.json(categoryRowToJson(db.prepare('SELECT * FROM expenditure_categories WHERE id = ?').get(req.params.id)));
+  });
+
+  // Blocks deleting a category that's still in use (by a transaction or a rule) with a
+  // clear count, rather than either silently orphaning references or surfacing a raw
+  // foreign-key constraint error — recategorize/delete those first.
+  app.delete('/api/expenditure/categories/:id', requireAuth, requireLedger, (req, res) => {
+    const row = db.prepare('SELECT * FROM expenditure_categories WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
+    if (!row) return res.status(404).json({ error: 'Category not found' });
+    const txnCount = db.prepare(
+      `SELECT COUNT(*) AS n FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id WHERE a.ledger_id = ? AND t.category_id = ?`
+    ).get(req.expenditureLedger.id, req.params.id).n;
+    const ruleCount = db.prepare('SELECT COUNT(*) AS n FROM expenditure_category_rules WHERE ledger_id = ? AND category_id = ?').get(req.expenditureLedger.id, req.params.id).n;
+    if (txnCount > 0 || ruleCount > 0) {
+      return res.status(400).json({ error: `Can't delete "${row.name}" — it's used by ${txnCount} transaction${txnCount === 1 ? '' : 's'} and ${ruleCount} rule${ruleCount === 1 ? '' : 's'}. Recategorize or remove those first.` });
+    }
+    db.prepare('DELETE FROM expenditure_categories WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
   function ruleRowToJson(row) {
     return { id: row.id, pattern: row.pattern, matchType: row.match_type, categoryId: row.category_id, priority: row.priority };
   }
