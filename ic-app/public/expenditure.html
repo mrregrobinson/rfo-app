@@ -248,11 +248,17 @@ function ImportPanel({onImported}){
 }
 
 // ---- filters ----
-function DateRange({label,from,to,onFrom,onTo}){
+function DateRange({label,from,to,onFrom,onTo,onRange}){
+  // Setting from/to via two separate onFrom(...)/onTo(...) calls used to silently drop
+  // the first one: both callbacks build their new filters object from the same closed-
+  // over `filters` (captured at this render), so the second setFilters call in the same
+  // event just overwrites the first rather than building on it — the net effect was that
+  // a preset only ever actually changed ONE of the two dates. A single onRange(from,to)
+  // callback lets the caller apply both fields in one setFilters call instead.
   function applyPreset(key){
     if(!key)return;
     const range=datePresetRange(key);
-    onFrom(range.from);onTo(range.to);
+    onRange(range.from,range.to);
   }
   return h('div',{className:'filter-group'},
     h('label',{className:'form-label'},label),
@@ -275,8 +281,8 @@ function FiltersBar({categories,filters,setFilters,compareMode,setCompareMode}){
   }
   return h('div',{className:'card no-print'},
     h('div',{className:'filters'},
-      h(DateRange,{label:'Period A',from:filters.dateFrom,to:filters.dateTo,onFrom:v=>setFilters({...filters,dateFrom:v}),onTo:v=>setFilters({...filters,dateTo:v})}),
-      compareMode&&h(DateRange,{label:'Period B (comparison)',from:filters.compareDateFrom,to:filters.compareDateTo,onFrom:v=>setFilters({...filters,compareDateFrom:v}),onTo:v=>setFilters({...filters,compareDateTo:v})}),
+      h(DateRange,{label:'Period A',from:filters.dateFrom,to:filters.dateTo,onFrom:v=>setFilters({...filters,dateFrom:v}),onTo:v=>setFilters({...filters,dateTo:v}),onRange:(from,to)=>setFilters({...filters,dateFrom:from,dateTo:to})}),
+      compareMode&&h(DateRange,{label:'Period B (comparison)',from:filters.compareDateFrom,to:filters.compareDateTo,onFrom:v=>setFilters({...filters,compareDateFrom:v}),onTo:v=>setFilters({...filters,compareDateTo:v}),onRange:(from,to)=>setFilters({...filters,compareDateFrom:from,compareDateTo:to})}),
       h('div',{className:'filter-group'},
         h('label',{className:'form-label'},'Payee search'),
         h('input',{type:'text',className:'form-input',placeholder:'e.g. Costco, COST*, or SQ ?THE BARN',title:'Use * for any characters and ? for a single character',value:filters.payee||'',onChange:e=>setFilters({...filters,payee:e.target.value})})
