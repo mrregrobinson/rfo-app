@@ -67,6 +67,44 @@ const api={
 function fmtCAD(n){return (n||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0})}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
 
+// Quick date-range presets — the real pain with a native date picker isn't typing a
+// date (you can click straight into a segment and type it, no calendar needed), it's
+// jumping the calendar back several YEARS to reach 2022-era statements, clicking "prev
+// month" dozens of times. A preset sets both ends in one click without opening a picker
+// at all. All arithmetic in UTC (not local Date methods) so the YYYY-MM-DD strings this
+// produces line up exactly with what toISOString().slice(0,10) would read back, with no
+// timezone-dependent off-by-one-day risk.
+function datePresetRange(key,today){
+  const d=today||new Date();
+  const y=d.getUTCFullYear(),m=d.getUTCMonth();
+  const iso=dt=>dt.toISOString().slice(0,10);
+  const firstOfMonth=(yy,mm)=>new Date(Date.UTC(yy,mm,1));
+  const lastOfMonth=(yy,mm)=>new Date(Date.UTC(yy,mm+1,0));
+  switch(key){
+    case 'thisMonth':return{from:iso(firstOfMonth(y,m)),to:iso(lastOfMonth(y,m))};
+    case 'lastMonth':return{from:iso(firstOfMonth(y,m-1)),to:iso(lastOfMonth(y,m-1))};
+    case 'last3Months':return{from:iso(firstOfMonth(y,m-2)),to:iso(lastOfMonth(y,m))};
+    case 'last6Months':return{from:iso(firstOfMonth(y,m-5)),to:iso(lastOfMonth(y,m))};
+    case 'last12Months':return{from:iso(firstOfMonth(y,m-11)),to:iso(lastOfMonth(y,m))};
+    case 'thisYear':return{from:iso(new Date(Date.UTC(y,0,1))),to:iso(new Date(Date.UTC(y,11,31)))};
+    case 'lastYear':return{from:iso(new Date(Date.UTC(y-1,0,1))),to:iso(new Date(Date.UTC(y-1,11,31)))};
+    case 'yearToDate':return{from:iso(new Date(Date.UTC(y,0,1))),to:iso(d)};
+    case 'allTime':return{from:'',to:''};
+    default:return null;
+  }
+}
+const DATE_PRESETS=[
+  {key:'thisMonth',label:'This month'},
+  {key:'lastMonth',label:'Last month'},
+  {key:'last3Months',label:'Last 3 months'},
+  {key:'last6Months',label:'Last 6 months'},
+  {key:'last12Months',label:'Last 12 months'},
+  {key:'yearToDate',label:'Year to date'},
+  {key:'thisYear',label:'This year'},
+  {key:'lastYear',label:'Last year'},
+  {key:'allTime',label:'All time'},
+];
+
 // ---- charts ----
 function ChartCanvas({type,data,options,height}){
   const ref=useRef(null);const chartRef=useRef(null);
@@ -139,11 +177,20 @@ function ImportPanel({onImported}){
 
 // ---- filters ----
 function DateRange({label,from,to,onFrom,onTo}){
+  function applyPreset(key){
+    if(!key)return;
+    const range=datePresetRange(key);
+    onFrom(range.from);onTo(range.to);
+  }
   return h('div',{className:'filter-group'},
     h('label',{className:'form-label'},label),
     h('div',{style:{display:'flex',gap:6}},
       h('input',{type:'date',className:'form-input',value:from||'',onChange:e=>onFrom(e.target.value)}),
-      h('input',{type:'date',className:'form-input',value:to||'',onChange:e=>onTo(e.target.value)})
+      h('input',{type:'date',className:'form-input',value:to||'',onChange:e=>onTo(e.target.value)}),
+      h('select',{className:'form-select',value:'',title:'Quick range — sets both dates at once, no calendar needed',onChange:e=>applyPreset(e.target.value)},
+        h('option',{value:''},'Quick range…'),
+        DATE_PRESETS.map(p=>h('option',{key:p.key,value:p.key},p.label))
+      )
     )
   );
 }
