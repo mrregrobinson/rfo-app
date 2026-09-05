@@ -164,6 +164,9 @@ function ensureSeeded() {
     for (const userId of ['reg', 'sd']) {
       db.prepare('INSERT OR IGNORE INTO expenditure_ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)').run(ledgerId, userId, 'admin');
     }
+    // 'unknown' carries role: 'unknown' — see migration 025's header comment for why
+    // the Unknown/Transfers buckets are identified by this role column rather than by
+    // matching their (freely renameable) display name.
     const STARTER_CATEGORIES = [
       ['groceries', 'Groceries'], ['dining', 'Dining & Takeout'], ['utilities', 'Utilities'],
       ['housing', 'Housing (Mortgage/Rent/Property Tax)'], ['home-maintenance', 'Home Maintenance & Landscaping'],
@@ -171,15 +174,15 @@ function ensureSeeded() {
       ['travel', 'Travel'], ['entertainment', 'Entertainment & Subscriptions'], ['shopping', 'Shopping & Retail'],
       ['personal-care', 'Personal Care'], ['professional-services', 'Professional Services'],
       ['gifts-donations', 'Gifts & Donations'], ['kids-family', 'Kids & Family'], ['pets', 'Pets'],
-      ['bank-fees', 'Bank/Card Fees'], ['taxes', 'Taxes'], ['unknown', 'Miscellaneous/Unknown'],
+      ['bank-fees', 'Bank/Card Fees'], ['taxes', 'Taxes'], ['unknown', 'Miscellaneous/Unknown', 'unknown'],
     ];
-    STARTER_CATEGORIES.forEach(([slug, name], i) => {
-      db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, ?)').run(`${ledgerId}-${slug}`, ledgerId, name, i);
+    STARTER_CATEGORIES.forEach(([slug, name, role], i) => {
+      db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, ?, 1, ?, ?)').run(`${ledgerId}-${slug}`, ledgerId, name, i, role || null);
     });
     // Transfers are tracked (every excluded item is tagged is_transfer and kept, per the
     // build spec) but not counted as expenditure — is_expenditure=0 keeps it out of
     // spending totals while still selectable as a category for anything not auto-detected.
-    db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 0, ?)').run(`${ledgerId}-transfers`, ledgerId, 'Transfers', STARTER_CATEGORIES.length);
+    db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, ?, 0, ?, ?)').run(`${ledgerId}-transfers`, ledgerId, 'Transfers', STARTER_CATEGORIES.length, 'transfers');
     // Starter transfer/income exclusion rules — same canonical list migration 024 backfills
     // onto a ledger that already existed before this feature did; a brand-new ledger (this
     // one, on a fresh install) is seeded here instead, since migrations run before this

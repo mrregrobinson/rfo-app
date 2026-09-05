@@ -165,7 +165,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   // ---- categories & rules ----
 
   function categoryRowToJson(row) {
-    return { id: row.id, name: row.name, isExpenditure: !!row.is_expenditure, sortOrder: row.sort_order };
+    return { id: row.id, name: row.name, isExpenditure: !!row.is_expenditure, sortOrder: row.sort_order, role: row.role || null };
   }
 
   app.get('/api/expenditure/categories', requireAuth, requireLedger, (req, res) => {
@@ -201,6 +201,9 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   app.delete('/api/expenditure/categories/:id', requireAuth, requireLedger, (req, res) => {
     const row = db.prepare('SELECT * FROM expenditure_categories WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
     if (!row) return res.status(404).json({ error: 'Category not found' });
+    if (row.role) {
+      return res.status(400).json({ error: `"${row.name}" is a system category the app relies on internally (for detecting ${row.role === 'transfers' ? 'transfers/income' : 'uncategorized transactions'}) — it can be renamed but not deleted.` });
+    }
     const txnCount = db.prepare(
       `SELECT COUNT(*) AS n FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id WHERE a.ledger_id = ? AND t.category_id = ?`
     ).get(req.expenditureLedger.id, req.params.id).n;
@@ -320,12 +323,16 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     return null;
   }
 
+  // Identified by role, not name — Manage Categories lets any category (these two
+  // included) be renamed freely, so matching on name would silently break the moment
+  // someone renamed "Miscellaneous/Unknown" or "Transfers" to something else (see
+  // migration 025).
   function unknownCategoryId(ledgerId) {
-    return db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = 'Miscellaneous/Unknown'").get(ledgerId)?.id || null;
+    return db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND role = 'unknown'").get(ledgerId)?.id || null;
   }
 
   function transfersCategoryId(ledgerId) {
-    return db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = 'Transfers'").get(ledgerId)?.id || null;
+    return db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND role = 'transfers'").get(ledgerId)?.id || null;
   }
 
   // ---- exclusion rules (transfer/income detection) — managed in parallel to category

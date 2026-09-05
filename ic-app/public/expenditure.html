@@ -581,7 +581,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
           h('tbody',null,categories.map(c=>h('tr',{key:c.id},
             h('td',null,editing&&editing.id===c.id
               ?h('input',{className:'form-input',style:{margin:0},value:editing.name,autoFocus:true,onChange:e=>setEditing({...editing,name:e.target.value}),onKeyDown:e=>e.key==='Enter'&&saveRename()})
-              :c.name),
+              :h(React.Fragment,null,c.name,c.role&&h('span',{className:'muted',style:{marginLeft:6}},'(system)'))),
             h('td',null,c.isExpenditure?'Yes':'No — excluded'),
             h('td',{style:{whiteSpace:'nowrap'}},
               editing&&editing.id===c.id
@@ -591,7 +591,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
                   )
                 :h(React.Fragment,null,
                     h('button',{className:'btn btn-outline btn-sm',onClick:()=>setEditing({id:c.id,name:c.name})},'Rename'),
-                    h('button',{className:'btn btn-danger btn-sm',style:{marginLeft:4},onClick:()=>del(c)},'Delete')
+                    h('button',{className:'btn btn-danger btn-sm',style:{marginLeft:4},disabled:!!c.role,title:c.role?'The app relies on this category internally — it can be renamed but not deleted.':undefined,onClick:()=>del(c)},'Delete')
                   )
             )
           )))

@@ -28,7 +28,7 @@ db.prepare("INSERT INTO users (id, name, role, initials, color) VALUES (?, 'Test
 db.prepare('INSERT INTO expenditure_ledgers (id, name, created_at) VALUES (?, ?, ?)').run(LEDGER_ID, 'Test Ledger', new Date().toISOString());
 db.prepare('INSERT INTO expenditure_ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)').run(LEDGER_ID, USER_ID, 'admin');
 const categoryId = crypto.randomUUID();
-db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 0)').run(categoryId, LEDGER_ID, 'Miscellaneous/Unknown');
+db.prepare("INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, ?, 1, 0, 'unknown')").run(categoryId, LEDGER_ID, 'Miscellaneous/Unknown');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));

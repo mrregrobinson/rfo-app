@@ -43,6 +43,10 @@ after(() => new Promise((resolve) => {
   });
 }));
 
+async function get(pathname) {
+  const r = await fetch(`${baseUrl}${pathname}`);
+  return { status: r.status, body: await r.json() };
+}
 async function post(pathname, body) {
   const r = await fetch(`${baseUrl}${pathname}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return { status: r.status, body: await r.json() };
@@ -249,5 +253,94 @@ describe('POST /api/expenditure/category-rules — applyToExisting', () => {
     assert.equal(body.reclassified, 0);
     const row = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId);
     assert.equal(row.category_id, null);
+  });
+});
+
+// The "Miscellaneous/Unknown" and "Transfers" buckets used to be found by matching their
+// NAME (see server/expenditure.js's unknownCategoryId/transfersCategoryId before
+// migration 025) — but Manage Categories explicitly lets any category be renamed,
+// these two included. These tests confirm identification survives a rename, since it's
+// keyed off the role column instead, and that a role-tagged category can't be deleted
+// out from under the app.
+describe('system categories (role) survive being renamed', () => {
+  // Each test creates its own role:'unknown'/'transfers' row and hard-deletes it (via a
+  // direct DB statement, bypassing the API's delete-block tested below) once done —
+  // unknownCategoryId()/transfersCategoryId() assume at most one such row per ledger
+  // (exactly what seed.js/migration 025 guarantee in production), so leaving one behind
+  // would make a LATER test's row ambiguous to resolve.
+  test('GET categories exposes role for a system category and null for an ordinary one', async () => {
+    const roleId = crypto.randomUUID();
+    db.prepare("INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, 'Role Test Unknown', 1, 50, 'unknown')").run(roleId, LEDGER_ID);
+    try {
+      const { body: ordinary } = await post('/api/expenditure/categories', { name: 'Ordinary Category' });
+      const { body: list } = await get('/api/expenditure/categories');
+      assert.equal(list.find((c) => c.id === roleId).role, 'unknown');
+      assert.equal(list.find((c) => c.id === ordinary.id).role, null);
+    } finally {
+      db.prepare('DELETE FROM expenditure_categories WHERE id = ?').run(roleId);
+    }
+  });
+
+  test('renaming the role:unknown category away from "Miscellaneous/Unknown" does not break Research Unknown Payees', async () => {
+    const roleId = crypto.randomUUID();
+    db.prepare("INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, 'Miscellaneous/Unknown', 1, 51, 'unknown')").run(roleId, LEDGER_ID);
+    try {
+      const accountId = crypto.randomUUID();
+      const statementId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+      db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-06-01', '2026-06-30', ?)`).run(statementId, accountId, now);
+      db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-06-05', 'SOME UNRESOLVED PAYEE', 'SOME UNRESOLVED PAYEE', 40, 'CAD', 40, ?, 0, ?)`)
+        .run(crypto.randomUUID(), accountId, statementId, roleId, now);
+
+      // Rename it to something with no relation to "Unknown" at all.
+      const { status: renameStatus } = await put(`/api/expenditure/categories/${roleId}`, { name: 'Needs Review' });
+      assert.equal(renameStatus, 200);
+
+      const { body: payees } = await get('/api/expenditure/unknown-payees');
+      assert.ok(payees.some((p) => p.description === 'SOME UNRESOLVED PAYEE'), 'still found after rename — identified by role, not name');
+    } finally {
+      db.prepare('DELETE FROM expenditure_transactions WHERE category_id = ?').run(roleId);
+      db.prepare('DELETE FROM expenditure_categories WHERE id = ?').run(roleId);
+    }
+  });
+
+  test('renaming the role:transfers category away from "Transfers" does not break exclusion-rule reclassification', async () => {
+    const roleId = crypto.randomUUID();
+    db.prepare("INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, 'Transfers', 0, 52, 'transfers')").run(roleId, LEDGER_ID);
+    try {
+      await put(`/api/expenditure/categories/${roleId}`, { name: 'Internal Movements' });
+
+      const accountId = crypto.randomUUID();
+      const statementId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+      db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-06-01', '2026-06-30', ?)`).run(statementId, accountId, now);
+      const txnId = crypto.randomUUID();
+      db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-06-06', 'ROLE RENAME TRANSFER TEST', 'ROLE RENAME TRANSFER TEST', 500, 'CAD', 500, NULL, 0, ?)`)
+        .run(txnId, accountId, statementId, now);
+
+      const { body } = await post('/api/expenditure/exclusion-rules', { pattern: 'ROLE RENAME TRANSFER TEST', applyToExisting: true });
+      assert.equal(body.excluded, 1);
+      const row = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(txnId);
+      assert.equal(row.is_transfer, 1);
+      assert.equal(row.category_id, roleId, 'still resolved to the (renamed) system category, not left null');
+    } finally {
+      db.prepare('DELETE FROM expenditure_transactions WHERE category_id = ?').run(roleId);
+      db.prepare('DELETE FROM expenditure_categories WHERE id = ?').run(roleId);
+    }
+  });
+
+  test('deleting a role-tagged category is blocked even when completely unused', async () => {
+    const roleId = crypto.randomUUID();
+    db.prepare("INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, 'Unused System Category', 1, 53, 'unknown')").run(roleId, LEDGER_ID);
+    try {
+      const { status, body } = await del(`/api/expenditure/categories/${roleId}`);
+      assert.equal(status, 400);
+      assert.match(body.error, /system category/);
+      assert.ok(db.prepare('SELECT id FROM expenditure_categories WHERE id = ?').get(roleId), 'not actually deleted');
+    } finally {
+      db.prepare('DELETE FROM expenditure_categories WHERE id = ?').run(roleId);
+    }
   });
 });

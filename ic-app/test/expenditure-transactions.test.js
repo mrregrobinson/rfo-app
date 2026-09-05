@@ -38,7 +38,7 @@ DEFAULT_EXCLUSION_RULES.forEach((rule, i) => {
 categoryAId = crypto.randomUUID();
 categoryBId = crypto.randomUUID();
 const transfersId = crypto.randomUUID();
-db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 0, 99)').run(transfersId, LEDGER_ID, 'Transfers');
+db.prepare("INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order, role) VALUES (?, ?, ?, 0, 99, 'transfers')").run(transfersId, LEDGER_ID, 'Transfers');
 db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 0)').run(categoryAId, LEDGER_ID, 'Category A');
 db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 1, 1)').run(categoryBId, LEDGER_ID, 'Category B');
 const now = new Date().toISOString();
