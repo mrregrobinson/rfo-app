@@ -112,3 +112,73 @@ describe('category management', () => {
     assert.equal(status, 404);
   });
 });
+
+describe('POST /api/expenditure/category-rules — applyToExisting', () => {
+  test('reclassifies every matching transaction, not just ones sitting in Unknown', async () => {
+    const { body: unknownCategory } = await post('/api/expenditure/categories', { name: 'Misc Unknown Test' });
+    const { body: shoppingCategory } = await post('/api/expenditure/categories', { name: 'Shopping Test' });
+    const { body: groceriesCategory } = await post('/api/expenditure/categories', { name: 'Groceries Test' });
+
+    const accountId = crypto.randomUUID();
+    const statementId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+    db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-02-01', '2026-02-28', ?)`).run(statementId, accountId, now);
+
+    // Three transactions from the same payee, sitting in three different states: one
+    // still Unknown, one already (wrongly) auto-categorized as Shopping, and one the
+    // household member had manually corrected to Shopping too. A new rule for this
+    // payee should bring all three into line, not just the Unknown one.
+    const unknownTxnId = crypto.randomUUID();
+    const autoMiscategorizedTxnId = crypto.randomUUID();
+    const manuallySetTxnId = crypto.randomUUID();
+    for (const id of [unknownTxnId, autoMiscategorizedTxnId, manuallySetTxnId]) {
+      const categoryId = id === unknownTxnId ? unknownCategory.id : shoppingCategory.id;
+      db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-02-10', 'HERITAGE COOP ERIC GROC', 'HERITAGE COOP ERIC GROC', 76.81, 'CAD', 76.81, ?, 0, ?)`)
+        .run(id, accountId, statementId, categoryId, now);
+    }
+    // A transaction from a DIFFERENT payee, already in the target category — must not
+    // be touched or double-counted just because it already matches the destination.
+    const unrelatedTxnId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-02-11', 'SOME OTHER GROCER', 'SOME OTHER GROCER', 20, 'CAD', 20, ?, 0, ?)`)
+      .run(unrelatedTxnId, accountId, statementId, groceriesCategory.id, now);
+    // A transfer from the same payee text — excluded categories are out of scope for
+    // this app's spending totals and must not be swept into a spending category by a rule.
+    const transferTxnId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-02-12', 'HERITAGE COOP ERIC GROC', 'HERITAGE COOP ERIC GROC', 76.81, 'CAD', 76.81, NULL, 1, ?)`)
+      .run(transferTxnId, accountId, statementId, now);
+
+    const { status, body } = await post('/api/expenditure/category-rules', {
+      pattern: 'HERITAGE COOP', categoryId: groceriesCategory.id, applyToExisting: true,
+    });
+    assert.equal(status, 201);
+    assert.equal(body.reclassified, 3, 'all three same-payee transactions should be reclassified, regardless of prior category');
+
+    for (const id of [unknownTxnId, autoMiscategorizedTxnId, manuallySetTxnId]) {
+      const row = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(id);
+      assert.equal(row.category_id, groceriesCategory.id);
+    }
+    const unrelated = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(unrelatedTxnId);
+    assert.equal(unrelated.category_id, groceriesCategory.id, 'unrelated payee already in the target category is unaffected either way');
+    const transfer = db.prepare('SELECT category_id, is_transfer FROM expenditure_transactions WHERE id = ?').get(transferTxnId);
+    assert.equal(transfer.is_transfer, 1, 'a transfer is never reclassified into a spending category by a rule');
+    assert.equal(transfer.category_id, null);
+  });
+
+  test('creating a rule with applyToExisting left unset (or false) does not touch any existing transaction', async () => {
+    const { body: category } = await post('/api/expenditure/categories', { name: 'No Apply Test' });
+    const accountId = crypto.randomUUID();
+    const statementId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+    db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-03-01', '2026-03-31', ?)`).run(statementId, accountId, now);
+    const txnId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-03-05', 'UNIQUE PAYEE XYZ', 'UNIQUE PAYEE XYZ', 30, 'CAD', 30, NULL, 0, ?)`)
+      .run(txnId, accountId, statementId, now);
+
+    const { body } = await post('/api/expenditure/category-rules', { pattern: 'UNIQUE PAYEE XYZ', categoryId: category.id });
+    assert.equal(body.reclassified, 0);
+    const row = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId);
+    assert.equal(row.category_id, null);
+  });
+});

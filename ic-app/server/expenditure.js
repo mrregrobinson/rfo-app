@@ -233,12 +233,20 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     ).run(id, req.expenditureLedger.id, b.pattern, b.matchType === 'regex' ? 'regex' : 'substring', b.categoryId, Number(b.priority) || 0, now);
     let reclassified = 0;
     if (b.applyToExisting) {
-      const targetCategoryId = db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = 'Miscellaneous/Unknown'").get(req.expenditureLedger.id)?.id;
+      // Every non-transfer transaction in the ledger that matches, regardless of its
+      // CURRENT category — not just ones still sitting in Miscellaneous/Unknown. A rule
+      // is a statement of "this payee always means this category," so creating one
+      // should bring every existing instance of that payee into line with it, including
+      // ones that had been auto- or manually categorized as something else (a lower-
+      // priority rule's guess, a one-off correction that turns out to not generalize,
+      // etc.) — otherwise the same payee ends up split across categories depending on
+      // when each transaction happened to be imported relative to when the rule was
+      // created, which defeats the point of having a rule at all.
       const candidates = db.prepare(
         `SELECT t.id, t.raw_description FROM expenditure_transactions t
          JOIN expenditure_accounts a ON a.id = t.account_id
-         WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id = ? OR t.category_id IS NULL)`
-      ).all(req.expenditureLedger.id, targetCategoryId || '__none__');
+         WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id IS NULL OR t.category_id != ?)`
+      ).all(req.expenditureLedger.id, b.categoryId);
       const rule = db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(id);
       for (const c of candidates) {
         if (matchesRule(c.raw_description, rule)) {
