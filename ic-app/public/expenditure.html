@@ -67,6 +67,28 @@ const api={
 function fmtCAD(n){return (n||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0})}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
 
+// A real bug: the "+Rule" button used to default to the FULL transaction description,
+// which for something like "e-Transfer sent Red Bear Landscaping 4X3A39" or a card
+// transaction ending in a long confirmation number includes a one-time reference code —
+// accept that as the pattern and the rule only ever matches THAT transaction, since
+// every other payment from the same payee has a different code. This strips an
+// obviously code-like trailing token (contains a digit and is at least 5 characters —
+// catches both mixed codes like "4X3A39" and pure numeric ones like a long confirmation
+// number, while leaving real trailing words like "MB", "STORE", or "CORP" alone, since
+// genuine location/company words are practically always all-letters) as a better
+// starting suggestion. Still just a suggestion, not a guarantee — it stays fully
+// editable, and the confirmation message always reports how many other transactions
+// actually matched so a too-narrow pattern is never silently wrong.
+function suggestRulePattern(description){
+  const words=(description||'').trim().split(/\s+/);
+  if(words.length<=2)return description;
+  const last=words[words.length-1];
+  const looksLikeCode=/[0-9]/.test(last)&&last.length>=5;
+  if(!looksLikeCode)return description;
+  const shortened=words.slice(0,-1).join(' ');
+  return shortened.length>=description.length*0.4?shortened:description;
+}
+
 // Quick date-range presets — the real pain with a native date picker isn't typing a
 // date (you can click straight into a segment and type it, no calendar needed), it's
 // jumping the calendar back several YEARS to reach 2022-era statements, clicking "prev
@@ -135,6 +157,42 @@ function bucketByPeriod(byMonth,granularity){
     const key=granularity==='year'?String(year):`${year} Q${Math.ceil(month/3)}`;
     result[key]=(result[key]||0)+amount;
   });
+  return result;
+}
+
+// Generates every "YYYY-MM" key from startKey to endKey inclusive, in calendar order —
+// filling in months that have no transactions at all (and so no key in byMonth) rather
+// than silently skipping over them.
+function monthKeysBetween(startKey,endKey){
+  let [y,m]=startKey.split('-').map(Number);
+  const [endY,endM]=endKey.split('-').map(Number);
+  const keys=[];
+  while(y<endY||(y===endY&&m<=endM)){
+    keys.push(`${y}-${String(m).padStart(2,'0')}`);
+    m++;if(m>12){m=1;y++;}
+  }
+  return keys;
+}
+
+// The standard "trailing twelve months" (TTM) calculation: each point is the SUM of
+// that month plus the preceding 11 — a rolling total, not that month's own raw spend
+// (which is what a plain monthly trend chart already shows). Correctly gap-fills months
+// with zero transactions (they have no key in byMonth at all) so a rolling window is
+// always 12 actual consecutive calendar months, never 12 non-contiguous data points.
+// Returns {} if there isn't yet a full 12 months of history to sum over — the first
+// trailing-12-months figure genuinely cannot exist before then, so there is deliberately
+// nothing to plot rather than a misleadingly partial sum.
+function trailingTwelveMonthTotals(byMonth){
+  const dataKeys=Object.keys(byMonth||{}).sort();
+  if(dataKeys.length===0)return{};
+  const allMonths=monthKeysBetween(dataKeys[0],dataKeys[dataKeys.length-1]);
+  if(allMonths.length<12)return{};
+  const values=allMonths.map(k=>byMonth[k]||0);
+  const result={};
+  for(let i=11;i<allMonths.length;i++){
+    let sum=0;for(let j=i-11;j<=i;j++)sum+=values[j];
+    result[allMonths[i]]=sum;
+  }
   return result;
 }
 
@@ -270,12 +328,21 @@ function SummaryBlock({label,summary,dateFrom,dateTo}){
 // you have to remember to switch the main filter to "Last 12 months" to see. Still
 // respects the category/payee/amount filters (so filtering to one category shows that
 // category's trailing 12-month trend), just not whatever date range is currently picked.
+// Rolling trailing-twelve-months (TTM): each point is that month plus the preceding 11
+// summed together, not that month's own raw spend (the regular monthly trend chart
+// above already shows that). Computed from the full available history — see
+// trailingTwelveMonthTotals — and only starts once a full 12 months of history actually
+// exists; with less than that, there's deliberately nothing to plot yet.
 function Trailing12MonthsChart({summary}){
-  if(!summary||Object.keys(summary.byMonth||{}).length===0)return null;
+  if(!summary)return null;
+  const ttm=trailingTwelveMonthTotals(summary.byMonth);
+  const points=Object.keys(ttm);
+  if(points.length===0)return null;
+  const latestMonth=points.sort()[points.length-1];
   return h('div',{className:'card'},
     h('div',{className:'section-title'},'Trailing 12 Months'),
-    h('div',{className:'muted',style:{marginBottom:10}},`Total: ${fmtCAD(summary.total)}`),
-    h(ChartCanvas,{type:'line',data:trendChartData(summary.byMonth),options:{plugins:{legend:{display:false}}}})
+    h('div',{className:'muted',style:{marginBottom:10}},`As of ${latestMonth}: ${fmtCAD(ttm[latestMonth])} (rolling 12-month total)`),
+    h(ChartCanvas,{type:'line',data:trendChartData(ttm),options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
   );
 }
 
@@ -312,7 +379,7 @@ function PeriodBreakdownChart({summary}){
 function TransactionRow({t,categories,onUpdate,onCreateRule,selected,onToggleSelect}){
   const categoryName=(categories.find(c=>c.id===t.categoryId)||{}).name||'';
   async function createRule(){
-    const pattern=window.prompt('Categorize future transactions containing this text as "'+categoryName+'" (you can use * for any characters and ? for one):',t.description);
+    const pattern=window.prompt('Categorize future transactions containing this text as "'+categoryName+'".\n\nKeep it short and payee-specific (e.g. just the business name) — the full description often has a one-time reference number that won\'t match other transactions from the same payee. * matches any characters, ? matches one.',suggestRulePattern(t.description));
     if(!pattern)return;
     await onCreateRule(pattern,t.categoryId);
   }
@@ -454,11 +521,12 @@ function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onEdi
         h('input',{className:'form-input',style:{flex:1,margin:0},placeholder:'New category name',value:newName,onChange:e=>setNewName(e.target.value),onKeyDown:e=>e.key==='Enter'&&add()}),
         h('button',{className:'btn btn-gold',onClick:add},'Add')
       ),
-      rules.length>0&&h('div',null,
+      h('div',null,
         h('div',{className:'form-label'},'Categorization rules'),
-        h('div',{className:'muted',style:{marginBottom:8}},'* matches any characters, ? matches exactly one — e.g. "COSTCO*" or "SQ ?THE BARN".'),
+        h('div',{className:'muted',style:{marginBottom:8}},'* matches any characters, ? matches exactly one — e.g. "COSTCO*" or "SQ ?THE BARN". Keep patterns short and payee-specific — a full transaction description often has a one-time reference number that won\'t match other transactions from the same payee.'),
         ruleError&&h('div',{className:'alert alert-danger'},ruleError),
-        h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
+        rules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},'No rules yet — create one from the Research Unknown Payees panel, or the "+Rule" button on a transaction below.'),
+        rules.length>0&&h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
           h('table',null,
             h('tbody',null,rules.map(r=>h('tr',{key:r.id},
               h('td',null,editingRule&&editingRule.id===r.id
@@ -516,7 +584,11 @@ function PayeeRow({payee,categories,onResearched}){
     if(!category)return;
     setBusy(true);setError('');
     try{
-      await api.post('/api/expenditure/category-rules',{pattern,categoryId:category,applyToExisting:true});
+      const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId:category,applyToExisting:true});
+      // Always stated, including zero — this payee's own transaction(s) always count
+      // (they're what put it in this list), but a pattern edited down to something too
+      // narrow could still fail to catch every one of them.
+      window.alert(`Rule saved. Re-categorized ${res.reclassified} transaction${res.reclassified===1?'':'s'} matching "${pattern}".`);
       setDone(true);
       onResearched();
     }catch(err){setError(err.message);}
@@ -555,7 +627,7 @@ function ManualRuleForm({categories,onAdd}){
     setBusy(true);setError('');setMessage('');
     try{
       const res=await onAdd(pattern.trim(),categoryId);
-      setMessage(`Rule saved.${res.reclassified?' Re-categorized '+res.reclassified+' matching transaction'+(res.reclassified===1?'':'s')+'.':''}`);
+      setMessage(`Rule saved. Re-categorized ${res.reclassified} matching transaction${res.reclassified===1?'':'s'}.${res.reclassified===0?' If you expected a match, double-check the pattern actually appears in that payee\'s description.':''}`);
       setPattern('');setCategoryId('');
     }catch(err){setError(err.message);}
     setBusy(false);
@@ -663,11 +735,13 @@ function ExpenditureApp({ledger}){
     api.get('/api/expenditure/categories',{signal}).then(setCategories).catch(()=>{});
     api.get('/api/expenditure/transactions?'+query(),{signal}).then(setTransactions).catch(()=>{});
     api.get('/api/expenditure/summary?'+query(),{signal}).then(setSummary).catch(()=>{});
-    // Trailing 12 months ignores whatever date range is picked above (that's the whole
-    // point — a stable reference view) but still respects payee/amount/category, via
-    // query()'s own filtersRef read, since only dateFrom/dateTo are overridden here.
-    const trailing=datePresetRange('last12Months');
-    api.get('/api/expenditure/summary?'+query({dateFrom:trailing.from,dateTo:trailing.to}),{signal}).then(setTrailing12Summary).catch(()=>{});
+    // Trailing 12 months is a ROLLING total (each point = that month plus the preceding
+    // 11 — see trailingTwelveMonthTotals), computed client-side from the full available
+    // history, so this fetches with NO date bound at all (clearing whatever range is
+    // picked above) rather than just the last 12 calendar months — a rolling window
+    // needs everything before it too. Still respects payee/amount/category filters,
+    // via query()'s own filtersRef read, since only dateFrom/dateTo are cleared here.
+    api.get('/api/expenditure/summary?'+query({dateFrom:'',dateTo:''}),{signal}).then(setTrailing12Summary).catch(()=>{});
     if(compareModeRef.current&&(f.compareDateFrom||f.compareDateTo)){
       const q2=new URLSearchParams();
       if(f.compareDateFrom)q2.set('dateFrom',f.compareDateFrom);
@@ -738,7 +812,10 @@ function ExpenditureApp({ledger}){
   async function createRuleFromTransaction(pattern,categoryId){
     const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
     load();loadRules();
-    window.alert(`Rule saved.${res.reclassified?' Re-categorized '+res.reclassified+' other transaction'+(res.reclassified===1?'':'s')+' that matched.':''}`);
+    // Always state the count, including zero — a silently-omitted "0 matched" reads as
+    // success when the pattern (e.g. one that still has a per-transaction reference
+    // number in it) actually never generalized to anything else.
+    window.alert(`Rule saved. Re-categorized ${res.reclassified} other transaction${res.reclassified===1?'':'s'} that matched.${res.reclassified===0?' If you expected more, the pattern may be too specific (e.g. it still includes a one-time reference number) — edit it from Manage Categories & Rules.':''}`);
   }
 
   function downloadPdf(){
@@ -749,13 +826,13 @@ function ExpenditureApp({ledger}){
   return h('div',{className:'page'},
     h(ImportPanel,{onImported:load}),
     h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
-    h('div',{className:'card no-print',style:{display:'flex',gap:8}},
+    h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap'}},
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
       h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
       h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
       h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
-      h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories')
+      h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories & Rules')
     ),
     compareMode&&compareSummary
       ?h('div',{className:'two-col'},
