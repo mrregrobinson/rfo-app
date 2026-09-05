@@ -14,6 +14,7 @@ process.env.IC_DB_PATH = tmpDbPath;
 
 const db = require('../server/db');
 const registerExpenditureRoutes = require('../server/expenditure');
+const { DEFAULT_EXCLUSION_RULES } = require('../server/expenditure-defaults');
 
 const USER_ID = 'test-user';
 const LEDGER_ID = 'test-ledger';
@@ -25,6 +26,15 @@ const txnIds = [];
 db.prepare("INSERT INTO users (id, name, role, initials, color) VALUES (?, 'Test User', 'Required', 'TU', '#000000')").run(USER_ID);
 db.prepare('INSERT INTO expenditure_ledgers (id, name, created_at) VALUES (?, ?, ?)').run(LEDGER_ID, 'Test Ledger', new Date().toISOString());
 db.prepare('INSERT INTO expenditure_ledger_members (ledger_id, user_id, role) VALUES (?, ?, ?)').run(LEDGER_ID, USER_ID, 'admin');
+// A ledger created directly like this (rather than through seed.js or an already-existing
+// row migration 024 could backfill) starts with zero exclusion rules — mirror what a real
+// ledger gets so reclassify/import behavior in these tests matches production.
+DEFAULT_EXCLUSION_RULES.forEach((rule, i) => {
+  db.prepare(
+    `INSERT INTO expenditure_exclusion_rules (id, ledger_id, pattern, match_type, direction, account_type, priority, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?)`
+  ).run(`${LEDGER_ID}-excl-${i}`, LEDGER_ID, rule.pattern, rule.matchType, rule.direction, rule.accountType, new Date().toISOString());
+});
 categoryAId = crypto.randomUUID();
 categoryBId = crypto.randomUUID();
 const transfersId = crypto.randomUUID();

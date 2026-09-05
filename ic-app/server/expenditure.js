@@ -20,55 +20,49 @@ const { buildReportPdf } = require('./expenditure-report');
 const FX_PAIRS = { USD: 'USDCAD', EUR: 'EURCAD', GBP: 'GBPCAD' };
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 
+// Shared substring/regex(+wildcard) matcher used by both exclusion rules and category
+// rules — a rule "matches" the same way regardless of which kind it is. 'substring' also
+// understands the */? wildcard convention from the payee search filter ("COST*" or
+// "SQ ?THE BARN"); plain text with neither character behaves as a straightforward
+// substring match.
+function matchesRule(description, rule) {
+  if (!description) return false;
+  if (rule.match_type === 'regex') {
+    try { return new RegExp(rule.pattern, 'i').test(description); } catch { return false; }
+  }
+  if (/[*?]/.test(rule.pattern)) {
+    try { return wildcardToRegExp(rule.pattern).test(description); } catch { return false; }
+  }
+  return description.toLowerCase().includes(rule.pattern.toLowerCase());
+}
+
 // A transaction description is treated as a transfer/non-expenditure item (and excluded
 // from spending totals, though still stored and visible — see the build spec's
-// "Transfer / non-expenditure detection" section) if it matches one of the internal-
-// transfer patterns below, or is income (interest, payroll/salary, dividends — anything
-// that isn't a transfer between the household's own accounts but is still out of scope
-// for a spending tracker) and the amount is actually money coming IN, or — on the credit
-// card only — is a negative amount whose description reads as a payment (paying down the
-// card from chequing; the actual purchases behind that payment already appear as their
-// own line items, so excluding the payment avoids double counting). A refund/credit for
-// a returned purchase is a negative amount that does NOT mention "payment" and stays a
-// real (negative) expenditure.
+// "Transfer / non-expenditure detection" section) if it matches one of the ledger's own
+// exclusion rules (expenditure_exclusion_rules — user-managed, seeded from
+// server/expenditure-defaults.js; see migration 024's history for why this used to be a
+// hardcoded pattern list). Each rule optionally gates on direction ('negative' = only
+// when money is coming IN, so an outgoing payment that happens to mention "payroll" by
+// coincidence isn't swept up as income; internal-transfer-style rules legitimately go
+// either direction, per the real statement data) and accountType ('credit_card' scopes
+// the payment-detection rule to the card only, since "payment" means something else on
+// chequing/e-Transfer descriptions).
 //
-// The amount<0 guard on income patterns (but not on the internal-transfer patterns,
-// which legitimately go either direction — see the real statement data: an "Account
-// transfer" shows up as both a deposit and a withdrawal) exists so an outgoing payment
-// that happens to mention one of these words by coincidence (e.g. paying a payroll-
-// processing vendor) isn't swept up as if it were income.
-//
-// Deliberately NOT matched here: e-Transfers to a named vendor/person for real goods or
-// services (landscaping, contractors, etc.) — those are legitimate spending even though
-// they move via e-Transfer, and only an "internal transfer to your own account" framing
-// should be excluded. Since a statement description alone can't always distinguish "sent
-// to my own other account" from "sent to a vendor," this errs toward keeping an
-// ambiguous e-Transfer as a categorized expenditure rather than silently excluding real
-// spending — see the build spec for the reasoning. Anything this misses either way is
-// correctable per-transaction (the "excl." checkbox, individually or in bulk via
-// PUT /api/expenditure/transactions/bulk) without waiting on a code change.
-const INTERNAL_TRANSFER_PATTERNS = [
-  /^online banking transfer/i,
-  /^online banking payment/i,
-  /^account transfer/i,
-  /^funds transfer/i,
-  /^investment /i,
-];
-const INCOME_PATTERNS = [
-  /^deposit interest/i,
-  /^interest /i,
-  /payroll/i,
-  /\bsalary\b/i,
-  /^direct deposit/i,
-  /\bdividend\b/i,
-];
-
-function isTransferOrIncome(description, accountType, amount) {
+// Deliberately excluded from the *default* rule set (though a household can always add
+// its own): e-Transfers to a named vendor/person for real goods or services — those are
+// legitimate spending even though they move via e-Transfer, and only an "internal
+// transfer to your own account" framing should be excluded by default. Anything the
+// current rules miss either way is correctable per-transaction (the "excl." checkbox,
+// individually or in bulk via PUT /api/expenditure/transactions/bulk) without waiting on
+// a rule change.
+function isTransferOrIncome(description, accountType, amount, exclusionRules) {
   const desc = (description || '').trim();
-  if (INTERNAL_TRANSFER_PATTERNS.some((re) => re.test(desc))) return true;
-  if (amount < 0 && INCOME_PATTERNS.some((re) => re.test(desc))) return true;
-  if (accountType === 'credit_card' && amount < 0 && /payment/i.test(desc)) return true;
-  return false;
+  return (exclusionRules || []).some((rule) => {
+    if (rule.account_type && rule.account_type !== 'any' && rule.account_type !== accountType) return false;
+    if (rule.direction === 'negative' && !(amount < 0)) return false;
+    if (rule.direction === 'positive' && !(amount > 0)) return false;
+    return matchesRule(desc, rule);
+  });
 }
 
 // Recognizes this household's real RBC statement filenames (see the build spec) and
@@ -315,21 +309,6 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     res.json({ ok: true });
   });
 
-  function matchesRule(description, rule) {
-    if (!description) return false;
-    if (rule.match_type === 'regex') {
-      try { return new RegExp(rule.pattern, 'i').test(description); } catch { return false; }
-    }
-    // 'substring' also understands the same */? wildcard convention as the payee search
-    // filter — "COST*" or "SQ ?THE BARN" — while plain text with neither character still
-    // behaves as a straightforward substring match, exactly as every rule already
-    // created behaves today.
-    if (/[*?]/.test(rule.pattern)) {
-      try { return wildcardToRegExp(rule.pattern).test(description); } catch { return false; }
-    }
-    return description.toLowerCase().includes(rule.pattern.toLowerCase());
-  }
-
   // Highest-priority matching rule wins; ties broken by whichever rule was created most
   // recently (a later, presumably more specific correction should win over an older,
   // broader one at the same priority).
@@ -348,6 +327,87 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   function transfersCategoryId(ledgerId) {
     return db.prepare("SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = 'Transfers'").get(ledgerId)?.id || null;
   }
+
+  // ---- exclusion rules (transfer/income detection) — managed in parallel to category
+  // rules: list/add/edit/delete, with the same immediate-reclassify-on-write behaviour.
+  // See isTransferOrIncome's header comment and server/expenditure-defaults.js.
+
+  function getExclusionRules(ledgerId) {
+    return db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE ledger_id = ? ORDER BY priority DESC, created_at').all(ledgerId);
+  }
+
+  function exclusionRuleRowToJson(row) {
+    return { id: row.id, pattern: row.pattern, matchType: row.match_type, direction: row.direction, accountType: row.account_type, priority: row.priority };
+  }
+
+  const VALID_DIRECTIONS = ['any', 'negative', 'positive'];
+  const VALID_ACCOUNT_TYPES = ['any', 'chequing', 'credit_card'];
+
+  app.get('/api/expenditure/exclusion-rules', requireAuth, requireLedger, (req, res) => {
+    res.json(getExclusionRules(req.expenditureLedger.id).map(exclusionRuleRowToJson));
+  });
+
+  // Excludes every non-transfer transaction the (new or edited) rule matches, the same
+  // "apply everywhere it matches, not just going forward" behaviour category rules use —
+  // see that endpoint's comment for the reasoning.
+  function reapplyExclusionRule(ledgerId, rule, userId) {
+    const transfersId = transfersCategoryId(ledgerId);
+    const candidates = db.prepare(
+      `SELECT t.id, t.raw_description, t.amount, a.account_type
+       FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id
+       WHERE a.ledger_id = ? AND t.is_transfer = 0`
+    ).all(ledgerId);
+    let excluded = 0;
+    for (const c of candidates) {
+      if (isTransferOrIncome(c.raw_description, c.account_type, c.amount, [rule])) {
+        db.prepare('UPDATE expenditure_transactions SET is_transfer = 1, category_id = ? WHERE id = ?').run(transfersId, c.id);
+        excluded++;
+      }
+    }
+    if (excluded > 0) logAudit({ userId, action: 'expenditure.exclusion_rule_applied', entityType: 'expenditure_exclusion_rule', entityId: rule.id, details: { excluded } });
+    return excluded;
+  }
+
+  app.post('/api/expenditure/exclusion-rules', requireAuth, requireLedger, (req, res) => {
+    const b = req.body || {};
+    if (!b.pattern) return res.status(400).json({ error: 'pattern is required' });
+    const direction = VALID_DIRECTIONS.includes(b.direction) ? b.direction : 'any';
+    const accountType = VALID_ACCOUNT_TYPES.includes(b.accountType) ? b.accountType : 'any';
+    const matchType = b.matchType === 'regex' ? 'regex' : 'substring';
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO expenditure_exclusion_rules (id, ledger_id, pattern, match_type, direction, account_type, priority, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, req.expenditureLedger.id, b.pattern, matchType, direction, accountType, Number(b.priority) || 0, now);
+    const rule = db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE id = ?').get(id);
+    const excluded = b.applyToExisting ? reapplyExclusionRule(req.expenditureLedger.id, rule, req.session.userId) : 0;
+    res.status(201).json({ rule: exclusionRuleRowToJson(rule), excluded });
+  });
+
+  app.put('/api/expenditure/exclusion-rules/:id', requireAuth, requireLedger, (req, res) => {
+    const row = db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
+    if (!row) return res.status(404).json({ error: 'Rule not found' });
+    const b = req.body || {};
+    const pattern = b.pattern !== undefined ? String(b.pattern).trim() : row.pattern;
+    if (!pattern) return res.status(400).json({ error: 'pattern cannot be empty' });
+    const direction = b.direction !== undefined ? (VALID_DIRECTIONS.includes(b.direction) ? b.direction : 'any') : row.direction;
+    const accountType = b.accountType !== undefined ? (VALID_ACCOUNT_TYPES.includes(b.accountType) ? b.accountType : 'any') : row.account_type;
+    const matchType = b.matchType !== undefined ? (b.matchType === 'regex' ? 'regex' : 'substring') : row.match_type;
+    const priority = b.priority !== undefined ? Number(b.priority) || 0 : row.priority;
+    db.prepare('UPDATE expenditure_exclusion_rules SET pattern = ?, match_type = ?, direction = ?, account_type = ?, priority = ? WHERE id = ?')
+      .run(pattern, matchType, direction, accountType, priority, req.params.id);
+    const rule = db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE id = ?').get(req.params.id);
+    const excluded = b.applyToExisting ? reapplyExclusionRule(req.expenditureLedger.id, rule, req.session.userId) : 0;
+    res.json({ rule: exclusionRuleRowToJson(rule), excluded });
+  });
+
+  app.delete('/api/expenditure/exclusion-rules/:id', requireAuth, requireLedger, (req, res) => {
+    const row = db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
+    if (!row) return res.status(404).json({ error: 'Rule not found' });
+    db.prepare('DELETE FROM expenditure_exclusion_rules WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  });
 
   // ---- payee research (web search, opt-in per payee — never run automatically) ----
 
@@ -408,6 +468,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   // isn't reset to Unknown just because no rule exists for it).
   app.post('/api/expenditure/reclassify', requireAuth, requireLedger, (req, res) => {
     const transfersId = transfersCategoryId(req.expenditureLedger.id);
+    const exclusionRules = getExclusionRules(req.expenditureLedger.id);
     const rows = db.prepare(
       `SELECT t.id, t.raw_description, t.amount, t.category_id, a.account_type
        FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id
@@ -416,7 +477,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     const excludedExamples = [];
     let recategorized = 0;
     for (const r of rows) {
-      if (isTransferOrIncome(r.raw_description, r.account_type, r.amount)) {
+      if (isTransferOrIncome(r.raw_description, r.account_type, r.amount, exclusionRules)) {
         db.prepare('UPDATE expenditure_transactions SET is_transfer = 1, category_id = ? WHERE id = ?').run(transfersId, r.id);
         excludedExamples.push(r.raw_description);
         continue;
@@ -583,6 +644,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
 
     const unknownId = unknownCategoryId(ledgerId);
     const transfersId = transfersCategoryId(ledgerId);
+    const exclusionRules = getExclusionRules(ledgerId);
     let transferCount = 0;
 
     for (const t of transactions) {
@@ -601,7 +663,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
           }
         }
       }
-      const excluded = isTransferOrIncome(t.description, account.account_type, amount);
+      const excluded = isTransferOrIncome(t.description, account.account_type, amount, exclusionRules);
       if (excluded) transferCount++;
       const categoryId = excluded ? transfersId : (categorize(ledgerId, t.description) || unknownId);
       db.prepare(

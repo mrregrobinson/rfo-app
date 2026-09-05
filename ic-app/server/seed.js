@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const db = require('./db');
 const { hashSecret } = require('./auth');
+const { DEFAULT_EXCLUSION_RULES } = require('./expenditure-defaults');
 
 const IC_MEMBERS = [
   { id: 'reg', name: 'Reg Robinson', role: 'Required', initials: 'RR', color: '#1B2A4A', isAdmin: true },
@@ -179,6 +180,16 @@ function ensureSeeded() {
     // build spec) but not counted as expenditure — is_expenditure=0 keeps it out of
     // spending totals while still selectable as a category for anything not auto-detected.
     db.prepare('INSERT INTO expenditure_categories (id, ledger_id, name, is_expenditure, sort_order) VALUES (?, ?, ?, 0, ?)').run(`${ledgerId}-transfers`, ledgerId, 'Transfers', STARTER_CATEGORIES.length);
+    // Starter transfer/income exclusion rules — same canonical list migration 024 backfills
+    // onto a ledger that already existed before this feature did; a brand-new ledger (this
+    // one, on a fresh install) is seeded here instead, since migrations run before this
+    // function ever gets a chance to create one.
+    DEFAULT_EXCLUSION_RULES.forEach((rule, i) => {
+      db.prepare(
+        `INSERT INTO expenditure_exclusion_rules (id, ledger_id, pattern, match_type, direction, account_type, priority, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`
+      ).run(`${ledgerId}-excl-${i}`, ledgerId, rule.pattern, rule.matchType, rule.direction, rule.accountType, eNow);
+    });
     console.log('Seeded Household Expenditures ledger for Reg & Sheri-Dawn');
   }
 }
