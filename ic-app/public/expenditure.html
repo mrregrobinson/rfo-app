@@ -491,49 +491,63 @@ function ExpenditureApp({ledger}){
 
   function loadRules(){api.get('/api/expenditure/category-rules').then(setRules).catch(()=>{});}
 
+  // "Latest ref" pattern: kept in sync on every render (not inside an effect, so it's
+  // never a tick behind) so that query()/load() always see the CURRENT filters/compareMode
+  // no matter which render's closure actually invokes them. This matters because
+  // ImportPanel's background polling loop (see its pollJob) holds onto whichever
+  // `onImported` function instance existed when that specific poll tick's closure was
+  // created — if load() closed over `filters` directly, an import still polling from
+  // before the user touched the filters would keep calling an old, stale-filtered load()
+  // every 3 seconds for as long as it keeps running, silently overwriting a correctly
+  // filtered view with an unfiltered one. Reading filters/compareMode through a ref
+  // instead means every call to load(), regardless of which closure/generation invoked
+  // it, always fetches against whatever is actually on screen right now.
+  const filtersRef=useRef(filters);filtersRef.current=filters;
+  const compareModeRef=useRef(compareMode);compareModeRef.current=compareMode;
+
   const query=useCallback((extra)=>{
+    const f=filtersRef.current;
     const q=new URLSearchParams();
-    if(filters.dateFrom)q.set('dateFrom',filters.dateFrom);
-    if(filters.dateTo)q.set('dateTo',filters.dateTo);
-    if(filters.payee)q.set('payee',filters.payee);
-    if(filters.amountMin!=='')q.set('amountMin',filters.amountMin);
-    if(filters.amountMax!=='')q.set('amountMax',filters.amountMax);
-    if(filters.categoryIds.length)q.set('categoryIds',filters.categoryIds.join(','));
+    if(f.dateFrom)q.set('dateFrom',f.dateFrom);
+    if(f.dateTo)q.set('dateTo',f.dateTo);
+    if(f.payee)q.set('payee',f.payee);
+    if(f.amountMin!=='')q.set('amountMin',f.amountMin);
+    if(f.amountMax!=='')q.set('amountMax',f.amountMax);
+    if(f.categoryIds.length)q.set('categoryIds',f.categoryIds.join(','));
     Object.entries(extra||{}).forEach(([k,v])=>q.set(k,v));
     return q.toString();
-  },[filters]);
+  },[]);
 
-  // Every filter keystroke (payee search, amount range, etc.) calls load() again, which
-  // fires a fresh set of requests before any earlier ones have necessarily resolved. An
-  // in-flight request for an *earlier, less-specific* filter state (e.g. the payee field
-  // holding just "P" while the user is mid-way through typing "PAYROLL") can take longer
-  // — a broader filter often means a bigger result set — and land AFTER the response for
-  // the final, more-specific filter, silently overwriting the correctly-filtered table
-  // with a stale, broader one. Aborting the previous request set every time load() runs
-  // closes that race: a superseded request is cancelled outright rather than left to
-  // resolve and clobber newer state whenever it happens to arrive.
+  // Also guards against a second, narrower race: every filter keystroke calls load()
+  // again, and an in-flight request for an *earlier, less-specific* filter state (e.g.
+  // the payee field holding just "P" while the user is mid-word typing "PAYROLL") can
+  // take longer — a broader filter often means a bigger result set — and land AFTER the
+  // response for the final, more-specific filter. Aborting the previous request set
+  // every time load() runs closes that race too: a superseded request is cancelled
+  // outright rather than left to resolve and clobber newer state whenever it arrives.
   const loadAbortRef=useRef(null);
-  function load(){
+  const load=useCallback(()=>{
     if(loadAbortRef.current)loadAbortRef.current.abort();
     const controller=new AbortController();
     loadAbortRef.current=controller;
     const signal=controller.signal;
+    const f=filtersRef.current;
     api.get('/api/expenditure/categories',{signal}).then(setCategories).catch(()=>{});
     api.get('/api/expenditure/transactions?'+query(),{signal}).then(setTransactions).catch(()=>{});
     api.get('/api/expenditure/summary?'+query(),{signal}).then(setSummary).catch(()=>{});
-    if(compareMode&&(filters.compareDateFrom||filters.compareDateTo)){
+    if(compareModeRef.current&&(f.compareDateFrom||f.compareDateTo)){
       const q2=new URLSearchParams();
-      if(filters.compareDateFrom)q2.set('dateFrom',filters.compareDateFrom);
-      if(filters.compareDateTo)q2.set('dateTo',filters.compareDateTo);
-      if(filters.payee)q2.set('payee',filters.payee);
-      if(filters.amountMin!=='')q2.set('amountMin',filters.amountMin);
-      if(filters.amountMax!=='')q2.set('amountMax',filters.amountMax);
-      if(filters.categoryIds.length)q2.set('categoryIds',filters.categoryIds.join(','));
+      if(f.compareDateFrom)q2.set('dateFrom',f.compareDateFrom);
+      if(f.compareDateTo)q2.set('dateTo',f.compareDateTo);
+      if(f.payee)q2.set('payee',f.payee);
+      if(f.amountMin!=='')q2.set('amountMin',f.amountMin);
+      if(f.amountMax!=='')q2.set('amountMax',f.amountMax);
+      if(f.categoryIds.length)q2.set('categoryIds',f.categoryIds.join(','));
       api.get('/api/expenditure/summary?'+q2.toString(),{signal}).then(setCompareSummary).catch(()=>{});
     }else{
       setCompareSummary(null);
     }
-  }
+  },[]);
   useEffect(load,[filters,compareMode]);
   // A stale selection from a previous filter view (e.g. selecting a payee search's
   // results, then changing the search) shouldn't silently carry over to a bulk action
