@@ -58,7 +58,7 @@ tr:hover td{background:var(--bg)}
 const {useState,useEffect,useRef,useCallback}=React;
 const h=React.createElement;
 const api={
-  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async get(url,opts){const r=await fetch(url,{credentials:'same-origin',...(opts||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
   async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
   post(url,body){return api.send('POST',url,body)},
   put(url,body){return api.send('PUT',url,body)},
@@ -503,10 +503,24 @@ function ExpenditureApp({ledger}){
     return q.toString();
   },[filters]);
 
+  // Every filter keystroke (payee search, amount range, etc.) calls load() again, which
+  // fires a fresh set of requests before any earlier ones have necessarily resolved. An
+  // in-flight request for an *earlier, less-specific* filter state (e.g. the payee field
+  // holding just "P" while the user is mid-way through typing "PAYROLL") can take longer
+  // — a broader filter often means a bigger result set — and land AFTER the response for
+  // the final, more-specific filter, silently overwriting the correctly-filtered table
+  // with a stale, broader one. Aborting the previous request set every time load() runs
+  // closes that race: a superseded request is cancelled outright rather than left to
+  // resolve and clobber newer state whenever it happens to arrive.
+  const loadAbortRef=useRef(null);
   function load(){
-    api.get('/api/expenditure/categories').then(setCategories).catch(()=>{});
-    api.get('/api/expenditure/transactions?'+query()).then(setTransactions).catch(()=>{});
-    api.get('/api/expenditure/summary?'+query()).then(setSummary).catch(()=>{});
+    if(loadAbortRef.current)loadAbortRef.current.abort();
+    const controller=new AbortController();
+    loadAbortRef.current=controller;
+    const signal=controller.signal;
+    api.get('/api/expenditure/categories',{signal}).then(setCategories).catch(()=>{});
+    api.get('/api/expenditure/transactions?'+query(),{signal}).then(setTransactions).catch(()=>{});
+    api.get('/api/expenditure/summary?'+query(),{signal}).then(setSummary).catch(()=>{});
     if(compareMode&&(filters.compareDateFrom||filters.compareDateTo)){
       const q2=new URLSearchParams();
       if(filters.compareDateFrom)q2.set('dateFrom',filters.compareDateFrom);
@@ -515,7 +529,7 @@ function ExpenditureApp({ledger}){
       if(filters.amountMin!=='')q2.set('amountMin',filters.amountMin);
       if(filters.amountMax!=='')q2.set('amountMax',filters.amountMax);
       if(filters.categoryIds.length)q2.set('categoryIds',filters.categoryIds.join(','));
-      api.get('/api/expenditure/summary?'+q2.toString()).then(setCompareSummary).catch(()=>{});
+      api.get('/api/expenditure/summary?'+q2.toString(),{signal}).then(setCompareSummary).catch(()=>{});
     }else{
       setCompareSummary(null);
     }
