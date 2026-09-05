@@ -124,6 +124,20 @@ function trendChartData(byMonth){
   return {labels:months,datasets:[{label:'Spend (CAD)',data:months.map(m=>byMonth[m]),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,0.15)',fill:true,tension:.2}]};
 }
 
+// Re-buckets the same by-month totals the API already returns into coarser periods —
+// no separate endpoint or query needed. Keys sort correctly as plain strings ("2026 Q1"
+// < "2026 Q2" < ... < "2027 Q1") since years are always 4 digits and quarters 1-4.
+function bucketByPeriod(byMonth,granularity){
+  if(granularity==='month')return byMonth||{};
+  const result={};
+  Object.entries(byMonth||{}).forEach(([monthKey,amount])=>{
+    const [year,month]=monthKey.split('-').map(Number);
+    const key=granularity==='year'?String(year):`${year} Q${Math.ceil(month/3)}`;
+    result[key]=(result[key]||0)+amount;
+  });
+  return result;
+}
+
 // ---- import ----
 function ImportPanel({onImported}){
   const [busy,setBusy]=useState(false);const [progress,setProgress]=useState(null);const [results,setResults]=useState(null);const [error,setError]=useState('');
@@ -248,6 +262,44 @@ function SummaryBlock({label,summary,dateFrom,dateTo}){
     h('div',{className:'muted',style:{marginBottom:10}},`${summary.count} transaction${summary.count===1?'':'s'}`),
     Object.keys(summary.byCategory).length>0&&h(ChartCanvas,{type:'bar',data:categoryChartData(summary.byCategory),options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}}),
     Object.keys(summary.byMonth).length>1&&h('div',{style:{marginTop:14}},h(ChartCanvas,{type:'line',data:trendChartData(summary.byMonth),options:{plugins:{legend:{display:false}}}}))
+  );
+}
+
+// Always shows the trailing 12 months, independent of whatever date range is selected
+// in the filters above — a stable month-over-month reference view rather than something
+// you have to remember to switch the main filter to "Last 12 months" to see. Still
+// respects the category/payee/amount filters (so filtering to one category shows that
+// category's trailing 12-month trend), just not whatever date range is currently picked.
+function Trailing12MonthsChart({summary}){
+  if(!summary||Object.keys(summary.byMonth||{}).length===0)return null;
+  return h('div',{className:'card'},
+    h('div',{className:'section-title'},'Trailing 12 Months'),
+    h('div',{className:'muted',style:{marginBottom:10}},`Total: ${fmtCAD(summary.total)}`),
+    h(ChartCanvas,{type:'line',data:trendChartData(summary.byMonth),options:{plugins:{legend:{display:false}}}})
+  );
+}
+
+// Re-buckets whatever date range is currently selected in the filters (Period A) into
+// quarters or years instead of months — useful for seeing a multi-year shape (pick "All
+// time" in the quick-range dropdown, then Year here) without a separate query.
+function PeriodBreakdownChart({summary}){
+  const [granularity,setGranularity]=useState('quarter');
+  if(!summary||Object.keys(summary.byMonth||{}).length===0)return null;
+  const bucketed=bucketByPeriod(summary.byMonth,granularity);
+  // trendChartData's fill colour is tuned for a translucent line-chart fill, not a bar
+  // — solid teal here instead, matching the category breakdown bar chart's colour.
+  const data=trendChartData(bucketed);
+  data.datasets[0].backgroundColor='#2A7D7B';
+  data.datasets[0].borderColor='#2A7D7B';
+  return h('div',{className:'card'},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+      h('div',{className:'section-title',style:{marginBottom:0}},'Spending by Period'),
+      h('div',{style:{display:'flex',gap:6}},
+        h('button',{className:'btn btn-sm '+(granularity==='quarter'?'btn-teal':'btn-outline'),onClick:()=>setGranularity('quarter')},'Quarter'),
+        h('button',{className:'btn btn-sm '+(granularity==='year'?'btn-teal':'btn-outline'),onClick:()=>setGranularity('year')},'Year')
+      )
+    ),
+    h(ChartCanvas,{type:'bar',data,options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
   );
 }
 
@@ -558,6 +610,7 @@ function ExpenditureApp({ledger}){
   const [compareMode,setCompareMode]=useState(false);
   const [summary,setSummary]=useState(null);
   const [compareSummary,setCompareSummary]=useState(null);
+  const [trailing12Summary,setTrailing12Summary]=useState(null);
   const [transactions,setTransactions]=useState([]);
   const [showEmail,setShowEmail]=useState(false);
   const [showCategories,setShowCategories]=useState(false);
@@ -610,6 +663,11 @@ function ExpenditureApp({ledger}){
     api.get('/api/expenditure/categories',{signal}).then(setCategories).catch(()=>{});
     api.get('/api/expenditure/transactions?'+query(),{signal}).then(setTransactions).catch(()=>{});
     api.get('/api/expenditure/summary?'+query(),{signal}).then(setSummary).catch(()=>{});
+    // Trailing 12 months ignores whatever date range is picked above (that's the whole
+    // point — a stable reference view) but still respects payee/amount/category, via
+    // query()'s own filtersRef read, since only dateFrom/dateTo are overridden here.
+    const trailing=datePresetRange('last12Months');
+    api.get('/api/expenditure/summary?'+query({dateFrom:trailing.from,dateTo:trailing.to}),{signal}).then(setTrailing12Summary).catch(()=>{});
     if(compareModeRef.current&&(f.compareDateFrom||f.compareDateTo)){
       const q2=new URLSearchParams();
       if(f.compareDateFrom)q2.set('dateFrom',f.compareDateFrom);
@@ -705,6 +763,8 @@ function ExpenditureApp({ledger}){
           h('div',{className:'card'},h(SummaryBlock,{label:'Period B',summary:compareSummary,dateFrom:filters.compareDateFrom,dateTo:filters.compareDateTo}))
         )
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
+    h(Trailing12MonthsChart,{summary:trailing12Summary}),
+    h(PeriodBreakdownChart,{summary}),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule}),
