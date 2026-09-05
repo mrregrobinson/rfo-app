@@ -578,15 +578,24 @@ function ExpenditureApp({ledger}){
     load();
   }
 
-  // Re-applies the current transfer/income detection to everything already imported —
-  // for data brought in before a detection improvement (e.g. payroll/salary exclusion)
-  // existed. One-directional (only ever excludes, never un-excludes) and safe to run
-  // more than once.
+  // Re-applies the current transfer/income detection AND every existing category rule
+  // to everything already imported — for data brought in before a detection
+  // improvement existed, or categorized before a rule that now applies to it was
+  // created. Only ever excludes (never re-includes) and only ever recategorizes a
+  // transaction a rule actively matches (never resets an unmatched one to Unknown), so
+  // safe to run any time.
   async function cleanUpExistingData(){
-    if(!window.confirm('Re-check every existing transaction against the current transfer/income detection (e.g. payroll, salary, dividends)? This only ever excludes transactions that should be — it never re-includes anything, and every change stays visible and reversible in the table.'))return;
+    if(!window.confirm('Re-check every existing transaction against the current transfer/income detection and category rules? This only ever excludes transactions that should be excluded and recategorizes ones an existing rule matches — it never re-includes anything or resets an unmatched transaction, and every change stays visible and reversible in the table.'))return;
     const res=await api.post('/api/expenditure/reclassify',{});
     load();
-    window.alert(res.updated===0?'Nothing to clean up — everything already matches the current rules.':`Excluded ${res.updated} transaction${res.updated===1?'':'s'} as transfers/income:\n\n${res.examples.join('\n')}${res.updated>res.examples.length?'\n…and more':''}`);
+    if(res.excluded===0&&res.recategorized===0){
+      window.alert('Nothing to clean up — everything already matches the current rules.');
+      return;
+    }
+    const lines=[];
+    if(res.excluded>0)lines.push(`Excluded ${res.excluded} transaction${res.excluded===1?'':'s'} as transfers/income:\n${res.excludedExamples.join('\n')}${res.excluded>res.excludedExamples.length?'\n…and more':''}`);
+    if(res.recategorized>0)lines.push(`Recategorized ${res.recategorized} transaction${res.recategorized===1?'':'s'} to match an existing rule.`);
+    window.alert(lines.join('\n\n'));
   }
 
   async function createRuleFromTransaction(pattern,categoryId){
@@ -608,7 +617,7 @@ function ExpenditureApp({ledger}){
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
       h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
       h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
-      h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection'},'Clean Up Existing Data'),
+      h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
       h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories')
     ),
     compareMode&&compareSummary

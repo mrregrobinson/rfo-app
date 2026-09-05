@@ -335,31 +335,43 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     }
   });
 
-  // Re-applies the current transfer/income detection (isTransferOrIncome) to every
-  // transaction already imported under an older version of that logic — e.g. payroll/
-  // salary/dividend detection was added after some statements were already imported, so
-  // those deposits are sitting there uncategorized as if they were spending instead of
-  // being excluded like the rest of income. One-directional and safe to re-run any time:
-  // it only ever flips a transaction from included to excluded (never the reverse), since
-  // that's the only way detection logic has changed so far. Anything it excludes lands in
-  // the Transfers category and stays fully visible/reversible via the per-row "excl."
-  // checkbox, same as anything excluded at import time.
+  // Re-applies today's classification logic — both transfer/income detection
+  // (isTransferOrIncome) AND the current category rules (categorize) — to every
+  // transaction already in the ledger, catching up anything that was imported or
+  // categorized under an older version of either. Two concrete cases this fixes:
+  // (1) detection logic improves after data was already imported (e.g. payroll/salary
+  // exclusion added later); (2) a rule created after some matching transactions had
+  // already been auto- or manually categorized as something else — rule creation itself
+  // now reclassifies every match at the moment it's created (see POST .../category-rules
+  // above), but a rule created BEFORE that fix only ever touched ones sitting in
+  // Miscellaneous/Unknown, so anything it missed back then is still sitting wherever it
+  // was. Safe to re-run any time: a transaction only moves if isTransferOrIncome now
+  // excludes it (never un-excludes one) or a rule now actively disagrees with its current
+  // category (never touched if no rule matches at all, so an unmatched manual choice
+  // isn't reset to Unknown just because no rule exists for it).
   app.post('/api/expenditure/reclassify', requireAuth, requireLedger, (req, res) => {
     const transfersId = transfersCategoryId(req.expenditureLedger.id);
     const rows = db.prepare(
-      `SELECT t.id, t.raw_description, t.amount, a.account_type
+      `SELECT t.id, t.raw_description, t.amount, t.category_id, a.account_type
        FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id
        WHERE a.ledger_id = ? AND t.is_transfer = 0`
     ).all(req.expenditureLedger.id);
-    const changed = [];
+    const excludedExamples = [];
+    let recategorized = 0;
     for (const r of rows) {
       if (isTransferOrIncome(r.raw_description, r.account_type, r.amount)) {
         db.prepare('UPDATE expenditure_transactions SET is_transfer = 1, category_id = ? WHERE id = ?').run(transfersId, r.id);
-        changed.push(r.raw_description);
+        excludedExamples.push(r.raw_description);
+        continue;
+      }
+      const ruleCategoryId = categorize(req.expenditureLedger.id, r.raw_description);
+      if (ruleCategoryId && ruleCategoryId !== r.category_id) {
+        db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(ruleCategoryId, r.id);
+        recategorized++;
       }
     }
-    logAudit({ userId: req.session.userId, action: 'expenditure.reclassified', entityType: 'expenditure_ledger', entityId: req.expenditureLedger.id, details: { updated: changed.length } });
-    res.json({ updated: changed.length, examples: changed.slice(0, 20) });
+    logAudit({ userId: req.session.userId, action: 'expenditure.reclassified', entityType: 'expenditure_ledger', entityId: req.expenditureLedger.id, details: { excluded: excludedExamples.length, recategorized } });
+    res.json({ excluded: excludedExamples.length, excludedExamples: excludedExamples.slice(0, 20), recategorized });
   });
 
   // ---- import (zip or individual PDFs) ----

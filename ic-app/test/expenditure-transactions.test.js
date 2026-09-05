@@ -131,8 +131,9 @@ describe('POST /api/expenditure/reclassify', () => {
     const res = await fetch(`${baseUrl}/api/expenditure/reclassify`, { method: 'POST' });
     const body = await res.json();
     assert.equal(res.status, 200);
-    assert.equal(body.updated, 1);
-    assert.deepEqual(body.examples, ['PAYROLL DEP ACME CORP']);
+    assert.equal(body.excluded, 1);
+    assert.deepEqual(body.excludedExamples, ['PAYROLL DEP ACME CORP']);
+    assert.equal(body.recategorized, 0);
 
     const payroll = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(payrollId);
     assert.equal(payroll.is_transfer, 1);
@@ -140,13 +141,36 @@ describe('POST /api/expenditure/reclassify', () => {
 
     const grocery = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(groceryId);
     assert.equal(grocery.is_transfer, 0, 'ordinary spending must not be touched');
-    assert.equal(grocery.category_id, categoryAId, 'and its category must not change');
+    assert.equal(grocery.category_id, categoryAId, 'and its category must not change — no rule exists for it yet');
   });
 
   test('running it again is a no-op once everything is already reclassified', async () => {
     const res = await fetch(`${baseUrl}/api/expenditure/reclassify`, { method: 'POST' });
     const body = await res.json();
-    assert.equal(body.updated, 0);
+    assert.equal(body.excluded, 0);
+    assert.equal(body.recategorized, 0);
+  });
+
+  test('also re-applies existing category rules retroactively — the actual "clean up existing data" a user asked for after adding a rule', async () => {
+    // A rule created for "HERITAGE COOP" — matching the grocery transaction from the
+    // first test above, still sitting in categoryAId since no rule existed for it when
+    // reclassify last ran. Created WITHOUT applyToExisting, so it must not move on its
+    // own — this test is specifically about the separate /reclassify catch-up path, not
+    // rule-creation's own (already-covered) immediate reclassification.
+    const ruleRes = await fetch(`${baseUrl}/api/expenditure/category-rules`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern: 'HERITAGE COOP', categoryId: categoryBId }),
+    });
+    assert.equal((await ruleRes.json()).reclassified, 0);
+    const beforeReclassify = db.prepare('SELECT category_id FROM expenditure_transactions WHERE raw_description = ?').get('HERITAGE COOP GROC');
+    assert.equal(beforeReclassify.category_id, categoryAId, 'unchanged immediately after creating the rule, since applyToExisting was not set');
+
+    const res = await fetch(`${baseUrl}/api/expenditure/reclassify`, { method: 'POST' });
+    const body = await res.json();
+    assert.equal(body.recategorized, 1);
+
+    const afterReclassify = db.prepare('SELECT category_id FROM expenditure_transactions WHERE raw_description = ?').get('HERITAGE COOP GROC');
+    assert.equal(afterReclassify.category_id, categoryBId, 'reclassify should catch up the existing rule against existing data');
   });
 });
 
