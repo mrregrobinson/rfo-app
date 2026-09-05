@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { isTransferOrIncome, detectAccountFromFilename } = require('../server/expenditure');
+const { isTransferOrIncome, detectAccountFromFilename, payeeLikePattern } = require('../server/expenditure');
 
 describe('isTransferOrIncome', () => {
   test('an internal transfer between the household\'s own accounts is excluded', () => {
@@ -86,5 +86,29 @@ describe('detectAccountFromFilename', () => {
   test('an unrecognized filename returns null rather than guessing', () => {
     assert.equal(detectAccountFromFilename('some-other-bank-statement.pdf'), null);
     assert.equal(detectAccountFromFilename(''), null);
+  });
+});
+
+describe('payeeLikePattern', () => {
+  test('plain text with no wildcard becomes a substring search, same as before wildcards existed', () => {
+    assert.equal(payeeLikePattern('Costco'), '%Costco%');
+  });
+
+  test('* matches any run of characters', () => {
+    assert.equal(payeeLikePattern('COST*'), 'COST%');
+    assert.equal(payeeLikePattern('*COOP*'), '%COOP%');
+  });
+
+  test('? matches exactly one character', () => {
+    assert.equal(payeeLikePattern('SQ ?THE BARN'), 'SQ _THE BARN');
+  });
+
+  test('a literal %, _, or \\ in the search text is escaped, not treated as a SQL wildcard', () => {
+    assert.equal(payeeLikePattern('50% OFF'), '%50\\% OFF%');
+    assert.equal(payeeLikePattern('A_B'), '%A\\_B%');
+  });
+
+  test('escaping and user wildcards combine correctly in the same search', () => {
+    assert.equal(payeeLikePattern('50%*'), '50\\%%');
   });
 });

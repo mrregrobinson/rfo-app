@@ -55,8 +55,15 @@ function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 describe('POST /api/expenditure/import', () => {
   test('responds immediately with a jobId rather than blocking until extraction finishes', async () => {
+    // Asserting on a flag the mocked extraction sets when IT finishes — not on a
+    // wall-clock threshold — since an absolute-time assertion is inherently flaky under
+    // system load (e.g. running the whole suite at once, vs. this file alone) even
+    // though the actual property under test (the POST doesn't wait for extraction) never
+    // changes.
+    let extractionFinished = false;
     const extractMock = mock.method(claude, 'extractStatement', async () => {
       await delay(300); // stands in for a real multi-minute Claude call
+      extractionFinished = true;
       return {
         result: {
           periodStart: '2026-01-01', periodEnd: '2026-01-31',
@@ -67,18 +74,16 @@ describe('POST /api/expenditure/import', () => {
       };
     });
     try {
-      const startedAt = Date.now();
       const postRes = await fetch(`${baseUrl}/api/expenditure/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: [{ filename: 'R&S CAD Chequing 5000344 Statement-0344 2026-01-31.pdf', base64: 'ZmFrZQ==' }] }),
       });
-      const elapsed = Date.now() - startedAt;
       assert.equal(postRes.status, 202);
       const body = await postRes.json();
       assert.ok(body.jobId, 'should return a jobId');
       assert.equal(body.total, 1);
-      assert.ok(elapsed < 250, `POST should return well before the 300ms mocked extraction finishes (took ${elapsed}ms)`);
+      assert.equal(extractionFinished, false, 'POST should return before the mocked extraction finishes, not after');
 
       // Immediately after: the job should still be running, not yet reflecting the
       // extraction that's still in flight.

@@ -149,3 +149,59 @@ describe('POST /api/expenditure/reclassify', () => {
     assert.equal(body.updated, 0);
   });
 });
+
+describe('GET /api/expenditure/transactions — amount range and wildcard payee filters', () => {
+  const now = new Date().toISOString();
+  before(() => {
+    const rows = [
+      ['Costco Wholesale', 250],
+      ['Costco Gas Bar', 60],
+      ['SQ *THE BARN COUNTRY STORE', 45],
+      ['MICROSOFT#G173232359', 15.99],
+    ];
+    for (const [description, amount] of rows) {
+      db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-04-01', ?, ?, ?, 'CAD', ?, ?, 0, ?)`)
+        .run(crypto.randomUUID(), ACCOUNT_ID, STATEMENT_ID, description, description, amount, amount, categoryAId, now);
+    }
+  });
+
+  async function query(params) {
+    const r = await fetch(`${baseUrl}/api/expenditure/transactions?${new URLSearchParams(params)}`);
+    return r.json();
+  }
+
+  test('amountMin/amountMax filter on the CAD amount', async () => {
+    const overFifty = await query({ amountMin: '50' });
+    assert.ok(overFifty.some((t) => t.description === 'Costco Wholesale'));
+    assert.ok(!overFifty.some((t) => t.description === 'MICROSOFT#G173232359'));
+
+    // Checks presence/absence of specific rows rather than the exact result set, since
+    // the file's other pre-existing "Test payee" fixture rows (amount 50 each) also
+    // legitimately fall within this range and aren't this test's concern.
+    const between = await query({ amountMin: '20', amountMax: '60' });
+    const namesInRange = ['Costco Gas Bar', 'SQ *THE BARN COUNTRY STORE'];
+    for (const name of namesInRange) assert.ok(between.some((t) => t.description === name), `expected ${name} in range`);
+    assert.ok(!between.some((t) => t.description === 'Costco Wholesale'), 'above the max, should be excluded');
+    assert.ok(!between.some((t) => t.description === 'MICROSOFT#G173232359'), 'below the min, should be excluded');
+  });
+
+  test('a plain payee search with no wildcard matches as a substring, as before', async () => {
+    const results = await query({ payee: 'Costco' });
+    assert.deepEqual(results.map((t) => t.description).sort(), ['Costco Gas Bar', 'Costco Wholesale']);
+  });
+
+  test('* wildcard narrows a plain substring search to a prefix/suffix match', async () => {
+    const results = await query({ payee: 'Costco Gas*' });
+    assert.deepEqual(results.map((t) => t.description), ['Costco Gas Bar']);
+  });
+
+  test('? wildcard matches exactly one character', async () => {
+    const results = await query({ payee: 'SQ ?THE BARN*' });
+    assert.deepEqual(results.map((t) => t.description), ['SQ *THE BARN COUNTRY STORE']);
+  });
+
+  test('a literal special character (#) in the payee search works normally alongside escaping of %/_ ', async () => {
+    const results = await query({ payee: 'MICROSOFT#G173232359' });
+    assert.deepEqual(results.map((t) => t.description), ['MICROSOFT#G173232359']);
+  });
+});

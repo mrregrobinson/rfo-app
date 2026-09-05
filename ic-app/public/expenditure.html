@@ -160,7 +160,15 @@ function FiltersBar({categories,filters,setFilters,compareMode,setCompareMode}){
       compareMode&&h(DateRange,{label:'Period B (comparison)',from:filters.compareDateFrom,to:filters.compareDateTo,onFrom:v=>setFilters({...filters,compareDateFrom:v}),onTo:v=>setFilters({...filters,compareDateTo:v})}),
       h('div',{className:'filter-group'},
         h('label',{className:'form-label'},'Payee search'),
-        h('input',{type:'text',className:'form-input',placeholder:'e.g. Costco',value:filters.payee||'',onChange:e=>setFilters({...filters,payee:e.target.value})})
+        h('input',{type:'text',className:'form-input',placeholder:'e.g. Costco, COST*, or SQ ?THE BARN',title:'Use * for any characters and ? for a single character',value:filters.payee||'',onChange:e=>setFilters({...filters,payee:e.target.value})})
+      ),
+      h('div',{className:'filter-group'},
+        h('label',{className:'form-label'},'Amount (CAD)'),
+        h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+          h('input',{type:'number',className:'form-input',style:{width:90},placeholder:'Min',value:filters.amountMin,onChange:e=>setFilters({...filters,amountMin:e.target.value})}),
+          h('span',{className:'muted'},'to'),
+          h('input',{type:'number',className:'form-input',style:{width:90},placeholder:'Max',value:filters.amountMax,onChange:e=>setFilters({...filters,amountMax:e.target.value})})
+        )
       ),
       h('div',{className:'filter-group'},
         h('label',{className:'form-label'},' '),
@@ -262,7 +270,9 @@ function EmailModal({filters,compareMode,onClose}){
     try{
       await api.post('/api/expenditure/report/email',{
         to,message,
-        dateFrom:filters.dateFrom,dateTo:filters.dateTo,payee:filters.payee,categoryIds:filters.categoryIds.join(','),
+        dateFrom:filters.dateFrom,dateTo:filters.dateTo,payee:filters.payee,
+        amountMin:filters.amountMin,amountMax:filters.amountMax,
+        categoryIds:filters.categoryIds.join(','),
         ...(compareMode?{compareDateFrom:filters.compareDateFrom,compareDateTo:filters.compareDateTo}:{}),
       });
       setSent(true);
@@ -469,7 +479,7 @@ function ResearchModal({categories,onClose,onChanged}){
 function ExpenditureApp({ledger}){
   const [categories,setCategories]=useState([]);
   const [rules,setRules]=useState([]);
-  const [filters,setFilters]=useState({dateFrom:'',dateTo:'',compareDateFrom:'',compareDateTo:'',payee:'',categoryIds:[]});
+  const [filters,setFilters]=useState({dateFrom:'',dateTo:'',compareDateFrom:'',compareDateTo:'',payee:'',amountMin:'',amountMax:'',categoryIds:[]});
   const [compareMode,setCompareMode]=useState(false);
   const [summary,setSummary]=useState(null);
   const [compareSummary,setCompareSummary]=useState(null);
@@ -486,6 +496,8 @@ function ExpenditureApp({ledger}){
     if(filters.dateFrom)q.set('dateFrom',filters.dateFrom);
     if(filters.dateTo)q.set('dateTo',filters.dateTo);
     if(filters.payee)q.set('payee',filters.payee);
+    if(filters.amountMin!=='')q.set('amountMin',filters.amountMin);
+    if(filters.amountMax!=='')q.set('amountMax',filters.amountMax);
     if(filters.categoryIds.length)q.set('categoryIds',filters.categoryIds.join(','));
     Object.entries(extra||{}).forEach(([k,v])=>q.set(k,v));
     return q.toString();
@@ -500,6 +512,8 @@ function ExpenditureApp({ledger}){
       if(filters.compareDateFrom)q2.set('dateFrom',filters.compareDateFrom);
       if(filters.compareDateTo)q2.set('dateTo',filters.compareDateTo);
       if(filters.payee)q2.set('payee',filters.payee);
+      if(filters.amountMin!=='')q2.set('amountMin',filters.amountMin);
+      if(filters.amountMax!=='')q2.set('amountMax',filters.amountMax);
       if(filters.categoryIds.length)q2.set('categoryIds',filters.categoryIds.join(','));
       api.get('/api/expenditure/summary?'+q2.toString()).then(setCompareSummary).catch(()=>{});
     }else{

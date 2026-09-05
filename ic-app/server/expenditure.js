@@ -87,6 +87,20 @@ function detectAccountFromFilename(filename) {
   return null;
 }
 
+// Builds a SQL LIKE pattern (to be used with `ESCAPE '\'`) from a user-typed payee
+// search: `*` matches any run of characters and `?` matches any single character, the
+// familiar filename-wildcard convention rather than SQL's own %/_ syntax. Any literal
+// %, _, or \ in the input (vanishingly rare in a payee name, but not impossible) is
+// escaped first so it can't be misread as a wildcard. If the user didn't type either
+// wildcard character, the whole thing is wrapped in `*...*` for the plain substring
+// search this filter already did before wildcards existed — typing "Costco" still just
+// finds "Costco" anywhere in the description, same as always.
+function payeeLikePattern(input) {
+  const hasWildcard = /[*?]/.test(input);
+  const escaped = input.replace(/[\\%_]/g, '\\$&').replace(/\*/g, '%').replace(/\?/g, '_');
+  return hasWildcard ? escaped : `%${escaped}%`;
+}
+
 module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   // In-memory import job tracking — see the POST /api/expenditure/import handler below
   // for why this isn't a synchronous request. Lives for the process's lifetime; a
@@ -549,7 +563,9 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     if (!q.includeTransfers) clauses.push('t.is_transfer = 0');
     if (q.dateFrom) { clauses.push('t.txn_date >= ?'); params.push(q.dateFrom); }
     if (q.dateTo) { clauses.push('t.txn_date <= ?'); params.push(q.dateTo); }
-    if (q.payee) { clauses.push('t.description LIKE ?'); params.push(`%${q.payee}%`); }
+    if (q.payee) { clauses.push("t.description LIKE ? ESCAPE '\\'"); params.push(payeeLikePattern(q.payee)); }
+    if (q.amountMin !== undefined && q.amountMin !== '') { clauses.push('t.amount_cad >= ?'); params.push(Number(q.amountMin)); }
+    if (q.amountMax !== undefined && q.amountMax !== '') { clauses.push('t.amount_cad <= ?'); params.push(Number(q.amountMax)); }
     if (q.categoryIds) {
       const ids = String(q.categoryIds).split(',').filter(Boolean);
       if (ids.length) { clauses.push(`t.category_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids); }
@@ -702,3 +718,4 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
 // account recognition — directly, without booting a real server/session.
 module.exports.isTransferOrIncome = isTransferOrIncome;
 module.exports.detectAccountFromFilename = detectAccountFromFilename;
+module.exports.payeeLikePattern = payeeLikePattern;
