@@ -101,6 +101,17 @@ function payeeLikePattern(input) {
   return hasWildcard ? escaped : `%${escaped}%`;
 }
 
+// Same `*`/`?` wildcard convention as payeeLikePattern above, but for matching a
+// category rule's pattern against a description in JS (matchesRule below) rather than
+// building a SQL LIKE clause — a rule is checked in memory, not via a database query, so
+// it needs a RegExp instead. Every other regex-special character in the pattern is
+// escaped so a literal payee like "MICROSOFT#G173232359" or a rule someone writes with a
+// stray "(" in it doesn't accidentally form a broken or unintended pattern.
+function wildcardToRegExp(pattern) {
+  const body = pattern.replace(/[.*+?^${}()|[\]\\]/g, (ch) => (ch === '*' ? '.*' : ch === '?' ? '.' : `\\${ch}`));
+  return new RegExp(body, 'i');
+}
+
 module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   // In-memory import job tracking — see the POST /api/expenditure/import handler below
   // for why this isn't a synchronous request. Lives for the process's lifetime; a
@@ -258,6 +269,45 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     res.status(201).json({ rule: ruleRowToJson(db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(id)), reclassified });
   });
 
+  // Edits an existing rule's pattern/category/priority in place, rather than only being
+  // able to delete and recreate one. Reclassifies the same way creating a rule does when
+  // applyToExisting is set — every non-transfer transaction the (new) pattern matches,
+  // regardless of current category — since an edited rule is just as much a statement of
+  // "this payee always means this category" as a freshly created one.
+  app.put('/api/expenditure/category-rules/:id', requireAuth, requireLedger, (req, res) => {
+    const row = db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
+    if (!row) return res.status(404).json({ error: 'Rule not found' });
+    const b = req.body || {};
+    const pattern = b.pattern !== undefined ? String(b.pattern).trim() : row.pattern;
+    if (!pattern) return res.status(400).json({ error: 'pattern cannot be empty' });
+    const categoryId = b.categoryId !== undefined ? b.categoryId : row.category_id;
+    if (categoryId !== row.category_id) {
+      const category = db.prepare('SELECT id FROM expenditure_categories WHERE id = ? AND ledger_id = ?').get(categoryId, req.expenditureLedger.id);
+      if (!category) return res.status(404).json({ error: 'Category not found' });
+    }
+    const matchType = b.matchType === 'regex' ? 'regex' : 'substring';
+    const priority = b.priority !== undefined ? Number(b.priority) || 0 : row.priority;
+    db.prepare('UPDATE expenditure_category_rules SET pattern = ?, category_id = ?, match_type = ?, priority = ? WHERE id = ?')
+      .run(pattern, categoryId, matchType, priority, req.params.id);
+
+    let reclassified = 0;
+    if (b.applyToExisting) {
+      const candidates = db.prepare(
+        `SELECT t.id, t.raw_description FROM expenditure_transactions t
+         JOIN expenditure_accounts a ON a.id = t.account_id
+         WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id IS NULL OR t.category_id != ?)`
+      ).all(req.expenditureLedger.id, categoryId);
+      const rule = db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(req.params.id);
+      for (const c of candidates) {
+        if (matchesRule(c.raw_description, rule)) {
+          db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(categoryId, c.id);
+          reclassified++;
+        }
+      }
+    }
+    res.json({ rule: ruleRowToJson(db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(req.params.id)), reclassified });
+  });
+
   app.delete('/api/expenditure/category-rules/:id', requireAuth, requireLedger, (req, res) => {
     const row = db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ? AND ledger_id = ?').get(req.params.id, req.expenditureLedger.id);
     if (!row) return res.status(404).json({ error: 'Rule not found' });
@@ -269,6 +319,13 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     if (!description) return false;
     if (rule.match_type === 'regex') {
       try { return new RegExp(rule.pattern, 'i').test(description); } catch { return false; }
+    }
+    // 'substring' also understands the same */? wildcard convention as the payee search
+    // filter — "COST*" or "SQ ?THE BARN" — while plain text with neither character still
+    // behaves as a straightforward substring match, exactly as every rule already
+    // created behaves today.
+    if (/[*?]/.test(rule.pattern)) {
+      try { return wildcardToRegExp(rule.pattern).test(description); } catch { return false; }
     }
     return description.toLowerCase().includes(rule.pattern.toLowerCase());
   }
@@ -739,3 +796,4 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
 module.exports.isTransferOrIncome = isTransferOrIncome;
 module.exports.detectAccountFromFilename = detectAccountFromFilename;
 module.exports.payeeLikePattern = payeeLikePattern;
+module.exports.wildcardToRegExp = wildcardToRegExp;

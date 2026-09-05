@@ -213,7 +213,7 @@ function SummaryBlock({label,summary,dateFrom,dateTo}){
 function TransactionRow({t,categories,onUpdate,onCreateRule,selected,onToggleSelect}){
   const categoryName=(categories.find(c=>c.id===t.categoryId)||{}).name||'';
   async function createRule(){
-    const pattern=window.prompt('Categorize future transactions containing this text as "'+categoryName+'":',t.description);
+    const pattern=window.prompt('Categorize future transactions containing this text as "'+categoryName+'" (you can use * for any characters and ? for one):',t.description);
     if(!pattern)return;
     await onCreateRule(pattern,t.categoryId);
   }
@@ -299,10 +299,12 @@ function EmailModal({filters,compareMode,onClose}){
 }
 
 // ---- categories & rules management ----
-function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onDeleteRule}){
+function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onEditRule,onDeleteRule}){
   const [newName,setNewName]=useState('');
   const [editing,setEditing]=useState(null); // {id,name}
+  const [editingRule,setEditingRule]=useState(null); // {id,pattern,categoryId}
   const [error,setError]=useState('');
+  const [ruleError,setRuleError]=useState('');
   function categoryName(id){return (categories.find(c=>c.id===id)||{}).name||'(deleted)';}
   async function add(){
     if(!newName.trim())return;
@@ -317,6 +319,11 @@ function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onDel
     if(!window.confirm(`Delete category "${cat.name}"?`))return;
     setError('');
     try{await onDelete(cat.id);}catch(err){setError(err.message);}
+  }
+  async function saveRuleEdit(){
+    if(!editingRule.pattern.trim()||!editingRule.categoryId)return;
+    setRuleError('');
+    try{await onEditRule(editingRule.id,editingRule.pattern.trim(),editingRule.categoryId);setEditingRule(null);}catch(err){setRuleError(err.message);}
   }
   return h('div',{className:'modal-overlay',onClick:onClose},
     h('div',{className:'modal',style:{maxWidth:560},onClick:e=>e.stopPropagation()},
@@ -350,11 +357,32 @@ function CategoriesModal({categories,rules,onClose,onAdd,onRename,onDelete,onDel
       ),
       rules.length>0&&h('div',null,
         h('div',{className:'form-label'},'Categorization rules'),
-        h('div',{style:{maxHeight:160,overflowY:'auto',marginBottom:14}},
-          rules.map(r=>h('div',{key:r.id,className:'item-line',style:{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:12}},
-            h('span',null,`"${r.pattern}" → ${categoryName(r.categoryId)}`),
-            h('button',{className:'btn btn-outline btn-sm',onClick:()=>onDeleteRule(r.id)},'Remove')
-          ))
+        h('div',{className:'muted',style:{marginBottom:8}},'* matches any characters, ? matches exactly one — e.g. "COSTCO*" or "SQ ?THE BARN".'),
+        ruleError&&h('div',{className:'alert alert-danger'},ruleError),
+        h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
+          h('table',null,
+            h('tbody',null,rules.map(r=>h('tr',{key:r.id},
+              h('td',null,editingRule&&editingRule.id===r.id
+                ?h('input',{className:'form-input',style:{margin:0,width:160},value:editingRule.pattern,autoFocus:true,onChange:e=>setEditingRule({...editingRule,pattern:e.target.value}),onKeyDown:e=>e.key==='Enter'&&saveRuleEdit()})
+                :`"${r.pattern}"`),
+              h('td',null,editingRule&&editingRule.id===r.id
+                ?h('select',{className:'form-select',value:editingRule.categoryId,onChange:e=>setEditingRule({...editingRule,categoryId:e.target.value})},
+                    categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
+                  )
+                :`→ ${categoryName(r.categoryId)}`),
+              h('td',{style:{whiteSpace:'nowrap'}},
+                editingRule&&editingRule.id===r.id
+                  ?h(React.Fragment,null,
+                      h('button',{className:'btn btn-outline btn-sm',onClick:saveRuleEdit},'Save'),
+                      h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:4},onClick:()=>setEditingRule(null)},'Cancel')
+                    )
+                  :h(React.Fragment,null,
+                      h('button',{className:'btn btn-outline btn-sm',onClick:()=>setEditingRule({id:r.id,pattern:r.pattern,categoryId:r.categoryId})},'Edit'),
+                      h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:4},onClick:()=>onDeleteRule(r.id)},'Remove')
+                    )
+              )
+            )))
+          )
         )
       ),
       h('div',{style:{textAlign:'right'}},h('button',{className:'btn btn-outline',onClick:onClose},'Close'))
@@ -409,7 +437,7 @@ function PayeeRow({payee,categories,onResearched}){
           h('option',{value:''},'— pick a category —'),
           categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
         ),
-        h('input',{className:'form-input',style:{width:180},value:pattern,onChange:e=>setPattern(e.target.value),title:'Rule pattern — future transactions containing this text will use this category'}),
+        h('input',{className:'form-input',style:{width:180},value:pattern,onChange:e=>setPattern(e.target.value),title:'Rule pattern — future transactions containing this text will use this category. * matches any characters, ? matches one.'}),
         h('button',{className:'btn btn-gold btn-sm',disabled:!category||busy,onClick:createRule},'Create Rule')
       )
     )
@@ -436,7 +464,7 @@ function ManualRuleForm({categories,onAdd}){
   return h('div',{style:{border:'0.5px solid var(--border)',borderRadius:8,padding:10,marginBottom:14,background:'var(--bg)'}},
     h('div',{className:'form-label'},'Add a rule manually'),
     h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
-      h('input',{className:'form-input',style:{flex:1,minWidth:160},placeholder:'Text to match in the description',value:pattern,onChange:e=>setPattern(e.target.value),onKeyDown:e=>e.key==='Enter'&&add()}),
+      h('input',{className:'form-input',style:{flex:1,minWidth:160},placeholder:'Text to match, e.g. COSTCO*',title:'* matches any characters, ? matches exactly one',value:pattern,onChange:e=>setPattern(e.target.value),onKeyDown:e=>e.key==='Enter'&&add()}),
       h('select',{className:'form-select',value:categoryId,onChange:e=>setCategoryId(e.target.value)},
         h('option',{value:''},'— pick a category —'),
         categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
@@ -559,6 +587,10 @@ function ExpenditureApp({ledger}){
   async function renameCategory(id,name){await api.put('/api/expenditure/categories/'+id,{name});load();}
   async function deleteCategory(id){await api.del('/api/expenditure/categories/'+id);load();}
   async function deleteRule(id){await api.del('/api/expenditure/category-rules/'+id);loadRules();}
+  async function editRule(id,pattern,categoryId){
+    await api.put('/api/expenditure/category-rules/'+id,{pattern,categoryId,applyToExisting:true});
+    loadRules();load();
+  }
 
   async function updateTransaction(id,patch){
     const updated=await api.put('/api/expenditure/transactions/'+id,patch);
@@ -628,7 +660,7 @@ function ExpenditureApp({ledger}){
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
-    showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onDeleteRule:deleteRule}),
+    showCategories&&h(CategoriesModal,{categories,rules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule}),
     showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();}})
   );
 }

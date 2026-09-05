@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { isTransferOrIncome, detectAccountFromFilename, payeeLikePattern } = require('../server/expenditure');
+const { isTransferOrIncome, detectAccountFromFilename, payeeLikePattern, wildcardToRegExp } = require('../server/expenditure');
 
 describe('isTransferOrIncome', () => {
   test('an internal transfer between the household\'s own accounts is excluded', () => {
@@ -110,5 +110,27 @@ describe('payeeLikePattern', () => {
 
   test('escaping and user wildcards combine correctly in the same search', () => {
     assert.equal(payeeLikePattern('50%*'), '50\\%%');
+  });
+});
+
+describe('wildcardToRegExp', () => {
+  test('* matches any run of characters, found anywhere in the description (same as a plain substring match)', () => {
+    assert.ok(wildcardToRegExp('COST*').test('COSTCO WHOLESALE'));
+    assert.ok(wildcardToRegExp('COST*').test('BEST COSTCO'), 'no start/end anchoring — COST* matches wherever COST appears, same as this app\'s existing plain substring rules');
+    assert.ok(!wildcardToRegExp('COST*').test('GROCERY STORE'), 'no match when the literal part is not present at all');
+  });
+
+  test('? matches exactly one character', () => {
+    assert.ok(wildcardToRegExp('SQ ?THE BARN').test('SQ *THE BARN COUNTRY STORE'));
+    assert.ok(!wildcardToRegExp('SQ ?THE BARN').test('SQ THE BARN'), '? must match exactly one character, not zero');
+  });
+
+  test('other regex-special characters in the pattern are escaped, not treated as regex syntax', () => {
+    assert.ok(wildcardToRegExp('MICROSOFT#G173232359').test('MICROSOFT#G173232359 HALIFAX NS'));
+    assert.ok(wildcardToRegExp('A (B) C').test('X A (B) C Y'), 'parentheses in a real payee name must be literal, not a regex group');
+  });
+
+  test('matching is case-insensitive, matching the rest of this app\'s payee matching', () => {
+    assert.ok(wildcardToRegExp('costco*').test('COSTCO WHOLESALE'));
   });
 });

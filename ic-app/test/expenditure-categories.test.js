@@ -113,6 +113,75 @@ describe('category management', () => {
   });
 });
 
+describe('category rules — wildcards and editing', () => {
+  function makeTxn(description, categoryId) {
+    const accountId = crypto.randomUUID();
+    const statementId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+    db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-05-01', '2026-05-31', ?)`).run(statementId, accountId, now);
+    const txnId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-05-15', ?, ?, 40, 'CAD', 40, ?, 0, ?)`)
+      .run(txnId, accountId, statementId, description, description, categoryId, now);
+    return txnId;
+  }
+
+  test('a rule pattern with a * wildcard matches and reclassifies at creation time', async () => {
+    const { body: category } = await post('/api/expenditure/categories', { name: 'Wildcard Star Category' });
+    const txnId = makeTxn('COSTCO GAS BAR #4821', null);
+
+    const { body } = await post('/api/expenditure/category-rules', { pattern: 'COSTCO*', categoryId: category.id, applyToExisting: true });
+    assert.equal(body.reclassified, 1);
+    const row = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId);
+    assert.equal(row.category_id, category.id);
+  });
+
+  test('a rule pattern with a ? wildcard matches exactly one character', async () => {
+    const { body: category } = await post('/api/expenditure/categories', { name: 'Wildcard QMark Category' });
+    const matching = makeTxn('SQ *THE BARN COUNTRY STORE', null);
+    const nonMatching = makeTxn('SQ THE BARN', null); // zero characters where ? requires one
+
+    const { body } = await post('/api/expenditure/category-rules', { pattern: 'SQ ?THE BARN', categoryId: category.id, applyToExisting: true });
+    assert.equal(body.reclassified, 1);
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(matching).category_id, category.id);
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(nonMatching).category_id, null);
+  });
+
+  test('editing a rule\'s pattern and category reclassifies against the NEW pattern, not the old one', async () => {
+    const { body: oldCategory } = await post('/api/expenditure/categories', { name: 'Old Rule Target' });
+    const { body: newCategory } = await post('/api/expenditure/categories', { name: 'New Rule Target' });
+    const { body: created } = await post('/api/expenditure/category-rules', { pattern: 'OLD PAYEE TEXT', categoryId: oldCategory.id });
+
+    const newlyMatchingTxn = makeTxn('BRAND NEW PAYEE TEXT', null);
+    const oldMatchingTxn = makeTxn('OLD PAYEE TEXT STILL HERE', oldCategory.id);
+
+    const { status, body } = await put(`/api/expenditure/category-rules/${created.rule.id}`, {
+      pattern: 'NEW PAYEE*', categoryId: newCategory.id, applyToExisting: true,
+    });
+    assert.equal(status, 200);
+    assert.equal(body.rule.pattern, 'NEW PAYEE*');
+    assert.equal(body.rule.categoryId, newCategory.id);
+    assert.equal(body.reclassified, 1, 'only the transaction matching the NEW pattern should move');
+
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(newlyMatchingTxn).category_id, newCategory.id);
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(oldMatchingTxn).category_id, oldCategory.id, 'no longer matches the edited rule, so it is untouched — not swept along with the old pattern');
+  });
+
+  test('editing a nonexistent rule 404s', async () => {
+    const { status } = await put('/api/expenditure/category-rules/does-not-exist', { pattern: 'X' });
+    assert.equal(status, 404);
+  });
+
+  test('editing a rule to point at a nonexistent category 404s and leaves the rule unchanged', async () => {
+    const { body: category } = await post('/api/expenditure/categories', { name: 'Untouched Rule Category' });
+    const { body: created } = await post('/api/expenditure/category-rules', { pattern: 'SOMETHING', categoryId: category.id });
+    const { status } = await put(`/api/expenditure/category-rules/${created.rule.id}`, { categoryId: 'does-not-exist' });
+    assert.equal(status, 404);
+    const row = db.prepare('SELECT category_id FROM expenditure_category_rules WHERE id = ?').get(created.rule.id);
+    assert.equal(row.category_id, category.id);
+  });
+});
+
 describe('POST /api/expenditure/category-rules — applyToExisting', () => {
   test('reclassifies every matching transaction, not just ones sitting in Unknown', async () => {
     const { body: unknownCategory } = await post('/api/expenditure/categories', { name: 'Misc Unknown Test' });
