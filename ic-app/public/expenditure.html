@@ -49,7 +49,12 @@ tr:hover td{background:var(--bg)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{background:#fff;border-radius:12px;padding:24px;max-width:440px;width:100%}
 .modal-title{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:14px}
+.chart-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.chart-tab{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;user-select:none;border:0.5px solid var(--border);background:#fff;color:var(--navy)}
+.chart-tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.toolbar-divider{width:1px;align-self:stretch;background:var(--border);margin:2px 2px}
 @media print{.no-print{display:none!important}.page{max-width:none;padding:0}}
+@media (max-width:700px){.two-col{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -313,6 +318,8 @@ function FiltersBar({categories,filters,setFilters,compareMode,setCompareMode}){
 }
 
 // ---- summary ----
+// Just the headline numbers — the charts that used to live here moved into ChartsCard
+// below, so this card stays a quick-glance total rather than a long scroll of its own.
 function SummaryBlock({label,summary,dateFrom,dateTo}){
   if(!summary)return h('div',{className:'muted'},'Loading…');
   // The filter bar (where the date range is chosen) is hidden when printing, so the
@@ -322,57 +329,98 @@ function SummaryBlock({label,summary,dateFrom,dateTo}){
   return h('div',null,
     label&&h('div',{className:'section-title'},label),
     h('div',{className:'muted',style:{marginBottom:4}},periodLabel),
-    h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)',marginBottom:2}},fmtCAD(summary.total)),
-    h('div',{className:'muted',style:{marginBottom:10}},`${summary.count} transaction${summary.count===1?'':'s'}`),
-    Object.keys(summary.byCategory).length>0&&h(ChartCanvas,{type:'bar',data:categoryChartData(summary.byCategory),options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}}),
-    Object.keys(summary.byMonth).length>1&&h('div',{style:{marginTop:14}},h(ChartCanvas,{type:'line',data:trendChartData(summary.byMonth),options:{plugins:{legend:{display:false}}}}))
+    h('div',{style:{fontSize:26,fontWeight:700,color:'var(--navy)',marginBottom:2}},fmtCAD(summary.total)),
+    h('div',{className:'muted'},`${summary.count} transaction${summary.count===1?'':'s'}`)
   );
 }
 
-// Always shows the trailing 12 months, independent of whatever date range is selected
-// in the filters above — a stable month-over-month reference view rather than something
-// you have to remember to switch the main filter to "Last 12 months" to see. Still
-// respects the category/payee/amount filters (so filtering to one category shows that
-// category's trailing 12-month trend), just not whatever date range is currently picked.
-// Rolling trailing-twelve-months (TTM): each point is that month plus the preceding 11
-// summed together, not that month's own raw spend (the regular monthly trend chart
-// above already shows that). Computed from the full available history — see
-// trailingTwelveMonthTotals — and only starts once a full 12 months of history actually
-// exists; with less than that, there's deliberately nothing to plot yet.
-function Trailing12MonthsChart({summary}){
-  if(!summary)return null;
-  const ttm=trailingTwelveMonthTotals(summary.byMonth);
-  const points=Object.keys(ttm);
-  if(points.length===0)return null;
-  const latestMonth=points.sort()[points.length-1];
-  return h('div',{className:'card'},
-    h('div',{className:'section-title'},'Trailing 12 Months'),
-    h('div',{className:'muted',style:{marginBottom:10}},`As of ${latestMonth}: ${fmtCAD(ttm[latestMonth])} (rolling 12-month total)`),
-    h(ChartCanvas,{type:'line',data:trendChartData(ttm),options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
-  );
-}
+// ---- charts ----
+// One card, one graph at a time, picked from this list — instead of stacking a new
+// always-visible card each time a graph or report is added (as the app did before:
+// category + trend baked into the summary card, plus two more always-rendered cards
+// below it). Adding a future graph/report is one more entry here plus a render branch
+// in ChartsCard, not another permanent slice of the page. `comparable: true` means the
+// chart can meaningfully show Period A and Period B side by side when Compare is on —
+// category/trend totals both make sense per-period; a rolling trailing-12-months figure
+// or a quarter/year breakdown don't fit that model and always reflect Period A/overall.
+const CHART_TYPES=[
+  {key:'category',label:'By Category',comparable:true},
+  {key:'trend',label:'Monthly Trend',comparable:true},
+  {key:'trailing12',label:'Trailing 12 Months',comparable:false},
+  {key:'period',label:'By Quarter/Year',comparable:false},
+];
+function ChartsCard({summary,compareSummary,compareMode,trailing12Summary}){
+  const [chartKey,setChartKey]=useState('category');
+  const [periodGranularity,setPeriodGranularity]=useState('quarter');
+  const chartType=CHART_TYPES.find(c=>c.key===chartKey);
 
-// Re-buckets whatever date range is currently selected in the filters (Period A) into
-// quarters or years instead of months — useful for seeing a multi-year shape (pick "All
-// time" in the quick-range dropdown, then Year here) without a separate query.
-function PeriodBreakdownChart({summary}){
-  const [granularity,setGranularity]=useState('quarter');
-  if(!summary||Object.keys(summary.byMonth||{}).length===0)return null;
-  const bucketed=bucketByPeriod(summary.byMonth,granularity);
-  // trendChartData's fill colour is tuned for a translucent line-chart fill, not a bar
-  // — solid teal here instead, matching the category breakdown bar chart's colour.
-  const data=trendChartData(bucketed);
-  data.datasets[0].backgroundColor='#2A7D7B';
-  data.datasets[0].borderColor='#2A7D7B';
+  function categoryChart(s){
+    if(!s||Object.keys(s.byCategory||{}).length===0)return h('div',{className:'muted'},'No spending in this period.');
+    return h(ChartCanvas,{type:'bar',data:categoryChartData(s.byCategory),options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+  }
+  function trendChart(s){
+    if(!s||Object.keys(s.byMonth||{}).length<2)return h('div',{className:'muted'},'Not enough months in this period to chart a trend.');
+    return h(ChartCanvas,{type:'line',data:trendChartData(s.byMonth),options:{plugins:{legend:{display:false}}}});
+  }
+  // Always the trailing 12 months regardless of whatever date range is selected in the
+  // filters above — a stable month-over-month reference view rather than something you
+  // have to remember to switch the main filter to "Last 12 months" to see. Still
+  // respects the category/payee/amount filters (trailing12Summary is fetched with those
+  // applied and only dateFrom/dateTo cleared), just not whatever date range is picked.
+  // Rolling total: each point is that month plus the preceding 11 — see
+  // trailingTwelveMonthTotals — and only starts once a full 12 months of history exists.
+  function trailing12Chart(){
+    if(!trailing12Summary)return h('div',{className:'muted'},'Loading…');
+    const ttm=trailingTwelveMonthTotals(trailing12Summary.byMonth);
+    const points=Object.keys(ttm);
+    if(points.length===0)return h('div',{className:'muted'},'Needs at least 12 months of history before a rolling 12-month total can be shown.');
+    const latestMonth=points.sort()[points.length-1];
+    return h('div',null,
+      h('div',{className:'muted',style:{marginBottom:10}},`As of ${latestMonth}: ${fmtCAD(ttm[latestMonth])} (rolling 12-month total)`),
+      h(ChartCanvas,{type:'line',data:trendChartData(ttm),options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
+    );
+  }
+  // Re-buckets whatever date range is currently selected in the filters (Period A) into
+  // quarters or years instead of months — useful for seeing a multi-year shape (pick
+  // "All time" in the quick-range dropdown, then Year here) without a separate query.
+  function periodChart(){
+    if(!summary||Object.keys(summary.byMonth||{}).length===0)return h('div',{className:'muted'},'No data to summarize yet.');
+    const bucketed=bucketByPeriod(summary.byMonth,periodGranularity);
+    // trendChartData's fill colour is tuned for a translucent line-chart fill, not a bar
+    // — solid teal here instead, matching the category breakdown bar chart's colour.
+    const data=trendChartData(bucketed);
+    data.datasets[0].backgroundColor='#2A7D7B';
+    data.datasets[0].borderColor='#2A7D7B';
+    return h('div',null,
+      h('div',{style:{display:'flex',justifyContent:'flex-end',gap:6,marginBottom:10}},
+        h('button',{className:'btn btn-sm '+(periodGranularity==='quarter'?'btn-teal':'btn-outline'),onClick:()=>setPeriodGranularity('quarter')},'Quarter'),
+        h('button',{className:'btn btn-sm '+(periodGranularity==='year'?'btn-teal':'btn-outline'),onClick:()=>setPeriodGranularity('year')},'Year')
+      ),
+      h(ChartCanvas,{type:'bar',data,options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
+    );
+  }
+
+  let body;
+  if(chartKey==='category'||chartKey==='trend'){
+    const renderOne=chartKey==='category'?categoryChart:trendChart;
+    body=(compareMode&&compareSummary&&chartType.comparable)
+      ?h('div',{className:'two-col'},
+          h('div',null,h('div',{className:'muted',style:{marginBottom:8,fontWeight:600}},'Period A'),renderOne(summary)),
+          h('div',null,h('div',{className:'muted',style:{marginBottom:8,fontWeight:600}},'Period B'),renderOne(compareSummary))
+        )
+      :renderOne(summary);
+  }else if(chartKey==='trailing12'){
+    body=trailing12Chart();
+  }else{
+    body=periodChart();
+  }
+
   return h('div',{className:'card'},
-    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
-      h('div',{className:'section-title',style:{marginBottom:0}},'Spending by Period'),
-      h('div',{style:{display:'flex',gap:6}},
-        h('button',{className:'btn btn-sm '+(granularity==='quarter'?'btn-teal':'btn-outline'),onClick:()=>setGranularity('quarter')},'Quarter'),
-        h('button',{className:'btn btn-sm '+(granularity==='year'?'btn-teal':'btn-outline'),onClick:()=>setGranularity('year')},'Year')
-      )
-    ),
-    h(ChartCanvas,{type:'bar',data,options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
+    h('div',{className:'section-title'},'Charts'),
+    h('div',{className:'chart-tabs'},CHART_TYPES.map(c=>
+      h('div',{key:c.key,className:'chart-tab'+(chartKey===c.key?' active':''),onClick:()=>setChartKey(c.key)},c.label)
+    )),
+    body
   );
 }
 
@@ -921,10 +969,11 @@ function ExpenditureApp({ledger}){
   return h('div',{className:'page'},
     h(ImportPanel,{onImported:load}),
     h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
-    h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap'}},
+    h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
       h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
+      h('div',{className:'toolbar-divider'}),
       h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
       h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
       h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories & Rules')
@@ -935,8 +984,7 @@ function ExpenditureApp({ledger}){
           h('div',{className:'card'},h(SummaryBlock,{label:'Period B',summary:compareSummary,dateFrom:filters.compareDateFrom,dateTo:filters.compareDateTo}))
         )
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
-    h(Trailing12MonthsChart,{summary:trailing12Summary}),
-    h(PeriodBreakdownChart,{summary}),
+    h(ChartsCard,{summary,compareSummary,compareMode,trailing12Summary}),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,exclusionRules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule,onAddExclusionRule:addExclusionRule,onEditExclusionRule:editExclusionRule,onDeleteExclusionRule:deleteExclusionRule}),
