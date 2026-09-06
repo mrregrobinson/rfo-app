@@ -6,18 +6,22 @@
 <title>Robinson Family Office</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--navy);min-height:100vh}
-.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px}
-.nav-brand{color:#fff;font-size:13px;font-weight:600}
-.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
-.wrap{max-width:760px;margin:0 auto;padding:48px 20px}
-.h1{font-size:22px;font-weight:600;margin-bottom:6px}
-.sub{font-size:13px;color:var(--muted);margin-bottom:32px}
-.tiles{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media (max-width:600px){.tiles{grid-template-columns:1fr}}
-.tile{display:block;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:24px;text-decoration:none;color:inherit;transition:border-color .15s}
-.tile:hover{border-color:var(--teal)}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;box-shadow:0 1px 3px rgba(0,0,0,.1);position:sticky;top:0;z-index:10}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center}
+.brand-mark{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:var(--gold);color:var(--navy);font-size:10px;font-weight:800;letter-spacing:.4px;margin-right:10px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer;transition:background .15s}
+.nav-user:hover{background:rgba(255,255,255,.2)}
+.wrap{max-width:1040px;margin:0 auto;padding:44px 24px 60px}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--teal);margin-bottom:10px}
+.h1{font-size:26px;font-weight:700;margin-bottom:6px;letter-spacing:-.2px}
+.sub{font-size:13px;color:var(--muted);margin-bottom:36px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+.tile{display:flex;flex-direction:column;background:var(--card);border:0.5px solid var(--border);border-radius:14px;padding:22px;text-decoration:none;color:inherit;box-shadow:0 1px 2px rgba(16,24,40,.03);transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.tile:hover{transform:translateY(-2px);border-color:var(--teal);box-shadow:0 8px 20px rgba(27,42,74,.08)}
+.tile-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.tile-icon svg{width:21px;height:21px}
 .tile-title{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px}
 .tile-desc{font-size:12px;color:var(--muted);line-height:1.6}
 .loading{padding:48px;text-align:center;color:var(--muted);font-size:13px}
@@ -35,6 +39,49 @@ const api = {
   },
 };
 
+// One rounded-square, tinted icon badge per tile, cycling through the app's three brand
+// colors so a newly added application always picks up a themed icon automatically
+// without anyone having to hand-assign a colour for it.
+const ICON_THEMES = [
+  { bg: 'var(--navy-l)', fg: 'var(--navy)' },
+  { bg: 'var(--teal-l)', fg: 'var(--teal)' },
+  { bg: 'var(--gold-l)', fg: '#96792E' },
+];
+// Minimal 24x24 stroke icons, one per application — purely decorative, so an icon
+// that's a reasonable approximation of the app's purpose is enough; exact fidelity
+// to any particular icon set doesn't matter here.
+const ICONS = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>',
+  checklist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
+  wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H6a3 3 0 000 6h1"/><path d="M3 8V7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a3 3 0 01-3-3V8z"/><circle cx="16" cy="14" r="1.2"/></svg>',
+  admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 21v-1.5a6 6 0 0112 0V21"/><circle cx="19" cy="6" r="2"/></svg>',
+};
+
+// Applications live here as data — adding the next one under the umbrella is one
+// object in this list (or, like Household Expenditures below, one conditional push
+// after an access check), not new hand-written markup.
+const BASE_TILES = [
+  { href: '/due-diligence', title: 'PQ Introduced Due Diligence', desc: 'Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.', icon: ICONS.search },
+  { href: '/tasks', title: 'Family Task List', desc: 'Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.', icon: ICONS.checklist },
+  { href: '/meetings', title: 'Family Office Meetings', desc: 'Schedule meetings with an agenda, send Teams invitations to family attendees, and record minutes.', icon: ICONS.calendar },
+];
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+function tileHtml(t, i) {
+  const theme = ICON_THEMES[i % ICON_THEMES.length];
+  return `
+        <a class="tile" href="${t.href}">
+          <div class="tile-icon" style="background:${theme.bg};color:${theme.fg}">${t.icon}</div>
+          <div class="tile-title">${t.title}</div>
+          <div class="tile-desc">${t.desc}</div>
+        </a>`;
+}
+
 async function init() {
   let user;
   try {
@@ -45,46 +92,31 @@ async function init() {
     location.href = '/due-diligence?returnTo=' + encodeURIComponent('/');
     return;
   }
-  const adminTile = user.isAdmin ? `
-        <a class="tile" href="/admin">
-          <div class="tile-title">Manage Members</div>
-          <div class="tile-desc">Family Office administration — add or deactivate members, set admin access and app-level roles, reset logins.</div>
-        </a>` : '';
-  // Household Expenditures isn't a per-app role like the other three tiles — it's
+
+  const tiles = [...BASE_TILES];
+  // Household Expenditures isn't a per-app role like the other tiles — it's
   // partitioned into ledgers (see migration 023), so whether to show this tile at all
   // depends on ledger membership, checked separately rather than via user.* flags.
   // is_fo_admin does NOT imply membership here, unlike every other tile on this page.
-  let expenditureTile = '';
   try {
     await api.get('/api/expenditure/ledger');
-    expenditureTile = `
-        <a class="tile" href="/expenditure">
-          <div class="tile-title">Household Expenditures</div>
-          <div class="tile-desc">Track household spending from bank and credit card statements, by category and time period.</div>
-        </a>`;
+    tiles.push({ href: '/expenditure', title: 'Household Expenditures', desc: 'Track household spending from bank and credit card statements, by category and time period.', icon: ICONS.wallet });
   } catch (err) { /* not a member of any expenditure ledger — tile stays hidden */ }
+  if (user.isAdmin) {
+    tiles.push({ href: '/admin', title: 'Manage Members', desc: 'Family Office administration — add or deactivate members, set admin access and app-level roles, reset logins.', icon: ICONS.admin });
+  }
+
+  const firstName = user.name.split(' ')[0];
   document.getElementById('root').innerHTML = `
     <nav class="nav">
-      <div class="nav-brand">Robinson Family Office</div>
-      <div class="nav-user" id="signout">${user.name.split(' ')[0]} · Sign out</div>
+      <div class="nav-brand"><span class="brand-mark">RFO</span>Robinson Family Office</div>
+      <div class="nav-user" id="signout">${firstName} · Sign out</div>
     </nav>
     <div class="wrap">
-      <div class="h1">Welcome, ${user.name.split(' ')[0]}</div>
-      <div class="sub">Choose an application.</div>
-      <div class="tiles">
-        <a class="tile" href="/due-diligence">
-          <div class="tile-title">PQ Introduced Due Diligence</div>
-          <div class="tile-desc">Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.</div>
-        </a>
-        <a class="tile" href="/tasks">
-          <div class="tile-title">Family Task List</div>
-          <div class="tile-desc">Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.</div>
-        </a>
-        <a class="tile" href="/meetings">
-          <div class="tile-title">Family Office Meetings</div>
-          <div class="tile-desc">Schedule meetings with an agenda, send Teams invitations to family attendees, and record minutes.</div>
-        </a>${expenditureTile}${adminTile}
-      </div>
+      <div class="eyebrow">Robinson Family Office</div>
+      <div class="h1">${greeting()}, ${firstName}</div>
+      <div class="sub">Choose an application below.</div>
+      <div class="tiles">${tiles.map(tileHtml).join('')}</div>
     </div>
   `;
   document.getElementById('signout').addEventListener('click', async () => {
