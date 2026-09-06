@@ -272,7 +272,23 @@ function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged})
   const canEditPlan=roles.meetingsMember&&meeting&&meeting.status==='planned';
   const canEditMinutes=meeting&&(roles.meetingsAdmin||(roles.meetingsMember&&meeting.status==='planned'));
 
-  async function savePlan(payload){await api.put(`/api/meetings/${meetingId}`,payload);setShowEditPlan(false);await refresh();onChanged();}
+  // If the invite already went out and the date/time actually changed, the previously
+  // sent calendar item is now stale — nothing updates it on its own. Prompt to resend:
+  // the .ics keeps the same UID and bumps SEQUENCE (server/ics.js), which calendar
+  // clients treat as an update to the existing event rather than a duplicate.
+  async function savePlan(payload){
+    const wasSent=!!meeting.inviteSentAt;
+    const prevPlannedAt=meeting.plannedAt,prevDuration=meeting.durationMinutes;
+    await api.put(`/api/meetings/${meetingId}`,payload);
+    setShowEditPlan(false);
+    await refresh();
+    onChanged();
+    const dateChanged=payload.plannedAt&&payload.plannedAt!==prevPlannedAt;
+    const durationChanged=payload.durationMinutes!=null&&payload.durationMinutes!==prevDuration;
+    if(wasSent&&(dateChanged||durationChanged)&&window.confirm('This meeting’s invite already went out to family attendees. Send an updated invite now so their calendars reflect the new date/time?')){
+      await sendInviteNow();
+    }
+  }
   async function saveSummary(itemId,discussionSummary){await api.put(`/api/meetings/${meetingId}/agenda-items/${itemId}/summary`,{discussionSummary});await refresh();}
   async function addDecision(itemId,description){await api.post(`/api/meetings/${meetingId}/agenda-items/${itemId}/decisions`,{description});await refresh();}
   async function deleteDecision(decisionId){await api.del(`/api/meetings/${meetingId}/decisions/${decisionId}`);await refresh();}
