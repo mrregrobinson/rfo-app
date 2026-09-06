@@ -133,13 +133,29 @@ const DATE_PRESETS=[
 ];
 
 // ---- charts ----
+// Updates the existing Chart.js instance in place when a chart already on screen just
+// gets new data (e.g. every summary refetch after editing a transaction) instead of
+// destroying and recreating it. This matters beyond efficiency: a fresh Chart() redoes
+// its responsive sizing from scratch, which briefly collapses and regrows the canvas's
+// actual rendered height (Chart.js fills the container width at a fixed aspect ratio,
+// well past the `height` attribute below, which is only its initial fallback size) —
+// that size swing was making the browser's scroll-anchoring visibly jump the page on
+// every edit. Only destroys/recreates when the chart TYPE itself changes (or on
+// unmount), since Chart.js can't cleanly morph e.g. a bar chart into a line chart.
 function ChartCanvas({type,data,options,height}){
   const ref=useRef(null);const chartRef=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
-    chartRef.current=new Chart(ref.current,{type,data,options:options||{}});
-    return ()=>chartRef.current&&chartRef.current.destroy();
-  },[JSON.stringify(data),type]);
+    if(chartRef.current&&chartRef.current.config.type===type){
+      chartRef.current.data=data;
+      chartRef.current.options=options||{};
+      chartRef.current.update();
+    }else{
+      if(chartRef.current)chartRef.current.destroy();
+      chartRef.current=new Chart(ref.current,{type,data,options:options||{}});
+    }
+  },[JSON.stringify(data),JSON.stringify(options),type]);
+  useEffect(()=>()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}},[]);
   return h('canvas',{ref,height:height||220});
 }
 function categoryChartData(byCategory){
