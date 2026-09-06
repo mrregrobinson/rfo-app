@@ -9,6 +9,11 @@ const { BRAND, escapeHtml, contentRow, infoRow, sectionLabel, paragraph, bulletL
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 const MS_GRAPH_SENDER = process.env.MS_GRAPH_SENDER;
+// Same zone server/digest.js defaults to for the family. Without an explicit timeZone,
+// toLocaleString falls back to the server process's own runtime timezone — UTC on
+// Railway — so an invite/minutes email would display a meeting's time 4-5 hours off
+// from what it actually is in Ontario, even though the underlying planned_at is correct.
+const FAMILY_TIMEZONE = 'America/Toronto';
 
 function familyAttendeesWithEmail(db, meetingId) {
   return db
@@ -78,7 +83,7 @@ async function sendMeetingInvite(db, meetingId) {
     contentType: 'text/calendar',
     contentBase64: Buffer.from(icsContent, 'utf8').toString('base64'),
   };
-  const dateStr = start.toLocaleString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const dateStr = start.toLocaleString('en-CA', { timeZone: FAMILY_TIMEZONE, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   const html = emailShell({
     eyebrow: 'Meeting Invite',
     title: meeting.title,
@@ -197,12 +202,14 @@ function agendaItemHtml(item, decisions, actionItems) {
 
 function buildMinutesHtml(meeting, attendees, agendaItemsWithDetail) {
   const dateStr = new Date(meeting.planned_at).toLocaleString('en-CA', {
+    timeZone: FAMILY_TIMEZONE,
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZoneName: 'short',
   });
   const attendeeNames = attendees.map((a) => escapeHtml(a.name)).join(', ') || 'None listed';
   const sections = agendaItemsWithDetail.map(({ item, decisions, actionItems }) => agendaItemHtml(item, decisions, actionItems)).join('');
