@@ -94,6 +94,25 @@ function suggestRulePattern(description){
   return shortened.length>=description.length*0.4?shortened:description;
 }
 
+// Client-side mirror of server/expenditure.js's wildcardToRegExp — used to search the
+// rule lists already loaded in the Manage Categories modal (no server round-trip),
+// with the same * (any characters) / ? (one character) syntax as everywhere else rule
+// patterns are entered. No anchoring, same as those patterns' own matching, so a plain
+// search term with no wildcards still behaves as an ordinary "contains" search.
+function wildcardSearchRegExp(pattern){
+  const body=pattern.replace(/[.*+?^${}()|[\]\\]/g,ch=>ch==='*'?'.*':ch==='?'?'.':'\\'+ch);
+  return new RegExp(body,'i');
+}
+function matchesSearch(search,...fields){
+  const q=(search||'').trim();
+  if(!q)return true;
+  try{
+    const re=wildcardSearchRegExp(q);
+    return fields.some(f=>f&&re.test(f));
+  }catch{return true;}
+}
+function byPatternAlpha(a,b){return a.pattern.localeCompare(b.pattern,undefined,{sensitivity:'base'});}
+
 // Quick date-range presets — the real pain with a native date picker isn't typing a
 // date (you can click straight into a segment and type it, no calendar needed), it's
 // jumping the calendar back several YEARS to reach 2022-era statements, clicking "prev
@@ -579,19 +598,27 @@ function ExclusionRuleForm({onAdd,editing,onSaveEdit,onCancelEdit}){
 }
 function ExclusionRulesSection({exclusionRules,onAdd,onEdit,onDelete}){
   const [editingId,setEditingId]=useState(null);
+  const [search,setSearch]=useState('');
   async function saveEdit(id,pattern,direction,accountType){
     const res=await onEdit(id,pattern,direction,accountType);
     setEditingId(null);
     return res;
   }
+  // Alphabetical by pattern, regardless of search — a stable, predictable order rather
+  // than newest-first, so a rule's position doesn't shift around as others are added.
+  const visibleRules=exclusionRules
+    .filter(r=>matchesSearch(search,r.pattern))
+    .sort(byPatternAlpha);
   return h('div',{style:{marginTop:20}},
     h('div',{className:'form-label'},'Exclusion rules (transfers & income)'),
     h('div',{className:'muted',style:{marginBottom:8}},'Matched transactions are tagged as transfers/income and kept out of spending totals — the same detection used on import and by "Clean Up Existing Data". * matches any characters, ? matches exactly one.'),
     h(ExclusionRuleForm,{onAdd}),
     exclusionRules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},'No exclusion rules yet.'),
-    exclusionRules.length>0&&h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
+    exclusionRules.length>0&&h('input',{className:'form-input',style:{width:'100%',marginBottom:10},placeholder:'Search rules, e.g. COST* or ^account',title:'* matches any characters, ? matches exactly one',value:search,onChange:e=>setSearch(e.target.value)}),
+    exclusionRules.length>0&&visibleRules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},`No rules match "${search}".`),
+    visibleRules.length>0&&h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
       h('table',null,
-        h('tbody',null,exclusionRules.map(r=>editingId===r.id
+        h('tbody',null,visibleRules.map(r=>editingId===r.id
           ?h('tr',{key:r.id},h('td',{colSpan:4},h(ExclusionRuleForm,{editing:{id:r.id,pattern:r.pattern,direction:r.direction,accountType:r.accountType},onSaveEdit:saveEdit,onCancelEdit:()=>setEditingId(null)})))
           :h('tr',{key:r.id},
               h('td',null,`"${r.pattern}"`),
@@ -613,9 +640,17 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
   const [newName,setNewName]=useState('');
   const [editing,setEditing]=useState(null); // {id,name}
   const [editingRule,setEditingRule]=useState(null); // {id,pattern,categoryId}
+  const [ruleSearch,setRuleSearch]=useState('');
   const [error,setError]=useState('');
   const [ruleError,setRuleError]=useState('');
   function categoryName(id){return (categories.find(c=>c.id===id)||{}).name||'(deleted)';}
+  // Alphabetical by pattern, regardless of search — a stable, predictable order rather
+  // than newest-first, so a rule's position doesn't shift around as others are added.
+  // Also searchable by the category it points to, so "which rules go to Groceries?" is
+  // one search away without knowing any of their patterns.
+  const visibleRules=rules
+    .filter(r=>matchesSearch(ruleSearch,r.pattern,categoryName(r.categoryId)))
+    .sort(byPatternAlpha);
   async function add(){
     if(!newName.trim())return;
     setError('');
@@ -670,9 +705,11 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
         h('div',{className:'muted',style:{marginBottom:8}},'* matches any characters, ? matches exactly one — e.g. "COSTCO*" or "SQ ?THE BARN". Keep patterns short and payee-specific — a full transaction description often has a one-time reference number that won\'t match other transactions from the same payee.'),
         ruleError&&h('div',{className:'alert alert-danger'},ruleError),
         rules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},'No rules yet — create one from the Research Unknown Payees panel, or the "+Rule" button on a transaction below.'),
-        rules.length>0&&h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
+        rules.length>0&&h('input',{className:'form-input',style:{width:'100%',marginBottom:10},placeholder:'Search rules, e.g. COST* or a category name',title:'* matches any characters, ? matches exactly one',value:ruleSearch,onChange:e=>setRuleSearch(e.target.value)}),
+        rules.length>0&&visibleRules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},`No rules match "${ruleSearch}".`),
+        visibleRules.length>0&&h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
           h('table',null,
-            h('tbody',null,rules.map(r=>h('tr',{key:r.id},
+            h('tbody',null,visibleRules.map(r=>h('tr',{key:r.id},
               h('td',null,editingRule&&editingRule.id===r.id
                 ?h('input',{className:'form-input',style:{margin:0,width:160},value:editingRule.pattern,autoFocus:true,onChange:e=>setEditingRule({...editingRule,pattern:e.target.value}),onKeyDown:e=>e.key==='Enter'&&saveRuleEdit()})
                 :`"${r.pattern}"`),
