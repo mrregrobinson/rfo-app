@@ -240,6 +240,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(id, req.expenditureLedger.id, b.pattern, b.matchType === 'regex' ? 'regex' : 'substring', b.categoryId, Number(b.priority) || 0, now);
     let reclassified = 0;
+    const affected = [];
     if (b.applyToExisting) {
       // Every non-transfer transaction in the ledger that matches, regardless of its
       // CURRENT category — not just ones still sitting in Miscellaneous/Unknown. A rule
@@ -251,7 +252,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
       // when each transaction happened to be imported relative to when the rule was
       // created, which defeats the point of having a rule at all.
       const candidates = db.prepare(
-        `SELECT t.id, t.raw_description FROM expenditure_transactions t
+        `SELECT t.id, t.raw_description, t.category_id FROM expenditure_transactions t
          JOIN expenditure_accounts a ON a.id = t.account_id
          WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id IS NULL OR t.category_id != ?)`
       ).all(req.expenditureLedger.id, b.categoryId);
@@ -259,11 +260,14 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
       for (const c of candidates) {
         if (matchesRule(c.raw_description, rule)) {
           db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(b.categoryId, c.id);
+          // Previous value, not the new one — this is what "Undo" restores each
+          // transaction to, so the whole batch can be reverted in one action.
+          affected.push({ id: c.id, categoryId: c.category_id, isTransfer: false });
           reclassified++;
         }
       }
     }
-    res.status(201).json({ rule: ruleRowToJson(db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(id)), reclassified });
+    res.status(201).json({ rule: ruleRowToJson(db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(id)), reclassified, affected });
   });
 
   // Edits an existing rule's pattern/category/priority in place, rather than only being
@@ -288,9 +292,10 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
       .run(pattern, categoryId, matchType, priority, req.params.id);
 
     let reclassified = 0;
+    const affected = [];
     if (b.applyToExisting) {
       const candidates = db.prepare(
-        `SELECT t.id, t.raw_description FROM expenditure_transactions t
+        `SELECT t.id, t.raw_description, t.category_id FROM expenditure_transactions t
          JOIN expenditure_accounts a ON a.id = t.account_id
          WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id IS NULL OR t.category_id != ?)`
       ).all(req.expenditureLedger.id, categoryId);
@@ -298,11 +303,12 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
       for (const c of candidates) {
         if (matchesRule(c.raw_description, rule)) {
           db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(categoryId, c.id);
+          affected.push({ id: c.id, categoryId: c.category_id, isTransfer: false });
           reclassified++;
         }
       }
     }
-    res.json({ rule: ruleRowToJson(db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(req.params.id)), reclassified });
+    res.json({ rule: ruleRowToJson(db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(req.params.id)), reclassified, affected });
   });
 
   app.delete('/api/expenditure/category-rules/:id', requireAuth, requireLedger, (req, res) => {
@@ -360,19 +366,21 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   function reapplyExclusionRule(ledgerId, rule, userId) {
     const transfersId = transfersCategoryId(ledgerId);
     const candidates = db.prepare(
-      `SELECT t.id, t.raw_description, t.amount, a.account_type
+      `SELECT t.id, t.raw_description, t.amount, t.category_id, a.account_type
        FROM expenditure_transactions t JOIN expenditure_accounts a ON a.id = t.account_id
        WHERE a.ledger_id = ? AND t.is_transfer = 0`
     ).all(ledgerId);
-    let excluded = 0;
+    const affected = [];
     for (const c of candidates) {
       if (isTransferOrIncome(c.raw_description, c.account_type, c.amount, [rule])) {
         db.prepare('UPDATE expenditure_transactions SET is_transfer = 1, category_id = ? WHERE id = ?').run(transfersId, c.id);
-        excluded++;
+        // Previous value — is_transfer was 0 for every candidate per the WHERE clause
+        // above, so restoring just needs the category it had before being excluded.
+        affected.push({ id: c.id, categoryId: c.category_id, isTransfer: false });
       }
     }
-    if (excluded > 0) logAudit({ userId, action: 'expenditure.exclusion_rule_applied', entityType: 'expenditure_exclusion_rule', entityId: rule.id, details: { excluded } });
-    return excluded;
+    if (affected.length > 0) logAudit({ userId, action: 'expenditure.exclusion_rule_applied', entityType: 'expenditure_exclusion_rule', entityId: rule.id, details: { excluded: affected.length } });
+    return { excluded: affected.length, affected };
   }
 
   app.post('/api/expenditure/exclusion-rules', requireAuth, requireLedger, (req, res) => {
@@ -388,8 +396,8 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(id, req.expenditureLedger.id, b.pattern, matchType, direction, accountType, Number(b.priority) || 0, now);
     const rule = db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE id = ?').get(id);
-    const excluded = b.applyToExisting ? reapplyExclusionRule(req.expenditureLedger.id, rule, req.session.userId) : 0;
-    res.status(201).json({ rule: exclusionRuleRowToJson(rule), excluded });
+    const { excluded, affected } = b.applyToExisting ? reapplyExclusionRule(req.expenditureLedger.id, rule, req.session.userId) : { excluded: 0, affected: [] };
+    res.status(201).json({ rule: exclusionRuleRowToJson(rule), excluded, affected });
   });
 
   app.put('/api/expenditure/exclusion-rules/:id', requireAuth, requireLedger, (req, res) => {
@@ -405,8 +413,8 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     db.prepare('UPDATE expenditure_exclusion_rules SET pattern = ?, match_type = ?, direction = ?, account_type = ?, priority = ? WHERE id = ?')
       .run(pattern, matchType, direction, accountType, priority, req.params.id);
     const rule = db.prepare('SELECT * FROM expenditure_exclusion_rules WHERE id = ?').get(req.params.id);
-    const excluded = b.applyToExisting ? reapplyExclusionRule(req.expenditureLedger.id, rule, req.session.userId) : 0;
-    res.json({ rule: exclusionRuleRowToJson(rule), excluded });
+    const { excluded, affected } = b.applyToExisting ? reapplyExclusionRule(req.expenditureLedger.id, rule, req.session.userId) : { excluded: 0, affected: [] };
+    res.json({ rule: exclusionRuleRowToJson(rule), excluded, affected });
   });
 
   app.delete('/api/expenditure/exclusion-rules/:id', requireAuth, requireLedger, (req, res) => {
@@ -483,20 +491,23 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     ).all(req.expenditureLedger.id);
     const excludedExamples = [];
     let recategorized = 0;
+    const affected = [];
     for (const r of rows) {
       if (isTransferOrIncome(r.raw_description, r.account_type, r.amount, exclusionRules)) {
         db.prepare('UPDATE expenditure_transactions SET is_transfer = 1, category_id = ? WHERE id = ?').run(transfersId, r.id);
         excludedExamples.push(r.raw_description);
+        affected.push({ id: r.id, categoryId: r.category_id, isTransfer: false });
         continue;
       }
       const ruleCategoryId = categorize(req.expenditureLedger.id, r.raw_description);
       if (ruleCategoryId && ruleCategoryId !== r.category_id) {
         db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(ruleCategoryId, r.id);
+        affected.push({ id: r.id, categoryId: r.category_id, isTransfer: false });
         recategorized++;
       }
     }
     logAudit({ userId: req.session.userId, action: 'expenditure.reclassified', entityType: 'expenditure_ledger', entityId: req.expenditureLedger.id, details: { excluded: excludedExamples.length, recategorized } });
-    res.json({ excluded: excludedExamples.length, excludedExamples: excludedExamples.slice(0, 20), recategorized });
+    res.json({ excluded: excludedExamples.length, excludedExamples: excludedExamples.slice(0, 20), recategorized, affected });
   });
 
   // ---- import (zip or individual PDFs) ----
@@ -756,6 +767,28 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
          AND account_id IN (SELECT id FROM expenditure_accounts WHERE ledger_id = ?)`
     ).run(...params, ...ids, req.expenditureLedger.id);
     res.json({ updated: result.changes });
+  });
+
+  // Undoes a bulk-affecting change (a rule create/edit with applyToExisting, "Clean Up
+  // Existing Data", or the transaction list's own bulk actions) by restoring each
+  // transaction to its own previous categoryId/isTransfer — unlike the bulk endpoint
+  // above, which sets every id to the SAME new value, an undo needs to put back
+  // whatever DIFFERENT value each one individually had before. This is deliberately a
+  // single-level, in-memory undo (the client holds the affected list only from the most
+  // recent such action) rather than a persistent change history.
+  app.put('/api/expenditure/transactions/bulk-restore', requireAuth, requireLedger, (req, res) => {
+    const updates = Array.isArray(req.body?.updates) ? req.body.updates : [];
+    if (updates.length === 0) return res.status(400).json({ error: 'updates (non-empty array) is required' });
+    const stmt = db.prepare(
+      `UPDATE expenditure_transactions SET category_id = ?, is_transfer = ?
+       WHERE id = ? AND account_id IN (SELECT id FROM expenditure_accounts WHERE ledger_id = ?)`
+    );
+    let updated = 0;
+    for (const u of updates) {
+      if (!u || !u.id) continue;
+      updated += stmt.run(u.categoryId ?? null, u.isTransfer ? 1 : 0, u.id, req.expenditureLedger.id).changes;
+    }
+    res.json({ updated });
   });
 
   app.put('/api/expenditure/transactions/:id', requireAuth, requireLedger, (req, res) => {

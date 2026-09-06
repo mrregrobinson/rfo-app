@@ -144,6 +144,7 @@ describe('POST /api/expenditure/reclassify', () => {
     assert.equal(body.excluded, 1);
     assert.deepEqual(body.excludedExamples, ['PAYROLL DEP ACME CORP']);
     assert.equal(body.recategorized, 0);
+    assert.deepEqual(body.affected, [{ id: payrollId, categoryId: categoryAId, isTransfer: false }], 'enough to undo the exclusion — the category it had before, not the Transfers category it just moved to');
 
     const payroll = db.prepare('SELECT is_transfer, category_id FROM expenditure_transactions WHERE id = ?').get(payrollId);
     assert.equal(payroll.is_transfer, 1);
@@ -181,6 +182,55 @@ describe('POST /api/expenditure/reclassify', () => {
 
     const afterReclassify = db.prepare('SELECT category_id FROM expenditure_transactions WHERE raw_description = ?').get('HERITAGE COOP GROC');
     assert.equal(afterReclassify.category_id, categoryBId, 'reclassify should catch up the existing rule against existing data');
+  });
+});
+
+describe('PUT /api/expenditure/transactions/bulk-restore', () => {
+  // Backs "Undo" after a bulk-affecting change (a rule's applyToExisting, Clean Up
+  // Existing Data, or the transaction list's own bulk actions) — unlike PUT .../bulk,
+  // which sets every id to the SAME new value, restoring needs to put back whatever
+  // DIFFERENT value each transaction individually had before.
+  async function restore(updates) {
+    const r = await fetch(`${baseUrl}/api/expenditure/transactions/bulk-restore`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }),
+    });
+    return { status: r.status, body: await r.json() };
+  }
+
+  test('restores each transaction to its own previous category/isTransfer, not a shared value', async () => {
+    const now = new Date().toISOString();
+    const idA = crypto.randomUUID();
+    const idB = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-05-01', 'Restore Test A', 'Restore Test A', 10, 'CAD', 10, ?, 1, ?)`)
+      .run(idA, ACCOUNT_ID, STATEMENT_ID, transfersId, now);
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-05-02', 'Restore Test B', 'Restore Test B', 20, 'CAD', 20, ?, 1, ?)`)
+      .run(idB, ACCOUNT_ID, STATEMENT_ID, transfersId, now);
+
+    const { status, body } = await restore([
+      { id: idA, categoryId: categoryAId, isTransfer: false },
+      { id: idB, categoryId: null, isTransfer: false },
+    ]);
+    assert.equal(status, 200);
+    assert.equal(body.updated, 2);
+    const rowA = db.prepare('SELECT category_id, is_transfer FROM expenditure_transactions WHERE id = ?').get(idA);
+    assert.equal(rowA.category_id, categoryAId);
+    assert.equal(rowA.is_transfer, 0);
+    const rowB = db.prepare('SELECT category_id, is_transfer FROM expenditure_transactions WHERE id = ?').get(idB);
+    assert.equal(rowB.category_id, null);
+    assert.equal(rowB.is_transfer, 0);
+  });
+
+  test('rejects an empty updates array', async () => {
+    const { status } = await restore([]);
+    assert.equal(status, 400);
+  });
+
+  test('cannot restore a transaction belonging to a different ledger', async () => {
+    const before = db.prepare('SELECT category_id, is_transfer FROM expenditure_transactions WHERE id = ?').get(otherTxnId);
+    const { status, body } = await restore([{ id: otherTxnId, categoryId: categoryAId, isTransfer: true }]);
+    assert.equal(status, 200);
+    assert.equal(body.updated, 0, 'silently skipped, not applied — same shape as PUT .../bulk\'s cross-ledger behavior');
+    assert.deepEqual(db.prepare('SELECT category_id, is_transfer FROM expenditure_transactions WHERE id = ?').get(otherTxnId), before, 'unchanged');
   });
 });
 

@@ -238,6 +238,36 @@ describe('POST /api/expenditure/category-rules — applyToExisting', () => {
     assert.equal(transfer.category_id, null);
   });
 
+  test('applyToExisting reports each reclassified transaction\'s PREVIOUS category, and undo (bulk-restore) puts them all back', async () => {
+    const groceriesCategory = await post('/api/expenditure/categories', { name: 'Undo Groceries' }).then((r) => r.body);
+    const shoppingCategory = await post('/api/expenditure/categories', { name: 'Undo Shopping' }).then((r) => r.body);
+    const accountId = crypto.randomUUID();
+    const statementId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+    db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-04-01', '2026-04-30', ?)`).run(statementId, accountId, now);
+    const wasShoppingId = crypto.randomUUID();
+    const wasUncategorizedId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-04-05', 'UNDO TEST PAYEE', 'UNDO TEST PAYEE', 15, 'CAD', 15, ?, 0, ?)`)
+      .run(wasShoppingId, accountId, statementId, shoppingCategory.id, now);
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-04-06', 'UNDO TEST PAYEE', 'UNDO TEST PAYEE', 25, 'CAD', 25, NULL, 0, ?)`)
+      .run(wasUncategorizedId, accountId, statementId, now);
+
+    const { body } = await post('/api/expenditure/category-rules', { pattern: 'UNDO TEST PAYEE', categoryId: groceriesCategory.id, applyToExisting: true });
+    assert.equal(body.reclassified, 2);
+    assert.equal(body.affected.length, 2, 'the response carries enough to undo the whole batch, not just a count');
+    const byId = Object.fromEntries(body.affected.map((a) => [a.id, a]));
+    assert.equal(byId[wasShoppingId].categoryId, shoppingCategory.id, 'previous category, not the new one');
+    assert.equal(byId[wasUncategorizedId].categoryId, null);
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(wasShoppingId).category_id, groceriesCategory.id, 'sanity check: the reclassify actually happened');
+
+    const undoRes = await put('/api/expenditure/transactions/bulk-restore', { updates: body.affected });
+    assert.equal(undoRes.status, 200);
+    assert.equal(undoRes.body.updated, 2);
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(wasShoppingId).category_id, shoppingCategory.id, 'restored to its pre-rule category');
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(wasUncategorizedId).category_id, null, 'restored to uncategorized');
+  });
+
   test('creating a rule with applyToExisting left unset (or false) does not touch any existing transaction', async () => {
     const { body: category } = await post('/api/expenditure/categories', { name: 'No Apply Test' });
     const accountId = crypto.randomUUID();

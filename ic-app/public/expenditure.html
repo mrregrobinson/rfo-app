@@ -53,6 +53,7 @@ tr:hover td{background:var(--bg)}
 .chart-tab{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;user-select:none;border:0.5px solid var(--border);background:#fff;color:var(--navy)}
 .chart-tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 .toolbar-divider{width:1px;align-self:stretch;background:var(--border);margin:2px 2px}
+.undo-bar{background:var(--gold-l);border:0.5px solid var(--gold);border-radius:var(--r);padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:var(--navy)}
 @media print{.no-print{display:none!important}.page{max-width:none;padding:0}}
 @media (max-width:700px){.two-col{grid-template-columns:1fr}}
 </style>
@@ -745,7 +746,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
 // match pattern; the suggestion is only ever a starting point — the category and
 // pattern stay editable, and nothing is applied until "Create Rule" is clicked
 // (applyToExisting reclassifies every other transaction from the same payee at once).
-function PayeeRow({payee,categories,onResearched}){
+function PayeeRow({payee,categories,onResearched,onAffected}){
   const [suggestion,setSuggestion]=useState(null);
   const [category,setCategory]=useState('');
   const [pattern,setPattern]=useState(payee.description);
@@ -767,6 +768,7 @@ function PayeeRow({payee,categories,onResearched}){
     setBusy(true);setError('');
     try{
       const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId:category,applyToExisting:true});
+      onAffected(pattern,res);
       // Always stated, including zero — this payee's own transaction(s) always count
       // (they're what put it in this list), but a pattern edited down to something too
       // narrow could still fail to catch every one of them.
@@ -829,7 +831,7 @@ function ManualRuleForm({categories,onAdd}){
   );
 }
 
-function ResearchModal({categories,onClose,onChanged}){
+function ResearchModal({categories,onClose,onChanged,onAffected}){
   const [payees,setPayees]=useState(null);
   const [error,setError]=useState('');
   function load(){api.get('/api/expenditure/unknown-payees').then(setPayees).catch(err=>setError(err.message));}
@@ -837,6 +839,7 @@ function ResearchModal({categories,onClose,onChanged}){
   function refresh(){load();onChanged();}
   async function addManualRule(pattern,categoryId){
     const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
+    onAffected(pattern,res);
     refresh();
     return res;
   }
@@ -849,7 +852,7 @@ function ResearchModal({categories,onClose,onChanged}){
       !payees?h('div',{className:'muted'},'Loading…'):
       payees.length===0?h('div',{className:'muted'},'Nothing in Miscellaneous/Unknown right now.'):
       h('div',{style:{maxHeight:360,overflowY:'auto'}},
-        payees.map(p=>h(PayeeRow,{key:p.description,payee:p,categories,onResearched:refresh}))
+        payees.map(p=>h(PayeeRow,{key:p.description,payee:p,categories,onResearched:refresh,onAffected}))
       ),
       h('div',{style:{textAlign:'right',marginTop:14}},h('button',{className:'btn btn-outline',onClick:onClose},'Close'))
     )
@@ -871,6 +874,11 @@ function ExpenditureApp({ledger}){
   const [showCategories,setShowCategories]=useState(false);
   const [showResearch,setShowResearch]=useState(false);
   const [selectedIds,setSelectedIds]=useState(()=>new Set());
+  // The single most recent bulk-affecting change (a rule create/edit with
+  // applyToExisting, Clean Up Existing Data, or a bulk toolbar action) — enough to
+  // offer one level of "Undo", not a persistent history. Replaced by the next such
+  // action, or cleared on Undo/Dismiss/page reload.
+  const [lastAction,setLastAction]=useState(null); // {label, affected:[{id,categoryId,isTransfer}]}
 
   function loadRules(){api.get('/api/expenditure/category-rules').then(setRules).catch(()=>{});}
   function loadExclusionRules(){api.get('/api/expenditure/exclusion-rules').then(setExclusionRules).catch(()=>{});}
@@ -951,21 +959,46 @@ function ExpenditureApp({ledger}){
   async function renameCategory(id,name){await api.put('/api/expenditure/categories/'+id,{name});load();}
   async function deleteCategory(id){await api.del('/api/expenditure/categories/'+id);load();}
   async function deleteRule(id){await api.del('/api/expenditure/category-rules/'+id);loadRules();}
+
+  // Remembers a bulk-affecting change as the one thing "Undo" can currently revert.
+  // Silently does nothing if the action didn't actually touch anything (affected empty)
+  // — nothing to offer undoing in that case.
+  function recordAffected(label,res){
+    if(res&&res.affected&&res.affected.length>0)setLastAction({label,affected:res.affected});
+  }
+  async function undoLastAction(){
+    if(!lastAction)return;
+    await api.put('/api/expenditure/transactions/bulk-restore',{updates:lastAction.affected});
+    setLastAction(null);
+    load();loadRules();loadExclusionRules();
+  }
+
   async function editRule(id,pattern,categoryId){
-    await api.put('/api/expenditure/category-rules/'+id,{pattern,categoryId,applyToExisting:true});
+    const res=await api.put('/api/expenditure/category-rules/'+id,{pattern,categoryId,applyToExisting:true});
     loadRules();load();
+    recordAffected(`Edited rule "${pattern}" — reclassified ${res.affected.length} transaction${res.affected.length===1?'':'s'}.`,res);
   }
   async function addExclusionRule(pattern,direction,accountType){
     const res=await api.post('/api/expenditure/exclusion-rules',{pattern,direction,accountType,applyToExisting:true});
     loadExclusionRules();load();
+    recordAffected(`Added exclusion rule "${pattern}" — excluded ${res.affected.length} transaction${res.affected.length===1?'':'s'}.`,res);
     return res;
   }
   async function editExclusionRule(id,pattern,direction,accountType){
     const res=await api.put('/api/expenditure/exclusion-rules/'+id,{pattern,direction,accountType,applyToExisting:true});
     loadExclusionRules();load();
+    recordAffected(`Edited exclusion rule "${pattern}" — excluded ${res.affected.length} transaction${res.affected.length===1?'':'s'}.`,res);
     return res;
   }
   async function deleteExclusionRule(id){await api.del('/api/expenditure/exclusion-rules/'+id);loadExclusionRules();}
+
+  // A rule created via the "+Rule" button, or from the Research Unknown Payees panel
+  // (manually or from an AI suggestion) — every path that turns "categorize this one
+  // transaction" into a rule applied across the whole ledger, so every path gets the
+  // same undo coverage.
+  function recordRuleAffected(pattern,res){
+    recordAffected(`Rule "${pattern}" — reclassified ${res.affected.length} transaction${res.affected.length===1?'':'s'}.`,res);
+  }
 
   async function updateTransaction(id,patch){
     const updated=await api.put('/api/expenditure/transactions/'+id,patch);
@@ -980,9 +1013,15 @@ function ExpenditureApp({ledger}){
     setSelectedIds(select?new Set(transactions.map(t=>t.id)):new Set());
   }
   async function bulkAction(patch){
+    // Captured from the currently-loaded rows (not re-fetched) — good enough for a
+    // single-level, best-effort undo, and avoids a round-trip just to know what's about
+    // to change.
+    const affected=transactions.filter(t=>selectedIds.has(t.id)).map(t=>({id:t.id,categoryId:t.categoryId,isTransfer:t.isTransfer}));
     await api.put('/api/expenditure/transactions/bulk',{ids:[...selectedIds],...patch});
     setSelectedIds(new Set());
     load();
+    const verb=patch.isTransfer===true?'Excluded':patch.isTransfer===false?'Included':'Updated';
+    if(affected.length>0)setLastAction({label:`${verb} ${affected.length} transaction${affected.length===1?'':'s'}.`,affected});
   }
 
   // Re-applies the current transfer/income detection AND every existing category rule
@@ -999,6 +1038,7 @@ function ExpenditureApp({ledger}){
       window.alert('Nothing to clean up — everything already matches the current rules.');
       return;
     }
+    if(res.affected&&res.affected.length>0)setLastAction({label:`Cleaned up ${res.affected.length} transaction${res.affected.length===1?'':'s'}.`,affected:res.affected});
     const lines=[];
     if(res.excluded>0)lines.push(`Excluded ${res.excluded} transaction${res.excluded===1?'':'s'} as transfers/income:\n${res.excludedExamples.join('\n')}${res.excluded>res.excludedExamples.length?'\n…and more':''}`);
     if(res.recategorized>0)lines.push(`Recategorized ${res.recategorized} transaction${res.recategorized===1?'':'s'} to match an existing rule.`);
@@ -1008,6 +1048,7 @@ function ExpenditureApp({ledger}){
   async function createRuleFromTransaction(pattern,categoryId){
     const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
     load();loadRules();
+    recordRuleAffected(pattern,res);
     // Always state the count, including zero — a silently-omitted "0 matched" reads as
     // success when the pattern (e.g. one that still has a per-transaction reference
     // number in it) actually never generalized to anything else.
@@ -1031,6 +1072,13 @@ function ExpenditureApp({ledger}){
       h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
       h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories & Rules')
     ),
+    lastAction&&h('div',{className:'undo-bar no-print'},
+      h('div',null,lastAction.label),
+      h('div',{style:{display:'flex',gap:8,flexShrink:0}},
+        h('button',{className:'btn btn-gold btn-sm',onClick:undoLastAction},'Undo'),
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>setLastAction(null)},'Dismiss')
+      )
+    ),
     compareMode&&compareSummary
       ?h('div',{className:'two-col'},
           h('div',{className:'card'},h(SummaryBlock,{label:'Period A',summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
@@ -1041,7 +1089,7 @@ function ExpenditureApp({ledger}){
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,exclusionRules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule,onAddExclusionRule:addExclusionRule,onEditExclusionRule:editExclusionRule,onDeleteExclusionRule:deleteExclusionRule}),
-    showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();}})
+    showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();},onAffected:recordRuleAffected})
   );
 }
 

@@ -113,6 +113,32 @@ describe('exclusion rule management', () => {
     assert.equal(n.is_transfer, 0, 'unrelated spending must not be swept in');
   });
 
+  test('applyToExisting reports each excluded transaction\'s PREVIOUS category/isTransfer, and undo (bulk-restore) puts them back', async () => {
+    const { body: category } = await post('/api/expenditure/categories', { name: 'Undo Category For Exclusion' });
+    const accountId = crypto.randomUUID();
+    const statementId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+    db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-04-01', '2026-04-30', ?)`).run(statementId, accountId, now);
+    const txnId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-04-10', 'ALREADY CATEGORIZED PAYEE', 'ALREADY CATEGORIZED PAYEE', 60, 'CAD', 60, ?, 0, ?)`)
+      .run(txnId, accountId, statementId, category.id, now);
+
+    const { body } = await post('/api/expenditure/exclusion-rules', { pattern: 'ALREADY CATEGORIZED PAYEE', applyToExisting: true });
+    assert.equal(body.excluded, 1);
+    assert.equal(body.affected.length, 1);
+    assert.equal(body.affected[0].id, txnId);
+    assert.equal(body.affected[0].categoryId, category.id, 'the category it had before being excluded, not the Transfers category it was just moved to');
+    assert.equal(db.prepare('SELECT is_transfer FROM expenditure_transactions WHERE id = ?').get(txnId).is_transfer, 1, 'sanity check: the exclusion actually happened');
+
+    const undoRes = await put('/api/expenditure/transactions/bulk-restore', { updates: body.affected });
+    assert.equal(undoRes.status, 200);
+    assert.equal(undoRes.body.updated, 1);
+    const restored = db.prepare('SELECT category_id, is_transfer FROM expenditure_transactions WHERE id = ?').get(txnId);
+    assert.equal(restored.is_transfer, 0, 'no longer excluded');
+    assert.equal(restored.category_id, category.id, 'back to its original category');
+  });
+
   test('a direction:negative rule only excludes money coming in', async () => {
     const incoming = makeTxn({ description: 'CONTRACTOR REBATE DEPOSIT', amount: -200 });
     const outgoing = makeTxn({ description: 'CONTRACTOR REBATE DEPOSIT FEE', amount: 15 });
