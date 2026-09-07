@@ -6,6 +6,12 @@
 <title>Robinson Family Office — Family Office Meetings</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- In-app attachment preview only — files never leave the app via a public URL for
+     these to work on (see server CSP comment): SheetJS renders .xls/.xlsx as an HTML
+     table, mammoth.js renders .docx as HTML. PDFs/images use the browser's own native
+     rendering, no library needed. -->
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
@@ -56,6 +62,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid}
 .alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
 .alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+.attachment-link{cursor:pointer;color:var(--teal);font-weight:600}
+.attachment-link:hover{text-decoration:underline}
+.xlsx-preview table{border-collapse:collapse;font-size:12px}
+.xlsx-preview td,.xlsx-preview th{border:0.5px solid var(--border);padding:4px 8px;white-space:nowrap}
+.docx-preview{font-size:13px;line-height:1.6}
+.docx-preview table{border-collapse:collapse;margin:8px 0}
+.docx-preview td,.docx-preview th{border:0.5px solid var(--border);padding:4px 8px}
 </style>
 </head>
 <body>
@@ -74,6 +87,18 @@ const api={
 function memberById(members,id){return members.find(m=>m.id===id)}
 function fmtDateTime(iso){return new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
 function toDatetimeLocal(iso){const d=new Date(iso);const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+function fmtFileSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(0)+' KB';return (bytes/(1024*1024)).toFixed(1)+' MB';}
+// Determined from the filename extension rather than the browser-reported MIME type —
+// browsers/OSes are inconsistent about what they report (often empty or a generic
+// octet-stream) for exactly the formats this needs to distinguish.
+function attachmentKind(filename){
+  const ext=(filename||'').split('.').pop().toLowerCase();
+  if(ext==='pdf')return'pdf';
+  if(['jpg','jpeg','png','gif','webp'].includes(ext))return'image';
+  if(ext==='docx')return'word'; // legacy .doc isn't supported by mammoth.js — falls through to 'other'.
+  if(ext==='xlsx'||ext==='xls')return'excel';
+  return'other';
+}
 
 function AttendeesPicker({members,attendees,onChange}){
   const familyIds=attendees.filter(a=>!a.external).map(a=>a.userId);
@@ -253,6 +278,131 @@ function AgendaItemCard({item,members,categories,editable,onSaveSummary,onAddDec
   );
 }
 
+// Fetches the file bytes via an authenticated same-origin request (never a public URL —
+// see the CSP comment in server/index.js), then renders in-app: PDF/image via the
+// browser's own native rendering from a blob: object URL, Word/Excel via client-side
+// conversion (mammoth.js / SheetJS). Anything else falls back to Download only.
+function AttachmentViewerModal({meetingId,attachment,onClose}){
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [blobUrl,setBlobUrl]=useState(null);
+  const [htmlContent,setHtmlContent]=useState(null);
+  const [sheets,setSheets]=useState(null);
+  const [activeSheet,setActiveSheet]=useState(0);
+  const kind=attachmentKind(attachment.filename);
+  const fileUrl=`/api/meetings/${meetingId}/attachments/${attachment.id}`;
+
+  useEffect(()=>{
+    let cancelled=false,createdUrl=null;
+    setLoading(true);setError('');setBlobUrl(null);setHtmlContent(null);setSheets(null);setActiveSheet(0);
+    (async()=>{
+      try{
+        const res=await fetch(fileUrl,{credentials:'same-origin'});
+        if(!res.ok)throw new Error('Failed to load the file');
+        if(kind==='pdf'||kind==='image'){
+          const blob=await res.blob();
+          if(cancelled)return;
+          createdUrl=URL.createObjectURL(blob);
+          setBlobUrl(createdUrl);
+        }else if(kind==='word'){
+          const buf=await res.arrayBuffer();
+          const result=await window.mammoth.convertToHtml({arrayBuffer:buf});
+          if(cancelled)return;
+          setHtmlContent(result.value);
+        }else if(kind==='excel'){
+          const buf=await res.arrayBuffer();
+          const wb=window.XLSX.read(buf,{type:'array'});
+          const sheetData=wb.SheetNames.map(name=>({name,html:window.XLSX.utils.sheet_to_html(wb.Sheets[name],{editable:false})}));
+          if(cancelled)return;
+          setSheets(sheetData);
+        }
+      }catch(e){if(!cancelled)setError(e.message||'Failed to preview this file.');}
+      finally{if(!cancelled)setLoading(false);}
+    })();
+    return ()=>{cancelled=true;if(createdUrl)URL.revokeObjectURL(createdUrl);};
+  },[attachment.id]);
+
+  function download(){
+    fetch(fileUrl,{credentials:'same-origin'}).then(r=>r.blob()).then(blob=>{
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;a.download=attachment.filename;document.body.appendChild(a);a.click();document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',style:{maxWidth:kind==='other'?480:920,width:'95%'},onClick:e=>e.stopPropagation()},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:12}},
+        h('div',{className:'modal-title',style:{marginBottom:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},attachment.filename),
+        h('div',{style:{display:'flex',gap:8,flexShrink:0}},
+          h('button',{className:'btn btn-outline btn-sm',onClick:download},'Download'),
+          h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close'))
+      ),
+      loading&&h('div',{style:{padding:40,textAlign:'center'},className:'muted'},'Loading preview…'),
+      error&&h('div',{className:'alert alert-danger'},error),
+      !loading&&!error&&kind==='pdf'&&blobUrl&&h('iframe',{src:blobUrl,style:{width:'100%',height:'75vh',border:'0.5px solid var(--border)',borderRadius:8}}),
+      !loading&&!error&&kind==='image'&&blobUrl&&h('img',{src:blobUrl,style:{maxWidth:'100%',maxHeight:'75vh',display:'block',margin:'0 auto',borderRadius:8}}),
+      !loading&&!error&&kind==='word'&&htmlContent!=null&&h('div',{className:'docx-preview',style:{maxHeight:'75vh',overflowY:'auto',padding:16,border:'0.5px solid var(--border)',borderRadius:8,background:'#fff'},dangerouslySetInnerHTML:{__html:htmlContent}}),
+      !loading&&!error&&kind==='excel'&&sheets&&h('div',null,
+        sheets.length>1&&h('div',{style:{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}},
+          sheets.map((s,i)=>h('button',{key:s.name,className:`btn btn-sm ${i===activeSheet?'btn-teal':'btn-outline'}`,onClick:()=>setActiveSheet(i)},s.name))),
+        h('div',{className:'xlsx-preview',style:{maxHeight:'70vh',overflow:'auto',border:'0.5px solid var(--border)',borderRadius:8},dangerouslySetInnerHTML:{__html:(sheets[activeSheet]||{}).html||''}})
+      ),
+      !loading&&!error&&kind==='other'&&h('div',{style:{padding:30,textAlign:'center'},className:'muted'},'Preview isn’t available for this file type — use Download to open it.')
+    )
+  );
+}
+
+function AttachmentsSection({meetingId,attachments,me,roles,onChanged}){
+  const [uploading,setUploading]=useState(false);
+  const [error,setError]=useState('');
+  const [viewing,setViewing]=useState(null);
+  const canUpload=roles.meetingsMember;
+
+  function handleFile(e){
+    const file=e.target.files[0];
+    e.target.value='';
+    if(!file)return;
+    if(file.size>25*1024*1024){setError('That file is too large — the limit is 25MB.');return;}
+    setUploading(true);setError('');
+    const reader=new FileReader();
+    reader.onload=async()=>{
+      try{
+        const base64=String(reader.result).split(',')[1]||'';
+        await api.post(`/api/meetings/${meetingId}/attachments`,{filename:file.name,contentType:file.type,contentBase64:base64});
+        await onChanged();
+      }catch(err){setError(err.message||'Upload failed');}
+      finally{setUploading(false);}
+    };
+    reader.onerror=()=>{setError('Failed to read the file');setUploading(false);};
+    reader.readAsDataURL(file);
+  }
+  async function remove(a){
+    if(!window.confirm(`Remove "${a.filename}"?`))return;
+    await api.del(`/api/meetings/${meetingId}/attachments/${a.id}`);
+    await onChanged();
+  }
+
+  return h('div',{className:'card'},
+    h('div',{className:'subhead'},'Attachments'),
+    attachments.length===0&&h('div',{className:'muted'},'None yet.'),
+    attachments.map(a=>h('div',{key:a.id,className:'item-line'},
+      h('span',{className:'attachment-link',onClick:()=>setViewing(a)},a.filename,' ',h('span',{className:'muted',style:{fontWeight:400}},'('+fmtFileSize(a.sizeBytes)+' · '+(a.uploadedByName||'—')+')')),
+      h('div',{style:{display:'flex',gap:6,flexShrink:0}},
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>setViewing(a)},'View'),
+        (roles.meetingsAdmin||a.uploadedBy===me.id)&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>remove(a)},'Remove')
+      )
+    )),
+    canUpload&&h('label',{className:'btn btn-outline btn-sm',style:{cursor:'pointer',marginTop:8,display:'inline-flex'}},
+      uploading?'Uploading…':'+ Add attachment',
+      h('input',{type:'file',style:{display:'none'},disabled:uploading,onChange:handleFile,accept:'.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'})
+    ),
+    error&&h('div',{className:'alert alert-danger',style:{marginTop:8}},error),
+    viewing&&h(AttachmentViewerModal,{meetingId,attachment:viewing,onClose:()=>setViewing(null)})
+  );
+}
+
 function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged}){
   const [meeting,setMeeting]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -353,6 +503,7 @@ function MeetingDetail({meetingId,me,roles,members,categories,onBack,onChanged})
         !meeting.inviteSendDate&&h('div',{className:'muted',style:{marginTop:6}},'No invite scheduled for this meeting.')
       )
     ),
+    h(AttachmentsSection,{meetingId,attachments:meeting.attachments||[],me,roles,onChanged:refresh}),
     meeting.agendaItems.map(item=>h(AgendaItemCard,{
       key:item.id,item,members,categories,editable:canEditMinutes,
       onSaveSummary:saveSummary,onAddDecision:addDecision,onDeleteDecision:deleteDecision,

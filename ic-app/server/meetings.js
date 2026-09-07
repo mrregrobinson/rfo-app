@@ -9,6 +9,7 @@ const crypto = require('node:crypto');
 const { requireAuth } = require('./auth');
 const mailer = require('./mailer');
 const { sendMeetingInvite, sendMinutesEmail } = require('./meetings-scheduler');
+const { MAX_ATTACHMENT_BYTES, saveAttachment, readAttachment, deleteAttachmentFile, deleteAllForMeeting } = require('./attachments');
 
 module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
   function myRoles(userId) {
@@ -28,6 +29,20 @@ module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
       return { id: row.id, userId: row.user_id, name: user ? user.name : null, email: user ? user.email : null, external: false };
     }
     return { id: row.id, userId: null, name: row.external_name, email: row.external_email, external: true };
+  }
+
+  function attachmentRowToJson(row) {
+    const uploader = db.prepare('SELECT name FROM users WHERE id = ?').get(row.uploaded_by);
+    return {
+      id: row.id,
+      meetingId: row.meeting_id,
+      filename: row.filename,
+      contentType: row.content_type,
+      sizeBytes: row.size_bytes,
+      uploadedBy: row.uploaded_by,
+      uploadedByName: uploader ? uploader.name : null,
+      uploadedAt: row.uploaded_at,
+    };
   }
 
   function decisionRowToJson(row) {
@@ -99,7 +114,8 @@ module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
       .prepare('SELECT * FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
       .all(row.id)
       .map((r) => agendaItemRowToJson(r, { withDetail: true }));
-    return { ...meetingRowToJson(row), attendees, agendaItems };
+    const attachments = db.prepare('SELECT * FROM meeting_attachments WHERE meeting_id = ? ORDER BY uploaded_at').all(row.id).map(attachmentRowToJson);
+    return { ...meetingRowToJson(row), attendees, agendaItems, attachments };
   }
 
   function setAttendees(meetingId, attendees) {
@@ -204,8 +220,74 @@ module.exports = function registerMeetingRoutes(app, { db, logAudit }) {
     if (!roles.meetingsAdmin) return res.status(403).json({ error: 'Meetings admin only' });
     const row = requireMeeting(req, res);
     if (!row) return;
-    db.prepare('DELETE FROM meetings WHERE id = ?').run(row.id);
+    db.prepare('DELETE FROM meetings WHERE id = ?').run(row.id); // meeting_attachments rows cascade via FK — the files on disk don't, hence the call below.
+    deleteAllForMeeting(row.id);
     logAudit({ userId: req.session.userId, action: 'meeting.deleted', entityType: 'meeting', entityId: row.id, details: { title: row.title } });
+    res.json({ ok: true });
+  });
+
+  // ---- attachments ----
+  // Any meetings member can add/view; only the admin or the original uploader can
+  // remove one — matches the delete-permission pattern used elsewhere in this file
+  // (e.g. opportunities: initiator-or-admin).
+
+  app.post('/api/meetings/:id/attachments', requireAuth, (req, res) => {
+    const roles = myRoles(req.session.userId);
+    if (!roles.meetingsMember) return res.status(403).json({ error: 'You do not have permission to add attachments' });
+    const meeting = requireMeeting(req, res);
+    if (!meeting) return;
+    const b = req.body || {};
+    if (!b.filename || !b.contentBase64) return res.status(400).json({ error: 'filename and contentBase64 are required' });
+    let buffer;
+    try {
+      buffer = Buffer.from(b.contentBase64, 'base64');
+    } catch {
+      return res.status(400).json({ error: 'contentBase64 is not valid base64' });
+    }
+    if (buffer.length === 0) return res.status(400).json({ error: 'The file is empty' });
+    if (buffer.length > MAX_ATTACHMENT_BYTES) {
+      return res.status(413).json({ error: `File is too large — the limit is ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB.` });
+    }
+    const id = crypto.randomUUID();
+    saveAttachment(meeting.id, id, b.filename, buffer);
+    db.prepare(
+      `INSERT INTO meeting_attachments (id, meeting_id, filename, content_type, size_bytes, uploaded_by, uploaded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, meeting.id, b.filename, b.contentType || 'application/octet-stream', buffer.length, req.session.userId, new Date().toISOString());
+    logAudit({ userId: req.session.userId, action: 'attachment.uploaded', entityType: 'meeting', entityId: meeting.id, details: { filename: b.filename } });
+    res.status(201).json(attachmentRowToJson(db.prepare('SELECT * FROM meeting_attachments WHERE id = ?').get(id)));
+  });
+
+  // Serves the raw bytes — fetched via authenticated same-origin XHR/fetch from the app
+  // (never linked as a bare URL), then rendered client-side (PDF/JPG natively, Word/Excel
+  // via client-side libraries) or downloaded. inline Content-Disposition lets a direct
+  // navigation (e.g. opening in a new tab) render PDFs/images natively too.
+  app.get('/api/meetings/:id/attachments/:attachmentId', requireAuth, (req, res) => {
+    const roles = myRoles(req.session.userId);
+    if (!roles.meetingsMember) return res.status(403).json({ error: 'No Meetings access' });
+    const row = db.prepare('SELECT * FROM meeting_attachments WHERE id = ? AND meeting_id = ?').get(req.params.attachmentId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Attachment not found' });
+    let buffer;
+    try {
+      buffer = readAttachment(row.meeting_id, row.id, row.filename);
+    } catch {
+      return res.status(404).json({ error: 'Attachment file is missing on the server' });
+    }
+    res.set('Content-Type', row.content_type || 'application/octet-stream');
+    res.set('Content-Disposition', `inline; filename="${row.filename.replace(/"/g, '')}"`);
+    res.send(buffer);
+  });
+
+  app.delete('/api/meetings/:id/attachments/:attachmentId', requireAuth, (req, res) => {
+    const roles = myRoles(req.session.userId);
+    const row = db.prepare('SELECT * FROM meeting_attachments WHERE id = ? AND meeting_id = ?').get(req.params.attachmentId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Attachment not found' });
+    if (!roles.meetingsAdmin && row.uploaded_by !== req.session.userId) {
+      return res.status(403).json({ error: 'Only the person who uploaded this file, or a Meetings admin, can remove it' });
+    }
+    db.prepare('DELETE FROM meeting_attachments WHERE id = ?').run(row.id);
+    deleteAttachmentFile(row.meeting_id, row.id, row.filename);
+    logAudit({ userId: req.session.userId, action: 'attachment.deleted', entityType: 'meeting', entityId: row.meeting_id, details: { filename: row.filename } });
     res.json({ ok: true });
   });
 

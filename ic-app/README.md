@@ -147,6 +147,9 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   against an agenda item. An action item is either a family action item (has an
   `assignee_user_id` and a `task_id` pointing at the Family Task List task it created)
   or a non-family action item (free-text `assignee_name`, no task created).
+- `meeting_attachments` — metadata only (filename, content type, size, uploader) for a
+  meeting's file attachments; the bytes live on disk under
+  `data/meeting-attachments/<meetingId>/`, not in SQLite (see `server/attachments.js`).
 
 ## Scheduled Task List digest
 
@@ -197,6 +200,28 @@ finished minutes are emailed to every family attendee; a completed meeting's min
 still be edited by an admin afterward, and re-sent via "Resend Minutes" (it is not
 resent automatically). See `RFO_Meetings_App_BuildSpec_v1.docx` for the full spec.
 
+### Attachments
+
+Any Meetings member can attach files to a meeting (25MB limit each) and view them
+in-app — PDF and images render via the browser's own native support; Word (`.docx`
+only — mammoth.js doesn't handle legacy `.doc`) and Excel (`.xls`/`.xlsx`, via SheetJS)
+are converted to HTML client-side. Deliberately **not** wired through a third-party
+document-viewing service (Office/Google Docs viewers, which need a public URL): a
+file's bytes are fetched with the member's own session over `GET
+/api/meetings/:id/attachments/:attachmentId`, kept in memory as a `blob:` object URL,
+and never exposed outside the app — appropriate given these are often financial/legal
+documents. Deleting a file is restricted to its uploader or a Meetings admin. File
+cleanup on disk (`server/attachments.js`) is deliberately best-effort/non-fatal — on
+this dev host (Dropbox-synced folder), a delete can transiently fail with `EPERM` if
+Dropbox's sync process has the file briefly locked, the same class of issue documented
+in the security notes below; the database row is the source of truth and is always
+removed first, so a leftover file with no matching row is harmless clutter, not a
+correctness problem.
+
+**Not currently included in the automatic backup** (`server/backup.js` only snapshots
+`ic.db`) — worth revisiting if attachments end up holding anything that isn't also
+recoverable another way.
+
 ## Deploying so the family can reach it
 
 This is a single Node process serving both the API and the static frontend
@@ -229,3 +254,13 @@ Suggested minimal path on Railway or Render:
 - Sessions are cookie-based and last 30 days; there's no "remember me" toggle. Signing
   out clears the cookie server-side.
 - Passcodes are hashed with scrypt (Node's built-in `crypto`), not stored in plaintext.
+- **Local development note**: if this repo's working copy lives inside a Dropbox (or
+  similar) synced folder, running the dev server against `data/ic.db` directly carries a
+  real risk — Dropbox's background sync doesn't coordinate with SQLite's own file
+  locking, and has been observed to intermittently produce `EPERM`/"operation not
+  permitted" errors on writes (session files, attachment files) and, worse, to silently
+  drop recent database writes if a stale synced copy overwrites the live file between
+  server restarts. Prefer testing against a copy of the database outside the synced
+  folder when possible, and always compare `data/backups/` snapshots before trusting a
+  local restart if anything looks off. Production (Railway) isn't affected — its volume
+  isn't Dropbox-synced.

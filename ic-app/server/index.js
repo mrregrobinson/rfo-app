@@ -65,12 +65,16 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com', 'https://accounts.google.com'],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:'],
+        // blob: is for the Meetings attachment viewer (public/meetings.html): a file's
+        // bytes are fetched via authenticated same-origin request, then rendered from an
+        // in-memory object URL — an image via <img>, a PDF via <iframe> — never a public
+        // URL, so no third-party document-viewing service ever sees the file.
+        imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'", 'https://accounts.google.com', 'https://tasks.googleapis.com'],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
-        frameSrc: ['https://accounts.google.com'],
+        frameSrc: ['https://accounts.google.com', 'blob:'],
         frameAncestors: ["'none'"],
       },
     },
