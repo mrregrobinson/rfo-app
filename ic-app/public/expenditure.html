@@ -859,6 +859,88 @@ function ResearchModal({categories,onClose,onChanged,onAffected}){
   );
 }
 
+// ---- managing excluded transactions (transfers/income) ----
+// A transaction marked excluded drops out of the main Transactions table entirely on
+// the next load (queryTransactions filters is_transfer=0 by default) — this is the only
+// place to see what's currently excluded and bring one back, with the same wildcard
+// payee search (* any characters, ? exactly one) used everywhere else in this app.
+function ExcludedTransactionsModal({onClose,onChanged,onAffected}){
+  const [search,setSearch]=useState('');
+  const [rows,setRows]=useState(null);
+  const [error,setError]=useState('');
+  const [selectedIds,setSelectedIds]=useState(()=>new Set());
+  const [busy,setBusy]=useState(false);
+
+  function load(){
+    const q=new URLSearchParams({isTransfer:'1'});
+    if(search.trim())q.set('payee',search.trim());
+    api.get('/api/expenditure/transactions?'+q.toString())
+      .then(r=>{setRows(r);setSelectedIds(new Set());})
+      .catch(err=>setError(err.message));
+  }
+  useEffect(load,[search]);
+
+  function toggleSelect(id){
+    setSelectedIds(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
+  }
+  function toggleSelectAll(select){
+    setSelectedIds(select?new Set((rows||[]).map(r=>r.id)):new Set());
+  }
+
+  async function reinclude(ids){
+    if(ids.length===0)return;
+    setBusy(true);setError('');
+    try{
+      // Captured before the update — what "Undo" would put back if the household
+      // changes their mind about re-including these.
+      const affected=(rows||[]).filter(r=>ids.includes(r.id)).map(r=>({id:r.id,categoryId:r.categoryId,isTransfer:true}));
+      if(ids.length===1)await api.put('/api/expenditure/transactions/'+ids[0],{isTransfer:false});
+      else await api.put('/api/expenditure/transactions/bulk',{ids,isTransfer:false});
+      onAffected(`Re-included ${ids.length} transaction${ids.length===1?'':'s'}.`,affected);
+      load();
+      onChanged();
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+
+  const allSelected=!!rows&&rows.length>0&&rows.every(r=>selectedIds.has(r.id));
+
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',style:{maxWidth:720,maxHeight:'90vh',overflowY:'auto'},onClick:e=>e.stopPropagation()},
+      h('div',{className:'modal-title'},'Manage excluded transactions'),
+      h('div',{className:'muted',style:{marginBottom:10}},'Transactions currently marked as transfers/income and kept out of spending totals. Re-include one to bring it back into spending — you\'ll likely want to give it a category afterward, from the main table.'),
+      h('input',{className:'form-input',style:{width:'100%',marginBottom:10},placeholder:'Search payee, e.g. Costco, COST*, or SQ ?THE BARN',title:'Use * for any characters and ? for a single character',value:search,onChange:e=>setSearch(e.target.value)}),
+      error&&h('div',{className:'alert alert-danger'},error),
+      !rows?h('div',{className:'muted'},'Loading…'):
+      rows.length===0?h('div',{className:'muted'},search?`No excluded transactions match "${search}".`:'Nothing is currently excluded.'):
+      h(React.Fragment,null,
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}},
+          h('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer'}},
+            h('input',{type:'checkbox',checked:allSelected,onChange:e=>toggleSelectAll(e.target.checked)}),
+            `${rows.length} excluded transaction${rows.length===1?'':'s'}`
+          ),
+          selectedIds.size>0&&h('button',{className:'btn btn-gold btn-sm',disabled:busy,onClick:()=>reinclude([...selectedIds])},`Re-include ${selectedIds.size} Selected`)
+        ),
+        h('div',{style:{maxHeight:400,overflowY:'auto'}},
+          h('table',null,
+            h('thead',null,h('tr',null,h('th',null,''),h('th',null,'Date'),h('th',null,'Account'),h('th',null,'Description'),h('th',null,'Amount'),h('th',null,'Category'),h('th',null,''))),
+            h('tbody',null,rows.map(r=>h('tr',{key:r.id},
+              h('td',null,h('input',{type:'checkbox',checked:selectedIds.has(r.id),onChange:()=>toggleSelect(r.id)})),
+              h('td',null,r.txnDate),
+              h('td',null,r.accountName),
+              h('td',null,r.description),
+              h('td',{className:'amt'},r.currency!=='CAD'?`${r.amount.toFixed(2)} ${r.currency} → `:'',fmtCAD(r.amountCad)),
+              h('td',{className:'muted'},r.categoryName||'—'),
+              h('td',null,h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>reinclude([r.id])},'Re-include'))
+            )))
+          )
+        )
+      ),
+      h('div',{style:{textAlign:'right',marginTop:14}},h('button',{className:'btn btn-outline',onClick:onClose},'Close'))
+    )
+  );
+}
+
 // ---- app ----
 function ExpenditureApp({ledger}){
   const [categories,setCategories]=useState([]);
@@ -873,6 +955,7 @@ function ExpenditureApp({ledger}){
   const [showEmail,setShowEmail]=useState(false);
   const [showCategories,setShowCategories]=useState(false);
   const [showResearch,setShowResearch]=useState(false);
+  const [showExcluded,setShowExcluded]=useState(false);
   const [selectedIds,setSelectedIds]=useState(()=>new Set());
   // The single most recent bulk-affecting change (a rule create/edit with
   // applyToExisting, Clean Up Existing Data, or a bulk toolbar action) — enough to
@@ -963,9 +1046,10 @@ function ExpenditureApp({ledger}){
   // Remembers a bulk-affecting change as the one thing "Undo" can currently revert.
   // Silently does nothing if the action didn't actually touch anything (affected empty)
   // — nothing to offer undoing in that case.
-  function recordAffected(label,res){
-    if(res&&res.affected&&res.affected.length>0)setLastAction({label,affected:res.affected});
+  function recordAffectedList(label,affected){
+    if(affected&&affected.length>0)setLastAction({label,affected});
   }
+  function recordAffected(label,res){recordAffectedList(label,res&&res.affected);}
   async function undoLastAction(){
     if(!lastAction)return;
     await api.put('/api/expenditure/transactions/bulk-restore',{updates:lastAction.affected});
@@ -1070,6 +1154,7 @@ function ExpenditureApp({ledger}){
       h('div',{className:'toolbar-divider'}),
       h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
       h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
+      h('button',{className:'btn btn-outline',onClick:()=>setShowExcluded(true),title:'View and re-include transactions currently marked as transfers/income'},'Manage Excluded'),
       h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories & Rules')
     ),
     lastAction&&h('div',{className:'undo-bar no-print'},
@@ -1089,7 +1174,8 @@ function ExpenditureApp({ledger}){
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,exclusionRules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule,onAddExclusionRule:addExclusionRule,onEditExclusionRule:editExclusionRule,onDeleteExclusionRule:deleteExclusionRule}),
-    showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();},onAffected:recordRuleAffected})
+    showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();},onAffected:recordRuleAffected}),
+    showExcluded&&h(ExcludedTransactionsModal,{onClose:()=>setShowExcluded(false),onChanged:load,onAffected:recordAffectedList})
   );
 }
 

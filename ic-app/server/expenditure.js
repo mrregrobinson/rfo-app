@@ -717,7 +717,12 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
   function queryTransactions(ledgerId, q) {
     const clauses = ['a.ledger_id = ?'];
     const params = [ledgerId];
-    if (!q.includeTransfers) clauses.push('t.is_transfer = 0');
+    // isTransfer=1 is a distinct mode from includeTransfers — the latter just stops
+    // filtering excluded transactions OUT (both kinds together, e.g. for a report
+    // total); this filters everything else OUT, for a "manage what's excluded" view
+    // that has no use for the normal spending list at all.
+    if (q.isTransfer === '1' || q.isTransfer === 'true') clauses.push('t.is_transfer = 1');
+    else if (!q.includeTransfers) clauses.push('t.is_transfer = 0');
     if (q.dateFrom) { clauses.push('t.txn_date >= ?'); params.push(q.dateFrom); }
     if (q.dateTo) { clauses.push('t.txn_date <= ?'); params.push(q.dateTo); }
     if (q.payee) { clauses.push("t.description LIKE ? ESCAPE '\\'"); params.push(payeeLikePattern(q.payee)); }

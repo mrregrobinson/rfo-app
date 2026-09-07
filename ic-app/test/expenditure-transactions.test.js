@@ -289,3 +289,56 @@ describe('GET /api/expenditure/transactions — amount range and wildcard payee 
     assert.deepEqual(results.map((t) => t.description), ['MICROSOFT#G173232359']);
   });
 });
+
+// Backs the "manage excluded transactions" screen — isTransfer=1 is a distinct mode
+// from includeTransfers (which just stops filtering excluded ones OUT alongside
+// everything else): this filters everything else OUT, showing ONLY what's currently
+// excluded, with the same wildcard payee search as the rest of the app.
+describe('GET /api/expenditure/transactions?isTransfer=1 — managing excluded transactions', () => {
+  const now = new Date().toISOString();
+  let excludedId, ordinaryId, otherExcludedId;
+  before(() => {
+    excludedId = crypto.randomUUID();
+    ordinaryId = crypto.randomUUID();
+    otherExcludedId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-05-01', 'Online Banking transfer EXCL TEST', 'Online Banking transfer EXCL TEST', 500, 'CAD', 500, NULL, 1, ?)`)
+      .run(excludedId, ACCOUNT_ID, STATEMENT_ID, now);
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-05-02', 'ORDINARY PURCHASE EXCL TEST', 'ORDINARY PURCHASE EXCL TEST', 30, 'CAD', 30, ?, 0, ?)`)
+      .run(ordinaryId, ACCOUNT_ID, STATEMENT_ID, categoryAId, now);
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-05-03', 'PAYROLL DEP EXCL TEST', 'PAYROLL DEP EXCL TEST', -1000, 'CAD', -1000, NULL, 1, ?)`)
+      .run(otherExcludedId, ACCOUNT_ID, STATEMENT_ID, now);
+  });
+
+  test('shows only excluded transactions, never ordinary ones', async () => {
+    const r = await fetch(`${baseUrl}/api/expenditure/transactions?isTransfer=1`);
+    const body = await r.json();
+    assert.ok(body.some((t) => t.id === excludedId));
+    assert.ok(body.some((t) => t.id === otherExcludedId));
+    assert.ok(!body.some((t) => t.id === ordinaryId), 'an ordinary (non-excluded) transaction must never appear here');
+  });
+
+  test('combines with wildcard payee search, same syntax as everywhere else', async () => {
+    // Presence/absence, not the exact result set — an earlier describe block in this
+    // same file/db (the reclassify tests) also excludes a payroll-named fixture, which
+    // legitimately matches "PAYROLL*" too and isn't this test's concern.
+    const r = await fetch(`${baseUrl}/api/expenditure/transactions?isTransfer=1&${new URLSearchParams({ payee: 'PAYROLL*' })}`);
+    const body = await r.json();
+    assert.ok(body.some((t) => t.id === otherExcludedId));
+    assert.ok(!body.some((t) => t.id === excludedId), 'does not match "PAYROLL*"');
+    assert.ok(!body.some((t) => t.id === ordinaryId), 'not excluded at all, so must never appear regardless of search');
+  });
+
+  test('re-including one via PUT sets isTransfer back to false and it drops out of this view', async () => {
+    const put = await fetch(`${baseUrl}/api/expenditure/transactions/${excludedId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isTransfer: false }),
+    });
+    assert.equal(put.status, 200);
+    const r = await fetch(`${baseUrl}/api/expenditure/transactions?isTransfer=1`);
+    const body = await r.json();
+    assert.ok(!body.some((t) => t.id === excludedId), 're-included, so no longer in the excluded-only view');
+    // Restore for other tests in this file that might otherwise be affected.
+    await fetch(`${baseUrl}/api/expenditure/transactions/${excludedId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isTransfer: true }),
+    });
+  });
+});
