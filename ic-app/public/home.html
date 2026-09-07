@@ -17,9 +17,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--teal);margin-bottom:10px}
 .h1{font-size:26px;font-weight:700;margin-bottom:6px;letter-spacing:-.2px}
 .sub{font-size:13px;color:var(--muted);margin-bottom:36px}
+.group{margin-bottom:32px}
+.group-header{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.group-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.group-label{font-size:13px;font-weight:700;letter-spacing:.2px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
 .tile{display:flex;flex-direction:column;background:var(--card);border:0.5px solid var(--border);border-radius:14px;padding:22px;text-decoration:none;color:inherit;box-shadow:0 1px 2px rgba(16,24,40,.03);transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
-.tile:hover{transform:translateY(-2px);border-color:var(--teal);box-shadow:0 8px 20px rgba(27,42,74,.08)}
+.tile:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(27,42,74,.08)}
 .tile-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
 .tile-icon svg{width:21px;height:21px}
 .tile-title{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px}
@@ -39,14 +43,6 @@ const api = {
   },
 };
 
-// One rounded-square, tinted icon badge per tile, cycling through the app's three brand
-// colors so a newly added application always picks up a themed icon automatically
-// without anyone having to hand-assign a colour for it.
-const ICON_THEMES = [
-  { bg: 'var(--navy-l)', fg: 'var(--navy)' },
-  { bg: 'var(--teal-l)', fg: 'var(--teal)' },
-  { bg: 'var(--gold-l)', fg: '#96792E' },
-];
 // Minimal 24x24 stroke icons, one per application — purely decorative, so an icon
 // that's a reasonable approximation of the app's purpose is enough; exact fidelity
 // to any particular icon set doesn't matter here.
@@ -58,13 +54,29 @@ const ICONS = {
   admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 21v-1.5a6 6 0 0112 0V21"/><circle cx="19" cy="6" r="2"/></svg>',
 };
 
-// Applications live here as data — adding the next one under the umbrella is one
-// object in this list (or, like Household Expenditures below, one conditional push
-// after an access check), not new hand-written markup.
-const BASE_TILES = [
-  { href: '/due-diligence', title: 'PQ Introduced Due Diligence', desc: 'Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.', icon: ICONS.search },
-  { href: '/tasks', title: 'Family Task List', desc: 'Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.', icon: ICONS.checklist },
-  { href: '/meetings', title: 'Family Office Meetings', desc: 'Schedule meetings with an agenda, send calendar invitations to family attendees, and record minutes.', icon: ICONS.calendar },
+// Mirrors the family office's own org chart (Strategic / People / Investing / Legacy /
+// Operational Services, plus Governance for the office's own internal administration) —
+// each application lives under whichever of those it actually serves, colour-coded to
+// match. A future application slots into whichever group's `tiles` array it belongs to;
+// a wholly new group is one more entry in GROUPS.
+const GROUPS = [
+  {
+    key: 'investing', label: 'Investing Services', color: '#2E75B6', tint: '#EAF2FA',
+    tiles: [
+      { href: '/due-diligence', title: 'PQ Introduced Due Diligence', desc: 'Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.', icon: ICONS.search },
+    ],
+  },
+  {
+    key: 'operational', label: 'Operational Services', color: '#1E9E5A', tint: '#E8F8EF',
+    tiles: [], // Household Expenditures, pushed in once ledger membership is confirmed
+  },
+  {
+    key: 'governance', label: 'Governance', color: '#1B2A4A', tint: '#E8ECF3',
+    tiles: [
+      { href: '/meetings', title: 'Family Office Meetings', desc: 'Schedule meetings with an agenda, send calendar invitations to family attendees, and record minutes.', icon: ICONS.calendar },
+      { href: '/tasks', title: 'Family Task List', desc: 'Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.', icon: ICONS.checklist },
+    ], // Manage Members, pushed in for admins
+  },
 ];
 
 function greeting() {
@@ -72,14 +84,25 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
-function tileHtml(t, i) {
-  const theme = ICON_THEMES[i % ICON_THEMES.length];
+function tileHtml(t, group) {
   return `
         <a class="tile" href="${t.href}">
-          <div class="tile-icon" style="background:${theme.bg};color:${theme.fg}">${t.icon}</div>
+          <div class="tile-icon" style="background:${group.tint};color:${group.color}">${t.icon}</div>
           <div class="tile-title">${t.title}</div>
           <div class="tile-desc">${t.desc}</div>
         </a>`;
+}
+
+function groupHtml(group) {
+  if (group.tiles.length === 0) return '';
+  return `
+      <div class="group">
+        <div class="group-header">
+          <span class="group-dot" style="background:${group.color}"></span>
+          <span class="group-label" style="color:${group.color}">${group.label}</span>
+        </div>
+        <div class="tiles">${group.tiles.map((t) => tileHtml(t, group)).join('')}</div>
+      </div>`;
 }
 
 async function init() {
@@ -93,17 +116,18 @@ async function init() {
     return;
   }
 
-  const tiles = [...BASE_TILES];
+  const operational = GROUPS.find((g) => g.key === 'operational');
+  const governance = GROUPS.find((g) => g.key === 'governance');
   // Household Expenditures isn't a per-app role like the other tiles — it's
   // partitioned into ledgers (see migration 023), so whether to show this tile at all
   // depends on ledger membership, checked separately rather than via user.* flags.
   // is_fo_admin does NOT imply membership here, unlike every other tile on this page.
   try {
     await api.get('/api/expenditure/ledger');
-    tiles.push({ href: '/expenditure', title: 'Household Expenditures', desc: 'Track household spending from bank and credit card statements, by category and time period.', icon: ICONS.wallet });
+    operational.tiles.push({ href: '/expenditure', title: 'Household Expenditures', desc: 'Track household spending from bank and credit card statements, by category and time period.', icon: ICONS.wallet });
   } catch (err) { /* not a member of any expenditure ledger — tile stays hidden */ }
   if (user.isAdmin) {
-    tiles.push({ href: '/admin', title: 'Manage Members', desc: 'Family Office administration — add or deactivate members, set admin access and app-level roles, reset logins.', icon: ICONS.admin });
+    governance.tiles.push({ href: '/admin', title: 'Manage Members', desc: 'Family Office administration — add or deactivate members, set admin access and app-level roles, reset logins.', icon: ICONS.admin });
   }
 
   const firstName = user.name.split(' ')[0];
@@ -116,7 +140,7 @@ async function init() {
       <div class="eyebrow">Robinson Family Office</div>
       <div class="h1">${greeting()}, ${firstName}</div>
       <div class="sub">Choose an application below.</div>
-      <div class="tiles">${tiles.map(tileHtml).join('')}</div>
+      ${GROUPS.map(groupHtml).join('')}
     </div>
   `;
   document.getElementById('signout').addEventListener('click', async () => {
