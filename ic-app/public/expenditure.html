@@ -288,6 +288,90 @@ function ImportPanel({onImported}){
   );
 }
 
+// For a real expense that never shows up on any imported bank/card statement — most
+// commonly, a personal expense actually paid from a business account this ledger
+// doesn't otherwise track. Collapsed by default (import is the primary path; this is
+// occasional) — expanding it loads previously-used "paid from" names for the datalist,
+// so re-entering another expense from the same business account is one click, not
+// re-typing the exact name (which matters — it's also the lookup key the server uses to
+// decide whether to reuse that source's pseudo-account or create a new one).
+function ManualTransactionPanel({categories,onAdded}){
+  const [expanded,setExpanded]=useState(false);
+  const [sources,setSources]=useState([]);
+  const [sourceName,setSourceName]=useState('');
+  const [txnDate,setTxnDate]=useState(()=>new Date().toISOString().slice(0,10));
+  const [description,setDescription]=useState('');
+  const [amount,setAmount]=useState('');
+  const [currency,setCurrency]=useState('CAD');
+  const [categoryId,setCategoryId]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [message,setMessage]=useState('');
+
+  useEffect(()=>{if(expanded)api.get('/api/expenditure/manual-sources').then(setSources).catch(()=>{});},[expanded]);
+
+  async function add(){
+    if(!sourceName.trim()||!description.trim()||!txnDate||!amount)return;
+    setBusy(true);setError('');setMessage('');
+    try{
+      await api.post('/api/expenditure/transactions/manual',{
+        sourceName:sourceName.trim(),description:description.trim(),txnDate,amount:Number(amount),currency,categoryId:categoryId||undefined,
+      });
+      setMessage(`Added "${description.trim()}" — ${fmtCAD(Number(amount))}${currency!=='CAD'?` (${amount} ${currency})`:''}, paid from ${sourceName.trim()}.`);
+      setDescription('');setAmount('');
+      if(!sources.includes(sourceName.trim()))setSources([...sources,sourceName.trim()]);
+      onAdded();
+    }catch(err){setError(err.message);}
+    setBusy(false);
+  }
+
+  return h('div',{className:'card no-print'},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'},onClick:()=>setExpanded(!expanded)},
+      h('div',{className:'section-title',style:{marginBottom:0}},'Add a transaction manually'),
+      h('span',{className:'muted'},expanded?'▲ collapse':'▼ expand')
+    ),
+    h('div',{className:'muted',style:{marginTop:6}},'For a real expense that never shows up on any imported statement — e.g. a personal expense actually paid from a business account.'),
+    expanded&&h('div',{style:{marginTop:12}},
+      h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}},
+        h('div',{className:'filter-group'},
+          h('label',{className:'form-label'},'Date'),
+          h('input',{type:'date',className:'form-input',value:txnDate,onChange:e=>setTxnDate(e.target.value)})
+        ),
+        h('div',{className:'filter-group',style:{flex:1,minWidth:220}},
+          h('label',{className:'form-label'},'Description'),
+          h('input',{type:'text',className:'form-input',placeholder:'e.g. Kids swimming lessons',value:description,onChange:e=>setDescription(e.target.value)})
+        ),
+        h('div',{className:'filter-group'},
+          h('label',{className:'form-label'},'Amount'),
+          h('div',{style:{display:'flex',gap:4}},
+            h('input',{type:'number',className:'form-input',style:{width:100},placeholder:'0.00',title:'Positive = money spent; negative = a refund or credit',value:amount,onChange:e=>setAmount(e.target.value)}),
+            h('select',{className:'form-select',value:currency,onChange:e=>setCurrency(e.target.value)},
+              ['CAD','USD','EUR','GBP'].map(c=>h('option',{key:c,value:c},c))
+            )
+          )
+        )
+      ),
+      h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'flex-end'}},
+        h('div',{className:'filter-group',style:{flex:1,minWidth:220}},
+          h('label',{className:'form-label'},'Paid from (business account or other source)'),
+          h('input',{type:'text',className:'form-input',list:'manual-sources-list',placeholder:'e.g. R&R Keys Corp',title:'Reused for any other expenses entered from the same source',value:sourceName,onChange:e=>setSourceName(e.target.value)}),
+          h('datalist',{id:'manual-sources-list'},sources.map(s=>h('option',{key:s,value:s})))
+        ),
+        h('div',{className:'filter-group'},
+          h('label',{className:'form-label'},'Category'),
+          h('select',{className:'form-select',value:categoryId,onChange:e=>setCategoryId(e.target.value)},
+            h('option',{value:''},'— auto/Unknown —'),
+            categories.filter(c=>c.isExpenditure).map(c=>h('option',{key:c.id,value:c.id},c.name))
+          )
+        ),
+        h('button',{className:'btn btn-gold',disabled:busy||!sourceName.trim()||!description.trim()||!amount,onClick:add},busy?'Adding…':'Add Transaction')
+      ),
+      error&&h('div',{className:'alert alert-danger'},error),
+      message&&h('div',{className:'alert alert-success'},message)
+    )
+  );
+}
+
 // ---- filters ----
 function DateRange({label,from,to,onFrom,onTo,onRange}){
   // Setting from/to via two separate onFrom(...)/onTo(...) calls used to silently drop
@@ -1146,6 +1230,7 @@ function ExpenditureApp({ledger}){
 
   return h('div',{className:'page'},
     h(ImportPanel,{onImported:load}),
+    h(ManualTransactionPanel,{categories,onAdded:load}),
     h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
     h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),

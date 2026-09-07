@@ -747,6 +747,97 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     res.json(rows.map(txnRowToJson));
   });
 
+  // ---- manual transaction entry ----
+  // For a real expense that never shows up on any of the household's own imported
+  // bank/card statements — most commonly, a personal expense actually paid from a
+  // business account this ledger doesn't track at all. Fits the existing
+  // account/statement/transaction structure by way of a dedicated "manual" pseudo-
+  // account per distinct source named (so "R&R Keys Corp" entered several times reuses
+  // the same one, and the transaction list shows a real, meaningful account name rather
+  // than a generic placeholder), with one throwaway single-day "statement" per manual
+  // account per calendar day just to satisfy the schema — a manual entry has no real
+  // imported period the way a bank statement does. Deliberately never run through
+  // isTransferOrIncome: a manual entry is a deliberate, one-off addition a person typed
+  // in on purpose, not something to second-guess as a transfer.
+  function getOrCreateManualAccount(ledgerId, name, currency) {
+    let account = db.prepare("SELECT * FROM expenditure_accounts WHERE ledger_id = ? AND account_type = 'manual' AND name = ?").get(ledgerId, name);
+    if (!account) {
+      const id = crypto.randomUUID();
+      db.prepare(
+        `INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, ?, 'manual', ?, ?)`
+      ).run(id, ledgerId, name, currency, new Date().toISOString());
+      account = db.prepare('SELECT * FROM expenditure_accounts WHERE id = ?').get(id);
+    }
+    return account;
+  }
+  function getOrCreateManualStatement(accountId, date) {
+    let statement = db.prepare('SELECT * FROM expenditure_statements WHERE account_id = ? AND period_start = ? AND period_end = ?').get(accountId, date, date);
+    if (!statement) {
+      const id = crypto.randomUUID();
+      db.prepare(
+        `INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at, reconciliation_status) VALUES (?, ?, ?, ?, ?, 'unreconciled')`
+      ).run(id, accountId, date, date, new Date().toISOString());
+      statement = db.prepare('SELECT * FROM expenditure_statements WHERE id = ?').get(id);
+    }
+    return statement;
+  }
+
+  // Distinct "paid from" names already used, for the manual-entry form's autocomplete —
+  // so re-entering another expense from the same business account is one click, not
+  // re-typing the exact name again (which matters here, since it's also the lookup key
+  // that decides whether a new pseudo-account gets created or an existing one reused).
+  app.get('/api/expenditure/manual-sources', requireAuth, requireLedger, (req, res) => {
+    const rows = db.prepare("SELECT name FROM expenditure_accounts WHERE ledger_id = ? AND account_type = 'manual' ORDER BY name").all(req.expenditureLedger.id);
+    res.json(rows.map((r) => r.name));
+  });
+
+  app.post('/api/expenditure/transactions/manual', requireAuth, requireLedger, async (req, res) => {
+    const b = req.body || {};
+    const sourceName = String(b.sourceName || '').trim();
+    const description = String(b.description || '').trim();
+    const txnDate = String(b.txnDate || '').trim();
+    const amount = Number(b.amount);
+    if (!sourceName) return res.status(400).json({ error: 'sourceName (who/what it was paid from) is required' });
+    if (!description) return res.status(400).json({ error: 'description is required' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(txnDate)) return res.status(400).json({ error: 'txnDate (YYYY-MM-DD) is required' });
+    if (!Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: 'amount must be a non-zero number' });
+    const currency = ['CAD', ...Object.keys(FX_PAIRS)].includes(b.currency) ? b.currency : 'CAD';
+    let categoryId = b.categoryId || null;
+    if (categoryId) {
+      const category = db.prepare('SELECT id FROM expenditure_categories WHERE id = ? AND ledger_id = ?').get(categoryId, req.expenditureLedger.id);
+      if (!category) return res.status(404).json({ error: 'Category not found' });
+    }
+
+    const account = getOrCreateManualAccount(req.expenditureLedger.id, sourceName, currency);
+    const statement = getOrCreateManualStatement(account.id, txnDate);
+
+    let fxRate = null;
+    let amountCad = amount;
+    if (currency !== 'CAD') {
+      try {
+        fxRate = await fx.getDailyRate(txnDate, FX_PAIRS[currency]);
+        amountCad = amount * fxRate;
+      } catch (err) {
+        return res.status(502).json({ error: `Could not look up the ${currency}→CAD exchange rate for ${txnDate}: ${err.message}` });
+      }
+    }
+    if (!categoryId) categoryId = categorize(req.expenditureLedger.id, description) || unknownCategoryId(req.expenditureLedger.id);
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, fx_rate, amount_cad, category_id, is_transfer, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+    ).run(id, account.id, statement.id, txnDate, description, description, amount, currency, fxRate, amountCad, categoryId, now);
+
+    logAudit({ userId: req.session.userId, action: 'expenditure.manual_transaction_added', entityType: 'expenditure_transaction', entityId: id, details: { sourceName, description, amount, currency } });
+
+    res.status(201).json(txnRowToJson(db.prepare(
+      `SELECT t.*, a.name AS account_name, c.name AS category_name FROM expenditure_transactions t
+       JOIN expenditure_accounts a ON a.id = t.account_id LEFT JOIN expenditure_categories c ON c.id = t.category_id WHERE t.id = ?`
+    ).get(id)));
+  });
+
   // Bulk update — e.g. "select all" a filtered/searched set of transactions and mark
   // them all excluded (or all included) in one call, instead of one checkbox at a time.
   // Registered before the /:id route below so Express doesn't match "bulk" as an :id.
