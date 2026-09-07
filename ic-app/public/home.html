@@ -61,6 +61,13 @@ const ICONS = {
 // a wholly new group is one more entry in GROUPS.
 const GROUPS = [
   {
+    key: 'governance', label: 'Governance', color: '#1B2A4A', tint: '#E8ECF3',
+    tiles: [
+      { href: '/meetings', title: 'Family Office Meetings', desc: 'Schedule meetings with an agenda, send calendar invitations to family attendees, and record minutes.', icon: ICONS.calendar },
+      { href: '/tasks', title: 'Family Task List', desc: 'Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.', icon: ICONS.checklist },
+    ], // Manage Members, pushed in for admins
+  },
+  {
     key: 'investing', label: 'Investing Services', color: '#2E75B6', tint: '#EAF2FA',
     tiles: [
       { href: '/due-diligence', title: 'PQ Introduced Due Diligence', desc: 'Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.', icon: ICONS.search },
@@ -69,13 +76,6 @@ const GROUPS = [
   {
     key: 'operational', label: 'Operational Services', color: '#1E9E5A', tint: '#E8F8EF',
     tiles: [], // Household Expenditures, pushed in once ledger membership is confirmed
-  },
-  {
-    key: 'governance', label: 'Governance', color: '#1B2A4A', tint: '#E8ECF3',
-    tiles: [
-      { href: '/meetings', title: 'Family Office Meetings', desc: 'Schedule meetings with an agenda, send calendar invitations to family attendees, and record minutes.', icon: ICONS.calendar },
-      { href: '/tasks', title: 'Family Task List', desc: 'Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.', icon: ICONS.checklist },
-    ], // Manage Members, pushed in for admins
   },
 ];
 
