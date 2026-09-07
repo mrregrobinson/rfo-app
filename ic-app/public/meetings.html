@@ -8,10 +8,14 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <!-- In-app attachment preview only — files never leave the app via a public URL for
      these to work on (see server CSP comment): SheetJS renders .xls/.xlsx as an HTML
-     table, mammoth.js renders .docx as HTML. PDFs/images use the browser's own native
-     rendering, no library needed. -->
+     table, mammoth.js renders .docx as HTML, JSZip + the browser's own XML parser pulls
+     slide text out of .pptx (there's no equivalent slide-fidelity library — this shows
+     each slide's text content, not a visual rendering, same "content not pixel-fidelity"
+     approach as the other two). PDFs/images use the browser's own native rendering, no
+     library needed. -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px}
@@ -97,7 +101,33 @@ function attachmentKind(filename){
   if(['jpg','jpeg','png','gif','webp'].includes(ext))return'image';
   if(ext==='docx')return'word'; // legacy .doc isn't supported by mammoth.js — falls through to 'other'.
   if(ext==='xlsx'||ext==='xls')return'excel';
+  if(ext==='pptx')return'pptx'; // legacy .ppt isn't a zip/XML format at all — falls through to 'other'.
   return'other';
+}
+
+// .pptx is a zip of per-slide XML (OOXML DrawingML) — there's no equivalent of
+// mammoth.js/SheetJS that renders it with visual fidelity, so this pulls out each
+// slide's text content instead: unzip with JSZip, parse each slideN.xml with the
+// browser's own DOMParser, and group <a:t> text runs by their enclosing <a:p>
+// paragraph so multi-run (e.g. part-bold) paragraphs come back as one line, not one
+// per run.
+async function extractPptxSlides(arrayBuffer){
+  const zip=await window.JSZip.loadAsync(arrayBuffer);
+  const slideFiles=Object.keys(zip.files)
+    .filter(name=>/^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a,b)=>parseInt(a.match(/slide(\d+)\.xml/)[1],10)-parseInt(b.match(/slide(\d+)\.xml/)[1],10));
+  const parser=new DOMParser();
+  const slides=[];
+  for(const name of slideFiles){
+    const xmlText=await zip.files[name].async('string');
+    const xmlDoc=parser.parseFromString(xmlText,'application/xml');
+    const paragraphs=Array.from(xmlDoc.getElementsByTagName('a:p'));
+    const lines=paragraphs
+      .map(p=>Array.from(p.getElementsByTagName('a:t')).map(t=>t.textContent).join(''))
+      .filter(line=>line.trim());
+    slides.push(lines);
+  }
+  return slides;
 }
 
 function AttendeesPicker({members,attendees,onChange}){
@@ -289,12 +319,14 @@ function AttachmentViewerModal({meetingId,attachment,onClose}){
   const [htmlContent,setHtmlContent]=useState(null);
   const [sheets,setSheets]=useState(null);
   const [activeSheet,setActiveSheet]=useState(0);
+  const [slides,setSlides]=useState(null);
+  const [activeSlide,setActiveSlide]=useState(0);
   const kind=attachmentKind(attachment.filename);
   const fileUrl=`/api/meetings/${meetingId}/attachments/${attachment.id}`;
 
   useEffect(()=>{
     let cancelled=false,createdUrl=null;
-    setLoading(true);setError('');setBlobUrl(null);setHtmlContent(null);setSheets(null);setActiveSheet(0);
+    setLoading(true);setError('');setBlobUrl(null);setHtmlContent(null);setSheets(null);setActiveSheet(0);setSlides(null);setActiveSlide(0);
     (async()=>{
       try{
         const res=await fetch(fileUrl,{credentials:'same-origin'});
@@ -315,6 +347,11 @@ function AttachmentViewerModal({meetingId,attachment,onClose}){
           const sheetData=wb.SheetNames.map(name=>({name,html:window.XLSX.utils.sheet_to_html(wb.Sheets[name],{editable:false})}));
           if(cancelled)return;
           setSheets(sheetData);
+        }else if(kind==='pptx'){
+          const buf=await res.arrayBuffer();
+          const slideData=await extractPptxSlides(buf);
+          if(cancelled)return;
+          setSlides(slideData);
         }
       }catch(e){if(!cancelled)setError(e.message||'Failed to preview this file.');}
       finally{if(!cancelled)setLoading(false);}
@@ -348,6 +385,17 @@ function AttachmentViewerModal({meetingId,attachment,onClose}){
         sheets.length>1&&h('div',{style:{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}},
           sheets.map((s,i)=>h('button',{key:s.name,className:`btn btn-sm ${i===activeSheet?'btn-teal':'btn-outline'}`,onClick:()=>setActiveSheet(i)},s.name))),
         h('div',{className:'xlsx-preview',style:{maxHeight:'70vh',overflow:'auto',border:'0.5px solid var(--border)',borderRadius:8},dangerouslySetInnerHTML:{__html:(sheets[activeSheet]||{}).html||''}})
+      ),
+      !loading&&!error&&kind==='pptx'&&slides&&h('div',null,
+        slides.length===0&&h('div',{className:'muted',style:{padding:20,textAlign:'center'}},'No slide text found in this file.'),
+        slides.length>1&&h('div',{style:{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}},
+          slides.map((s,i)=>h('button',{key:i,className:`btn btn-sm ${i===activeSlide?'btn-teal':'btn-outline'}`,onClick:()=>setActiveSlide(i)},'Slide '+(i+1)))),
+        slides.length>0&&h('div',{className:'pptx-preview',style:{maxHeight:'70vh',overflow:'auto',border:'0.5px solid var(--border)',borderRadius:8,padding:16,background:'#fff'}},
+          h('div',{className:'muted',style:{marginBottom:8}},'Slide '+(activeSlide+1)+' of '+slides.length),
+          (slides[activeSlide]||[]).length===0
+            ?h('div',{className:'muted'},'(No text on this slide.)')
+            :h('ul',{style:{margin:0,paddingLeft:20}},(slides[activeSlide]||[]).map((line,i)=>h('li',{key:i,style:{marginBottom:6}},line)))
+        )
       ),
       !loading&&!error&&kind==='other'&&h('div',{style:{padding:30,textAlign:'center'},className:'muted'},'Preview isn’t available for this file type — use Download to open it.')
     )
@@ -396,7 +444,7 @@ function AttachmentsSection({meetingId,attachments,me,roles,onChanged}){
     )),
     canUpload&&h('label',{className:'btn btn-outline btn-sm',style:{cursor:'pointer',marginTop:8,display:'inline-flex'}},
       uploading?'Uploading…':'+ Add attachment',
-      h('input',{type:'file',style:{display:'none'},disabled:uploading,onChange:handleFile,accept:'.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'})
+      h('input',{type:'file',style:{display:'none'},disabled:uploading,onChange:handleFile,accept:'.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png'})
     ),
     error&&h('div',{className:'alert alert-danger',style:{marginTop:8}},error),
     viewing&&h(AttachmentViewerModal,{meetingId,attachment:viewing,onClose:()=>setViewing(null)})

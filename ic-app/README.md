@@ -205,8 +205,13 @@ resent automatically). See `RFO_Meetings_App_BuildSpec_v1.docx` for the full spe
 Any Meetings member can attach files to a meeting (25MB limit each) and view them
 in-app — PDF and images render via the browser's own native support; Word (`.docx`
 only — mammoth.js doesn't handle legacy `.doc`) and Excel (`.xls`/`.xlsx`, via SheetJS)
-are converted to HTML client-side. Deliberately **not** wired through a third-party
-document-viewing service (Office/Google Docs viewers, which need a public URL): a
+are converted to HTML client-side, and PowerPoint (`.pptx` only) has its per-slide text
+pulled out (JSZip unzips it, the browser's own `DOMParser` reads each slide's XML) and
+shown slide by slide — there's no equivalent of mammoth/SheetJS for pptx, so this is
+content, not a visual rendering of the slide, consistent with how the Word/Excel
+previews already favor content over pixel-fidelity. Deliberately **not** wired through
+a third-party document-viewing service (Office/Google Docs viewers, which need a public
+URL): a
 file's bytes are fetched with the member's own session over `GET
 /api/meetings/:id/attachments/:attachmentId`, kept in memory as a `blob:` object URL,
 and never exposed outside the app — appropriate given these are often financial/legal
