@@ -962,10 +962,25 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     return { range, compareRange };
   }
 
+  // Same "all history, filters otherwise unchanged" range the on-screen Trailing 12
+  // Months chart fetches (see ExpenditureApp's trailing12Summary) — a rolling window
+  // needs everything before it, not just whatever date range is currently picked.
+  const REPORT_TYPES = ['category', 'trend', 'trailing12', 'period', 'transactions'];
+  function reportTypeFrom(q) {
+    return REPORT_TYPES.includes(q.reportType) ? q.reportType : 'category';
+  }
+
   app.get('/api/expenditure/report/pdf', requireAuth, requireLedger, async (req, res) => {
     try {
+      const reportType = reportTypeFrom(req.query);
       const { range, compareRange } = reportRanges(req.expenditureLedger.id, req.query);
-      const pdf = await buildReportPdf({ ledgerName: req.expenditureLedger.name, range, compareRange });
+      const trailing12Range = reportType === 'trailing12'
+        ? buildRange(req.expenditureLedger.id, { ...req.query, dateFrom: '', dateTo: '' })
+        : null;
+      const pdf = await buildReportPdf({
+        ledgerName: req.expenditureLedger.name, reportType, range, compareRange, trailing12Range,
+        periodGranularity: req.query.periodGranularity === 'year' ? 'year' : 'quarter',
+      });
       res.set('Content-Type', 'application/pdf');
       res.set('Content-Disposition', 'inline; filename="expenditure-report.pdf"');
       res.send(pdf);
@@ -974,12 +989,45 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     }
   });
 
+  // Filtered transaction list as a raw CSV — the same rows/filters as the on-screen
+  // table and the "Transactions" PDF report, for spreadsheet use instead of a formatted
+  // document.
+  function csvField(v) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+  function transactionsToCsv(rows) {
+    const header = ['Date', 'Description', 'Account', 'Category', 'Amount', 'Currency', 'Amount (CAD)', 'Notes'];
+    const lines = [header.map(csvField).join(',')];
+    for (const t of rows) {
+      lines.push([
+        t.txnDate, t.description, t.accountName, t.categoryName || 'Uncategorized',
+        t.amount, t.currency, t.amountCad, t.notes || '',
+      ].map(csvField).join(','));
+    }
+    return lines.join('\r\n');
+  }
+  app.get('/api/expenditure/report/csv', requireAuth, requireLedger, (req, res) => {
+    const rows = queryTransactions(req.expenditureLedger.id, req.query).map(txnRowToJson);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename="expenditure-transactions.csv"');
+    res.send(transactionsToCsv(rows));
+  });
+
   app.post('/api/expenditure/report/email', requireAuth, requireLedger, async (req, res) => {
     const { to, message } = req.body || {};
     if (!to) return res.status(400).json({ error: 'to (recipient email) is required' });
     try {
+      const reportType = reportTypeFrom(req.body || {});
       const { range, compareRange } = reportRanges(req.expenditureLedger.id, req.body || {});
-      const pdf = await buildReportPdf({ ledgerName: req.expenditureLedger.name, range, compareRange });
+      const trailing12Range = reportType === 'trailing12'
+        ? buildRange(req.expenditureLedger.id, { ...(req.body || {}), dateFrom: '', dateTo: '' })
+        : null;
+      const pdf = await buildReportPdf({
+        ledgerName: req.expenditureLedger.name, reportType, range, compareRange, trailing12Range,
+        periodGranularity: req.body && req.body.periodGranularity === 'year' ? 'year' : 'quarter',
+      });
+      const REPORT_TYPE_LABELS = { category: 'By Category', trend: 'Monthly Trend', trailing12: 'Trailing 12 Months', period: 'By Quarter/Year', transactions: 'Transaction' };
       await mailer.sendMail({
         to,
         subject: `Household Expenditure Report — ${req.expenditureLedger.name}`,
@@ -989,7 +1037,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
           subtitle: req.expenditureLedger.name,
           bodyRowsHtml: contentRow(
             (message ? paragraph(escapeHtml(message)) : '') +
-              paragraph(`Attached: the household expenditure report${range.dateFrom || range.dateTo ? ` for ${range.dateFrom || 'earliest'} to ${range.dateTo || 'latest'}` : ''}.`)
+              paragraph(`Attached: the ${REPORT_TYPE_LABELS[reportType]} report${range.dateFrom || range.dateTo ? ` for ${range.dateFrom || 'earliest'} to ${range.dateTo || 'latest'}` : ''}.`)
           ),
           ctaText: 'Open Household Expenditures',
           ctaUrl: `${APP_BASE_URL}/expenditure`,

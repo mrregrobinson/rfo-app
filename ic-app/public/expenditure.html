@@ -481,6 +481,14 @@ const CHART_TYPES=[
   {key:'trailing12',label:'Trailing 12 Months',comparable:false},
   {key:'period',label:'By Quarter/Year',comparable:false},
 ];
+
+// The exportable reports: every on-screen chart type, plus the raw transaction list —
+// the same filter criteria (FiltersBar) apply no matter which one is picked. Server-side
+// rendering for each lives in server/expenditure-report.js.
+const REPORT_TYPES=[
+  ...CHART_TYPES.map(c=>({key:c.key,label:c.label})),
+  {key:'transactions',label:'Transaction Report'},
+];
 function ChartsCard({summary,compareSummary,compareMode,trailing12Summary}){
   const [chartKey,setChartKey]=useState('category');
   const [periodGranularity,setPeriodGranularity]=useState('quarter');
@@ -615,13 +623,13 @@ function TransactionsTable({transactions,categories,onUpdate,onCreateRule,select
 }
 
 // ---- email modal ----
-function EmailModal({filters,compareMode,onClose}){
+function EmailModal({filters,compareMode,reportType,reportGranularity,onClose}){
   const [to,setTo]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [sent,setSent]=useState(false);
   async function send(){
     setBusy(true);setError('');
     try{
       await api.post('/api/expenditure/report/email',{
-        to,message,
+        to,message,reportType,periodGranularity:reportGranularity,
         dateFrom:filters.dateFrom,dateTo:filters.dateTo,payee:filters.payee,
         amountMin:filters.amountMin,amountMax:filters.amountMax,
         categoryIds:filters.categoryIds.join(','),
@@ -1054,6 +1062,12 @@ function ExpenditureApp({ledger}){
   const [compareSummary,setCompareSummary]=useState(null);
   const [trailing12Summary,setTrailing12Summary]=useState(null);
   const [transactions,setTransactions]=useState([]);
+  // What the Print/PDF/Email/CSV buttons act on — kept separate from the on-screen
+  // ChartsCard's own chartKey/periodGranularity (below) so viewing a chart on screen
+  // never silently changes what a report export produces, and vice versa.
+  const [reportType,setReportType]=useState('category');
+  const [reportGranularity,setReportGranularity]=useState('quarter');
+  const [reportFormat,setReportFormat]=useState('pdf');
   const [showEmail,setShowEmail]=useState(false);
   const [showCategories,setShowCategories]=useState(false);
   const [showResearch,setShowResearch]=useState(false);
@@ -1242,15 +1256,41 @@ function ExpenditureApp({ledger}){
   }
 
   function downloadPdf(){
-    const params=query(compareMode?{compareDateFrom:filters.compareDateFrom,compareDateTo:filters.compareDateTo}:{});
-    window.open('/api/expenditure/report/pdf?'+params,'_blank');
+    const extra=compareMode?{compareDateFrom:filters.compareDateFrom,compareDateTo:filters.compareDateTo}:{};
+    extra.reportType=reportType;
+    if(reportType==='period')extra.periodGranularity=reportGranularity;
+    window.open('/api/expenditure/report/pdf?'+query(extra),'_blank');
+  }
+  // The transaction CSV is always just the current filtered list (Period A) — like the
+  // on-screen table, it has no two-period "compare" shape to export.
+  function downloadCsv(){
+    window.open('/api/expenditure/report/csv?'+query(),'_blank');
   }
 
+  const reportIsCsv=reportType==='transactions'&&reportFormat==='csv';
   return h('div',{className:'page'},
-    h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
-      h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
-      h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
-      h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF')
+    h('div',{className:'card no-print',style:{display:'flex',flexDirection:'column',gap:10}},
+      h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+        h('label',{className:'form-label',style:{margin:0}},'Report'),
+        h('select',{className:'form-select',value:reportType,onChange:e=>setReportType(e.target.value)},
+          REPORT_TYPES.map(rt=>h('option',{key:rt.key,value:rt.key},rt.label))
+        ),
+        reportType==='period'&&h('select',{className:'form-select',value:reportGranularity,onChange:e=>setReportGranularity(e.target.value)},
+          h('option',{value:'quarter'},'By Quarter'),
+          h('option',{value:'year'},'By Year')
+        ),
+        reportType==='transactions'&&h('select',{className:'form-select',value:reportFormat,onChange:e=>setReportFormat(e.target.value)},
+          h('option',{value:'pdf'},'Formatted PDF'),
+          h('option',{value:'csv'},'CSV file')
+        )
+      ),
+      h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+        h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
+        reportIsCsv
+          ?h('button',{className:'btn btn-outline',onClick:downloadCsv},'Download CSV')
+          :h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
+        h('button',{className:'btn btn-teal',disabled:reportIsCsv,title:reportIsCsv?'Email only supports PDF — use Download CSV instead.':undefined,onClick:()=>setShowEmail(true)},'Email as PDF')
+      )
     ),
     h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
     lastAction&&h('div',{className:'undo-bar no-print'},
@@ -1276,7 +1316,7 @@ function ExpenditureApp({ledger}){
     ),
     h(ImportPanel,{onImported:load}),
     h(ManualTransactionPanel,{categories,onAdded:load}),
-    showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
+    showEmail&&h(EmailModal,{filters,compareMode,reportType,reportGranularity,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,exclusionRules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule,onAddExclusionRule:addExclusionRule,onEditExclusionRule:editExclusionRule,onDeleteExclusionRule:deleteExclusionRule}),
     showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();},onAffected:recordRuleAffected}),
     showExcluded&&h(ExcludedTransactionsModal,{onClose:()=>setShowExcluded(false),onChanged:load,onAffected:recordAffectedList})
