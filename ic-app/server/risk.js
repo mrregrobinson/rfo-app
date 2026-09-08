@@ -325,6 +325,27 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     res.status(201).json(assessmentRowToJson(db.prepare('SELECT * FROM risk_assessments WHERE id = ?').get(id)));
   });
 
+  // Edit the prose (rationale / "why this changed" note) of the CURRENT assessment in
+  // place — for refining the background without recording a whole new re-score.
+  // Superseded snapshots stay immutable (§5.2), so this only touches the latest row.
+  app.put('/api/risk/assessments/:id/rationale', requireAuth, (req, res) => {
+    if (!requireMember(req, res)) return;
+    const a = db.prepare('SELECT * FROM risk_assessments WHERE id = ?').get(req.params.id);
+    if (!a) return res.status(404).json({ error: 'Assessment not found' });
+    const latest = latestAssessment(a.category_id);
+    if (!latest || latest.id !== a.id) {
+      return res.status(409).json({ error: 'Only the current assessment can be edited in place — record a new assessment instead.' });
+    }
+    const b = req.body || {};
+    db.prepare('UPDATE risk_assessments SET rationale = ?, note = ? WHERE id = ?').run(
+      b.rationale != null ? String(b.rationale).trim() : a.rationale,
+      b.note != null ? String(b.note).trim() : a.note,
+      a.id
+    );
+    logAudit({ userId: req.session.userId, action: 'risk.assessment_rationale_edited', entityType: 'risk_category', entityId: a.category_id });
+    res.json(assessmentRowToJson(db.prepare('SELECT * FROM risk_assessments WHERE id = ?').get(a.id)));
+  });
+
   // ---- mitigations ----
 
   app.post('/api/risk/categories/:id/mitigations', requireAuth, (req, res) => {
@@ -465,22 +486,6 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     res.json(actionRowToJson(db.prepare('SELECT * FROM risk_actions WHERE id = ?').get(a.id)));
   });
 
-  // Read-through view of the Family Task List's `risk-management` category, so the
-  // Actions & Tasks tab can show and (with tasks_role) create tasks without leaving the
-  // app. Create/edit go to the existing /api/tasks endpoints from the frontend.
-  app.get('/api/risk/task-list', requireAuth, (req, res) => {
-    const rows = db.prepare("SELECT * FROM tasks WHERE category_id = ? ORDER BY created_at").all(RISK_TASK_CATEGORY_ID);
-    const linkedByTask = new Map(
-      db.prepare('SELECT id, task_id, category_id FROM risk_actions WHERE task_id IS NOT NULL').all().map((r) => [r.task_id, r])
-    );
-    res.json(rows.map((t) => {
-      const info = taskInfo(t.id);
-      const link = linkedByTask.get(t.id);
-      let riskCat = null;
-      if (link) { const rc = db.prepare('SELECT number, title FROM risk_categories WHERE id = ?').get(link.category_id); riskCat = rc ? { number: rc.number, title: rc.title } : null; }
-      return { ...info, notes: t.notes, createdAt: t.created_at, linkedRiskActionId: link ? link.id : null, linkedRiskCategory: riskCat };
-    }));
-  });
 
   // ---- events ----
 

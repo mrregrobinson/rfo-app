@@ -344,8 +344,14 @@ plain constant the page renders in an "IPS context" disclosure; do not model it 
 
 Single-page React app (`public/risk.html`), same build-free pattern as the other four
 pages: `React.createElement` aliased to `h`, one inline `<script>`, no JSX, no bundler.
-Tabs across the top: **Register** · **Profile** · **Events** · **Actions & Tasks** ·
-(admin only) **Manage**.
+Tabs across the top: **Register** · **Profile** · **Events** · (admin only) **Manage**.
+
+**Everything about a single risk is managed in one place — its detail drawer (§6.2).**
+There is deliberately no standalone "Actions & Tasks" tab: scoring, the reasoning behind
+it, the mitigations that bridge inherent → residual, the actions, and the per-action
+Family-Task-List sync all live on the risk's own screen. The Profile tab carries only
+read-only rollups (including an all-risks open-actions list) whose rows open that risk's
+drawer.
 
 ### 6.1 Register view (all roles)
 
@@ -365,30 +371,46 @@ Tabs across the top: **Register** · **Profile** · **Events** · **Actions & Ta
   (§8), same as the Expenditure app's filter→report contract.
 - Click a row → the **Risk detail** drawer (§6.2).
 
-### 6.2 Risk detail & assessment (drawer; save requires member/admin)
+### 6.2 Risk detail drawer — the single place a risk is managed
 
-Read-only for viewers; editable for member/admin.
+Opens from a Register row or any Profile rollup row. Read-only for viewers; editable for
+member/admin. Header shows number, title, description, the **Inherent → Residual** score
+chips, Status pill and next-review. Three sub-tabs:
 
-- **Header:** number, title, domain, current Residual and Inherent chips, Status pill.
-- **Rationale** (markdown, rendered), **Notes** (general standing commentary on the risk —
-  member-editable inline, seeded from v5's "Dalio Framework Note"), **Accountable**,
-  **Next review**.
-- **Mitigations In Place** — editable list (`risk_mitigations`): add / edit / reorder /
-  toggle `in_place` / remove.
-- **Required Actions** — the category's `risk_actions` (see §6.5 for the Task List link).
-- **Events** — the category's `risk_events`, newest first, with "Log event" (§6.3).
-- **Assessment history** — every `risk_assessments` row for this category, oldest→newest,
-  each showing the P/I → score for inherent and residual, who assessed it, and the
-  `note`. A sparkline of residual score over time.
-- **"New assessment"** (member/admin) — a form pre-filled from the latest assessment:
-  four 1–4 selectors (inherent P, inherent I, residual P, residual I) each showing the
-  `risk_scale` label+detail for the chosen value; Status select; Rationale (markdown);
-  Next review (quarter). Beside the **residual Probability** selector: a **"Look up base
-  rate"** button (§7) that, when a lookup returns, shows Claude's estimated annual
-  probability, its suggested 1–4 mapping, and its sources inline — the assessor still
-  picks the number; the chosen `external_probability_id` is stored on the assessment for
-  audit. Saving writes a new `risk_assessments` row with `supersedes_id` = the previous
-  latest, and `logAudit('risk.assessment_saved')`.
+**Assessment** (default)
+
+- **Current scoring** panel: Inherent (`P×I`, before mitigations) → Residual (after
+  mitigations) chips side by side with the arrow between them, status, and "assessed
+  `<date>` by `<name>`". A **"Re-assess scores"** button expands the scoring form *inline*
+  (not a separate tab):
+  - four 1–4 selectors (inherent P/I, residual P/I), each showing the `risk_scale`
+    label+detail for the chosen value; Status select; Next review (quarter); a Rationale
+    textarea; a "why this changed" one-liner (`note`).
+  - Beside the **residual Probability** selector: a **"Look up base rate"** button (§7)
+    that shows Claude's estimated annual probability, its suggested 1–4 mapping and
+    sources inline — the assessor still picks the number; the chosen
+    `external_probability_id` is stored on the assessment.
+  - Save writes a new `risk_assessments` row with `supersedes_id` = the previous latest,
+    `logAudit('risk.assessment_saved')`.
+- **Scoring rationale — why these numbers**: the current assessment's `rationale`, shown
+  prominently with an inline **edit** (member/admin) that calls
+  `PUT /api/risk/assessments/:id/rationale` — edits the prose of the *current* assessment
+  in place (superseded snapshots stay immutable; the endpoint 409s if the id isn't the
+  latest). This is how you record *why it was scored a particular way* without a full
+  re-score.
+- **Mitigations — the steps that reduce inherent risk to residual**: the `risk_mitigations`
+  list, relabelled to read as the inherent→residual bridge. Add / toggle `in_place` /
+  remove inline.
+- **Notes**: general standing commentary (`risk_categories.notes`), member-editable
+  inline, seeded from v5's "Dalio Framework Note".
+- **Accountable**, and a collapsible **Assessment history** (the old separate "History"
+  tab, folded in): a residual/inherent sparkline plus a table of every `risk_assessments`
+  row with who assessed it and the `note`.
+
+**Actions ( N open )** — see §6.5.
+
+**Events ( N )** — the category's `risk_events`, newest first, with "Log event",
+"create action from event" and "reassess this risk" (§6.3).
 
 ### 6.3 Events tab / "Log event" (member/admin)
 
@@ -427,42 +449,47 @@ Read-only for viewers; editable for member/admin.
 - **"Changes since last review"** — pick two dates (default: latest round vs. the one
   before); table of every category whose residual score, status, or open-action count
   changed, with before → after.
+- **"Open actions across all risks"** — a read-only rollup of every non-done
+  `risk_actions` row, grouped Immediate / Active / Monitor, showing category, owner, due
+  quarter and (if synced) the linked task's status. Each row's "open risk →" opens that
+  risk's drawer. This is the only cross-risk actions view; actions are *managed* only on
+  the risk's own screen (§6.5).
 
-### 6.5 Actions & Tasks tab — Family Task List integration (explicit requirement)
+### 6.5 Actions sub-tab (in the risk drawer) — per-action Family Task List sync
 
-This is the "add and change tasks in the RFO task list" surface. It works **through the
-existing Task List API and data** — no parallel task store.
+The "add and change tasks in the RFO task list" requirement, integrated into the risk's
+own screen — **not** a separate tab. Works through the existing Task List API and data;
+no parallel task store.
 
-- **Two panels on one screen:**
-  1. **Risk actions** — every `risk_actions` row, grouped by the Immediate / Active /
-     Monitor priority buckets (the register's RAG grouping), each showing its category,
-     owner text, due quarter, and — if `task_id` is set — the linked task's live title,
-     assignees, priority, target, and status (joined from `tasks` / `task_assignees`).
-  2. **Task List — Risk Management category** — a live view of every `tasks` row in
-     category `risk-management` (via `GET /api/tasks`, filtered client-side to
-     `categoryId === 'risk-management'`), including tasks created here and any added
-     directly in `/tasks`. Inline create/edit/complete, calling the **existing**
-     `POST /api/tasks` / `PUT /api/tasks/:id` endpoints unchanged. Write access follows
-     `tasks_role` (a Risk admin who is only a Tasks `viewer` sees the panel read-only and
-     is told why) — this keeps one permission model for task mutation.
-- **Promote an action to a task:** button on any `risk_actions` row with `task_id IS NULL`.
-  Opens a small form defaulting: `title` = action title, `categoryId` = `risk-management`,
-  `priority` = `high` if action priority is `Immediate` else `medium`, `targetQuarter` =
-  the action's `due_quarter`, `notes` = a back-reference (`"From Risk #N — <category
-  title>"` plus the action detail), assignees = none (assign in the form). On submit:
-  `POST /api/tasks`, then `PUT /api/risk/actions/:id` to store the returned `task_id`.
-  `logAudit('risk.action_promoted_to_task', { taskId })`. This mirrors
-  `meeting_action_items` → `tasks` in `server/meetings.js` — reuse that code path's shape.
-- **After linking:** the action's status/owner/target are shown read-through from the
-  task. Completing the task (in either panel, or in `/tasks`, or via the digest's Google
-  Tasks sync) makes the action render as done. "Unlink" clears `task_id` (leaves the task
-  alone) and restores `risk_actions.status` as authoritative. Deleting the task in
-  `/tasks` leaves `task_id` dangling → the join returns null → the action falls back to
-  its own `status` and shows a "linked task was deleted" hint.
-- **No new task schema.** The only optional convenience: a nullable
-  `tasks.source_ref_id` already exists (used by the one-off import); do **not** repurpose
-  it. The link is held on the risk side (`risk_actions.task_id`), exactly as
-  `meeting_action_items.task_id` holds it on the meetings side.
+- The risk's `risk_actions`, grouped by the Immediate / Active / Monitor priority
+  buckets (the register's RAG grouping). Inline "+ Add action" (title, detail, priority,
+  due quarter, owner).
+- **Each action row carries a "RFO Task List" toggle** — the field the family asked for,
+  making explicit whether the action *is synchronised with the RFO list* or *managed
+  within the risk register*:
+  - **Off (default):** managed here. A small status select (Open / In progress / Done)
+    drives `risk_actions.status`.
+  - **On:** synced. Flipping it on opens a compact assign form (title, priority = `high`
+    if action priority is `Immediate` else `medium`, target quarter defaulted from
+    `due_quarter`, assignee(s) from `/api/members` or "All family"). On submit:
+    `POST /api/risk/actions/:id/promote` → creates a `tasks` row in the existing
+    `risk-management` category with a `"From Risk #N — <title>"` back-reference note, and
+    stores the returned `task_id`. From then on the row shows the linked task's live
+    status/assignees read-through, and the status select is hidden.
+  - Flipping it **off** → `POST /api/risk/actions/:id/unlink` (confirm first). Clears
+    `task_id`; the task itself is left in the Family Task List (delete it there if
+    unwanted); `risk_actions.status` becomes authoritative again.
+- The "on" direction requires `tasks_role` member/admin (creating a real task) — the
+  toggle is disabled with a tooltip otherwise. This keeps one permission model for task
+  mutation.
+- Deleting the linked task in `/tasks` leaves `task_id` dangling → `taskInfo()` returns
+  `{deleted:true}` → the row shows "linked task deleted" and falls back to its own
+  `status` (this is why `risk_actions.task_id` is a plain column, not an FK — migration
+  029).
+- Mirrors `meeting_action_items → tasks` in `server/meetings.js`. No new task schema; the
+  link is held on the risk side (`risk_actions.task_id`).
+- **Profile tab** carries a read-only "Open actions across all risks" rollup (grouped by
+  priority) for the quarterly review; each row's "open risk →" opens that risk's drawer.
 
 ### 6.6 Manage tab (admin only)
 
@@ -594,7 +621,11 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
     (Manage tab).
   - `POST /api/risk/categories/:id/assessments` — member/admin; writes a new assessment,
     sets `supersedes_id`.
+  - `PUT /api/risk/assessments/:id/rationale` — member/admin; edits `rationale`/`note` of
+    the *current* assessment in place (409 if it isn't the latest for its category).
   - `POST/PUT/DELETE /api/risk/categories/:id/mitigations` — member/admin.
+  - `PUT /api/risk/categories/:id/notes` — member/admin; the general Notes field only
+    (the rest of `PUT /api/risk/categories/:id` stays admin-only).
   - `GET /api/risk/actions`, `POST/PUT/DELETE /api/risk/actions[/:id]` — member/admin;
     `POST /api/risk/actions/:id/promote` creates the `tasks` row (calls the same
     insert logic `server/tasks.js` uses — factor a shared helper or duplicate the small
@@ -667,9 +698,9 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
 4. **Assessments:** the new-assessment form, `POST …/assessments`, assessment history +
    sparkline. Run a second assessment on one category and confirm history/supersede.
 5. **Mitigations + Actions (without the Task List link yet):** editable lists.
-6. **Task List integration (§6.5):** the Actions & Tasks tab, `promote` / `unlink`, the
-   read-through join, the live `risk-management` task panel using the existing task API.
-   Test create-from-risk, complete-in-`/tasks`-reflects-in-risk, delete-task fallback.
+6. **Task List integration (§6.5):** the per-action "RFO Task List" sync toggle in the
+   risk drawer's Actions sub-tab, `promote` / `unlink`, the read-through join. Test
+   sync-from-risk, complete-in-`/tasks`-reflects-in-risk, delete-task fallback.
 7. **Events (§6.3):** Events tab, log/edit/close, "create action from event",
    "reassess this risk".
 8. **Profile dashboard (§6.4):** heatmap, summary cards, trend, domain rollup, changes-

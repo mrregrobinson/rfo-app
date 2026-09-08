@@ -137,14 +137,13 @@ function ChartCanvas({type,data,options,height}){
 // =======================================================================
 // Register tab
 // =======================================================================
-function RegisterTab({overview,members,me,roles,onReload}){
+function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
   const [basis,setBasis]=useState('residual');
   const [fDomain,setFDomain]=useState('');
   const [fStatus,setFStatus]=useState('');
   const [fBand,setFBand]=useState('');
   const [fAcc,setFAcc]=useState('');
   const [fFlags,setFFlags]=useState('');
-  const [openId,setOpenId]=useState(null);
 
   const cats=overview.categories.filter(c=>c.isActive);
   function matches(c){
@@ -182,7 +181,7 @@ function RegisterTab({overview,members,me,roles,onReload}){
         dcats.map(c=>{
           const a=c.latestAssessment;
           const sc=a?(basis==='residual'?[a.residualProb,a.residualImpact]:[a.inherentProb,a.inherentImpact]):null;
-          return h('div',{className:'rrow',key:c.id,onClick:()=>setOpenId(c.id)},
+          return h('div',{className:'rrow',key:c.id,onClick:()=>onOpenCategory(c.id)},
             h('div',{className:'rnum'},'#'+c.number),
             h('div',null,
               h('div',{className:'rtitle'},c.title),
@@ -204,28 +203,27 @@ function RegisterTab({overview,members,me,roles,onReload}){
           );
         })
       );
-    }),
-    openId&&h(CategoryDrawer,{categoryId:openId,members,me,roles,scale:overview.scale,onClose:()=>setOpenId(null),onChanged:()=>{onReload();}})
+    })
   );
 }
 
 // =======================================================================
-// Category drawer — detail + assessment + mitigations + actions + events
+// Category drawer — THE single place a risk is managed: scoring + rationale +
+// mitigations + actions (with Family-Task-List sync) + events, all here.
 // =======================================================================
 function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
   const [data,setData]=useState(null);
   const [err,setErr]=useState('');
-  const [tab,setTab]=useState('overview');
+  const [tab,setTab]=useState('assessment');
   function load(){api.get('/api/risk/categories/'+categoryId).then(setData).catch(e=>setErr(e.message));}
   useEffect(load,[categoryId]);
-  function refresh(){return api.get('/api/risk/categories/'+categoryId).then(setData);}
+  function refresh(){return api.get('/api/risk/categories/'+categoryId).then((d)=>{setData(d);onChanged&&onChanged();});}
 
   if(err)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},h('div',{className:'alert alert-danger'},err),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')));
   if(!data)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
   const c=data.category;
   const latest=data.assessments[data.assessments.length-1];
-  const probScale=scale.filter(s=>s.kind==='probability');
-  const impScale=scale.filter(s=>s.kind==='impact');
+  const openActions=data.actions.filter(a=>a.effectiveStatus!=='done').length;
 
   return h('div',{className:'modal-overlay',onClick:onClose},
     h('div',{className:'modal',onClick:e=>e.stopPropagation()},
@@ -236,26 +234,180 @@ function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
         h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')),
       latest&&h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:8}},
         h('span',null,h('span',{className:'small muted'},'Inherent '),scoreChip(latest.inherentProb,latest.inherentImpact)),
+        h('span',{className:'small muted'},'→'),
         h('span',null,h('span',{className:'small muted'},'Residual '),scoreChip(latest.residualProb,latest.residualImpact)),
         statusPill(latest.status),
         latest.nextReview&&h('span',{className:'small muted'},'Next review '+latest.nextReview)),
       h('div',{className:'tabs',style:{marginTop:8}},
-        ['overview','assess','events','history'].map(t=>h('div',{key:t,className:'tab'+(tab===t?' active':''),onClick:()=>setTab(t)},
-          t==='overview'?'Overview':t==='assess'?'New assessment':t==='events'?('Events ('+data.events.length+')'):'History'))),
-
-      tab==='overview'&&h('div',null,
-        h('div',{className:'sec'},'Rationale'),
-        h('div',{className:'small'},latest&&latest.rationale?latest.rationale:h('span',{className:'muted'},'No rationale recorded on the latest assessment.')),
-        h(NotesEditor,{category:c,roles,refresh}),
-        h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
-        h(MitigationList,{data,roles,refresh}),
-        h(ActionList,{data,members,roles,refresh,onChanged})
-      ),
-      tab==='assess'&&h(AssessForm,{category:c,latest,probScale,impScale,roles,onSaved:()=>{refresh();onChanged();setTab('history');}}),
-      tab==='events'&&h(EventListForCategory,{data,roles,refresh,onChanged}),
-      tab==='history'&&h(AssessHistory,{assessments:data.assessments})
+        [['assessment','Assessment'],['actions','Actions ('+openActions+' open)'],['events','Events ('+data.events.length+')']].map(([k,l])=>
+          h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
+      tab==='assessment'&&h(AssessmentPanel,{data,latest,scale,roles,refresh}),
+      tab==='actions'&&h(ActionsPanel,{data,members,roles,refresh}),
+      tab==='events'&&h(EventListForCategory,{data,roles,refresh,onChanged:refresh})
     )
   );
+}
+
+// ---- Assessment sub-tab: scoring, why-it-was-scored, the inherent->residual bridge ----
+function AssessmentPanel({data,latest,scale,roles,refresh}){
+  const [reassessing,setReassessing]=useState(false);
+  const [showHistory,setShowHistory]=useState(false);
+  const c=data.category;
+  const probScale=scale.filter(s=>s.kind==='probability');
+  const impScale=scale.filter(s=>s.kind==='impact');
+  return h('div',null,
+    h('div',{className:'sec'},'Current scoring'),
+    latest
+      ? h('div',{className:'card',style:{background:'var(--bg)',marginBottom:4}},
+          h('div',{style:{display:'flex',gap:14,flexWrap:'wrap',alignItems:'center'}},
+            h('div',null,h('div',{className:'small muted'},'Inherent — before mitigations'),h('div',{style:{marginTop:2}},scoreChip(latest.inherentProb,latest.inherentImpact))),
+            h('div',{style:{fontSize:20,color:'var(--muted)'}},'→'),
+            h('div',null,h('div',{className:'small muted'},'Residual — after mitigations'),h('div',{style:{marginTop:2}},scoreChip(latest.residualProb,latest.residualImpact))),
+            h('div',{style:{flex:1}}),
+            statusPill(latest.status)),
+          h('div',{className:'small muted',style:{marginTop:8}},'Assessed '+latest.assessedAt.slice(0,10)+' by '+(latest.assessedByName||'—')+(latest.nextReview?' · next review '+latest.nextReview:'')),
+          roles.riskMember&&h('button',{className:'btn btn-gold btn-sm',style:{marginTop:10},onClick:()=>setReassessing(!reassessing)},reassessing?'Cancel re-assessment':'Re-assess scores'))
+      : h('div',{className:'small muted',style:{marginBottom:8}},'Not yet assessed. ',roles.riskMember&&h('button',{className:'btn btn-gold btn-sm',onClick:()=>setReassessing(true)},'Assess now')),
+    reassessing&&h('div',{className:'card',style:{marginTop:0}},h(AssessForm,{category:c,latest,probScale,impScale,roles,onSaved:()=>{setReassessing(false);refresh();}})),
+
+    h(RationaleEditor,{assessment:latest,roles,refresh}),
+    h(MitigationList,{data,roles,refresh}),
+    h(NotesEditor,{category:c,roles,refresh}),
+
+    h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
+
+    h('div',{className:'sec',style:{cursor:'pointer',userSelect:'none'},onClick:()=>setShowHistory(!showHistory)},(showHistory?'▾ ':'▸ ')+'Assessment history ('+data.assessments.length+')'),
+    showHistory&&h(AssessHistory,{assessments:data.assessments})
+  );
+}
+
+// Edit the current assessment's "why" without recording a whole new re-score.
+function RationaleEditor({assessment,roles,refresh}){
+  const [editing,setEditing]=useState(false);
+  const [val,setVal]=useState(assessment?assessment.rationale:'');
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  useEffect(()=>{setVal(assessment?assessment.rationale:'');setEditing(false);},[assessment&&assessment.id]);
+  if(!assessment)return null;
+  async function save(){
+    setBusy(true);setErr('');
+    try{await api.put('/api/risk/assessments/'+assessment.id+'/rationale',{rationale:val});setEditing(false);refresh();}
+    catch(e){setErr(e.message);}finally{setBusy(false);}
+  }
+  return h('div',null,
+    h('div',{style:{display:'flex',alignItems:'baseline',gap:8}},
+      h('div',{className:'sec',style:{marginBottom:0}},'Scoring rationale — why these numbers'),
+      roles.riskMember&&!editing&&h('button',{className:'linkbtn',onClick:()=>setEditing(true)},'edit')),
+    err&&h('div',{className:'alert alert-danger',style:{marginTop:6}},err),
+    !editing&&h('div',{className:'small',style:{marginTop:6,whiteSpace:'pre-wrap'}},assessment.rationale||h('span',{className:'muted'},'No rationale recorded — click edit to explain the judgement behind the scores.')),
+    editing&&h('div',{style:{marginTop:6}},
+      h('textarea',{className:'form-textarea',value:val,onChange:e=>setVal(e.target.value),placeholder:'Why the inherent and residual scores are what they are — the reasoning behind the numbers.'}),
+      h('div',{style:{display:'flex',gap:6}},
+        h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:save},busy?'Saving…':'Save'),
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>{setVal(assessment.rationale||'');setEditing(false);}},'Cancel')))
+  );
+}
+
+// ---- Actions sub-tab: this risk's actions, each toggleable between "managed here" and
+// "synced to the Family Task List". This is the ONLY actions/tasks surface now. ----
+function ActionsPanel({data,members,roles,refresh}){
+  const [adding,setAdding]=useState(false);
+  const [syncing,setSyncing]=useState(null);
+  const [nt,setNt]=useState({title:'',detail:'',priority:'Active',ownerText:'',dueQuarter:''});
+  const cid=data.category.id;
+  async function addAction(){if(!nt.title.trim())return;await api.post('/api/risk/actions',{categoryId:cid,...nt});setNt({title:'',detail:'',priority:'Active',ownerText:'',dueQuarter:''});setAdding(false);refresh();}
+  async function setStatus(a,status){await api.put('/api/risk/actions/'+a.id,{status});refresh();}
+  async function del(a){if(!confirm('Delete this action?'+(a.taskId&&!a.linkedTaskDeleted?'\nThe linked task in the Family Task List is left in place.':'')))return;await api.del('/api/risk/actions/'+a.id);refresh();}
+  async function toggleSync(a,on){
+    if(on){setSyncing(a);return;}
+    if(!confirm('Stop syncing this action to the Family Task List?\nThe task itself stays in the list — delete it there if you no longer want it.'))return;
+    await api.post('/api/risk/actions/'+a.id+'/unlink',{});refresh();
+  }
+  const buckets=[['Immediate','chip-high'],['Active','chip-med'],['Monitor','chip-low']];
+  return h('div',null,
+    buckets.map(([bk,cls])=>{
+      const list=data.actions.filter(a=>a.priority===bk);
+      if(!list.length)return null;
+      return h('div',{key:bk,style:{marginBottom:12}},
+        h('div',{className:'chip '+cls,style:{marginBottom:2}},bk+' ('+list.length+')'),
+        list.map(a=>h(ActionRow,{key:a.id,a,roles,onStatus:setStatus,onDelete:del,onToggleSync:toggleSync})));
+    }),
+    !data.actions.length&&h('div',{className:'small muted'},'No actions recorded for this risk yet.'),
+    roles.riskMember&&!adding&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:4},onClick:()=>setAdding(true)},'+ Add action'),
+    adding&&h('div',{className:'card',style:{background:'var(--bg)',marginTop:8}},
+      h('input',{className:'form-input',placeholder:'Action title',value:nt.title,onChange:e=>setNt({...nt,title:e.target.value})}),
+      h('textarea',{className:'form-textarea',placeholder:'Detail (optional)',value:nt.detail,onChange:e=>setNt({...nt,detail:e.target.value})}),
+      h('div',{className:'grid2'},
+        h('select',{className:'form-select',value:nt.priority,onChange:e=>setNt({...nt,priority:e.target.value})},PRIORITIES.map(p=>h('option',{key:p,value:p},p))),
+        h('select',{className:'form-select',value:nt.dueQuarter,onChange:e=>setNt({...nt,dueQuarter:e.target.value})},QUARTERS.map(q=>h('option',{key:q,value:q},q||'No due quarter')))),
+      h('input',{className:'form-input',placeholder:'Owner (free text)',value:nt.ownerText,onChange:e=>setNt({...nt,ownerText:e.target.value})}),
+      h('div',{style:{display:'flex',gap:6}},h('button',{className:'btn btn-teal btn-sm',onClick:addAction},'Add action'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(false)},'Cancel')),
+      h('div',{className:'small muted',style:{marginTop:6}},'Once added, flip the “RFO Task List” switch on the action to sync it to the Family Task List.')),
+    h('div',{className:'small muted',style:{marginTop:12,borderTop:'0.5px solid var(--border)',paddingTop:8}},
+      'Synced actions live in the Family Task List under “02. Risk Management”, assigned to a person; unsynced actions are tracked only here. ',
+      h('a',{href:'/tasks',style:{color:'var(--teal)'}},'Open Task List →')),
+    syncing&&h(SyncModal,{action:syncing,members,onClose:()=>setSyncing(null),onDone:()=>{setSyncing(null);refresh();}})
+  );
+}
+
+function ActionRow({a,roles,onStatus,onDelete,onToggleSync}){
+  const synced=!!a.taskId&&!a.linkedTaskDeleted;
+  const canSync=roles.riskMember&&roles.tasksMember;
+  return h('div',{className:'line',style:{alignItems:'flex-start'}},
+    h('div',{style:{flex:1}},
+      h('div',null,a.title,
+        a.ownerText&&h('span',{className:'small muted'},' — '+a.ownerText),
+        a.dueQuarter&&h('span',{className:'small muted'},' ('+a.dueQuarter+')'),
+        a.status==='incomplete'&&!synced&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'INCOMPLETE')),
+      a.detail&&h('div',{className:'small muted'},a.detail),
+      synced
+        ? h('div',{className:'small',style:{marginTop:3}},
+            h('span',{className:'pill'},'RFO task · '+(a.task?a.task.status:'')),
+            a.task&&a.task.assigneeNames&&a.task.assigneeNames.length?h('span',{className:'small muted'},' · '+a.task.assigneeNames.join(', ')):null,
+            h('a',{href:'/tasks',className:'small',style:{marginLeft:6,color:'var(--teal)'}},'open'))
+        : h('div',{style:{marginTop:3}},
+            roles.riskMember
+              ? h('select',{style:{fontSize:11,padding:'2px 6px',borderRadius:6,border:'0.5px solid var(--border)'},value:a.status==='incomplete'?'open':a.status,onChange:e=>onStatus(a,e.target.value)},
+                  [['open','Open'],['in_progress','In progress'],['done','Done']].map(([v,l])=>h('option',{key:v,value:v},l)))
+              : h('span',{className:'small muted'},a.effectiveStatus))
+    ),
+    h('div',{style:{whiteSpace:'nowrap',textAlign:'right'}},
+      h('label',{className:'small',title:canSync?'Sync this action to the Family Task List':'Needs Family Task List member access',style:{display:'inline-flex',alignItems:'center',gap:4,opacity:canSync?1:.5}},
+        h('input',{type:'checkbox',checked:synced,disabled:!canSync,onChange:e=>onToggleSync(a,e.target.checked)}),
+        'RFO Task List'),
+      a.linkedTaskDeleted&&h('div',{className:'pill pill-incomplete',style:{marginTop:4}},'linked task deleted'),
+      roles.riskMember&&h('div',null,h('button',{className:'linkbtn',style:{color:'#991B1B',marginTop:4},onClick:()=>onDelete(a)},'delete'))
+    )
+  );
+}
+
+function SyncModal({action,members,onClose,onDone}){
+  const [title,setTitle]=useState(action.title);
+  const [priority,setPriority]=useState(action.priority==='Immediate'?'high':'medium');
+  const [tq,setTq]=useState(action.dueQuarter||'');
+  const [assignedToAll,setAll]=useState(false);
+  const [assignees,setAssignees]=useState([]);
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  async function go(){
+    setBusy(true);setErr('');
+    try{await api.post('/api/risk/actions/'+action.id+'/promote',{title,priority,targetQuarter:tq,assignedToAll,assigneeIds:assignees});onDone();}
+    catch(e){setErr(e.message);setBusy(false);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal modal-sm',onClick:e=>e.stopPropagation()},
+    h('div',{className:'modal-title'},'Sync to Family Task List'),
+    h('div',{className:'modal-sub'},'Creates a task under “02. Risk Management”, assigned to a person, and links it to this action. Status then flows from the task.'),
+    err&&h('div',{className:'alert alert-danger'},err),
+    h('label',{className:'form-label'},'Task title'),h('input',{className:'form-input',value:title,onChange:e=>setTitle(e.target.value)}),
+    h('div',{className:'grid2'},
+      h('div',null,h('label',{className:'form-label'},'Priority'),h('select',{className:'form-select',value:priority,onChange:e=>setPriority(e.target.value)},['high','medium','low'].map(p=>h('option',{key:p,value:p},p)))),
+      h('div',null,h('label',{className:'form-label'},'Target quarter'),h('select',{className:'form-select',value:tq,onChange:e=>setTq(e.target.value)},QUARTERS.map(q=>h('option',{key:q,value:q},q||'—'))))),
+    h('label',{className:'form-label'},'Assign to'),
+    h('label',{className:'small',style:{display:'block',marginBottom:6}},h('input',{type:'checkbox',checked:assignedToAll,onChange:e=>setAll(e.target.checked)}),' All family'),
+    !assignedToAll&&members.map(m=>h('label',{key:m.id,className:'small',style:{display:'inline-flex',gap:4,marginRight:10}},
+      h('input',{type:'checkbox',checked:assignees.includes(m.id),onChange:e=>setAssignees(e.target.checked?[...assignees,m.id]:assignees.filter(x=>x!==m.id))}),m.name.split(' ')[0])),
+    h('div',{style:{display:'flex',gap:6,marginTop:14}},
+      h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:go},busy?'Syncing…':'Sync'),
+      h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'))
+  ));
 }
 
 function NotesEditor({category,roles,refresh}){
@@ -288,7 +440,7 @@ function MitigationList({data,roles,refresh}){
   async function toggle(m){await api.put('/api/risk/mitigations/'+m.id,{inPlace:!m.inPlace});refresh();}
   async function del(m){if(!confirm('Remove this mitigation?'))return;await api.del('/api/risk/mitigations/'+m.id);refresh();}
   return h('div',null,
-    h('div',{className:'sec'},'Mitigations in place'),
+    h('div',{className:'sec'},'Mitigations — the steps that reduce inherent risk to residual'),
     data.mitigations.map(m=>h('div',{className:'line',key:m.id},
       h('span',{style:{opacity:m.inPlace?1:.5}},m.text,!m.inPlace&&h('span',{className:'small muted'},' (planned)')),
       canEdit&&h('span',{style:{whiteSpace:'nowrap'}},
@@ -299,74 +451,6 @@ function MitigationList({data,roles,refresh}){
       h('input',{className:'form-input',style:{marginBottom:0},placeholder:'Add a mitigation…',value:txt,onChange:e=>setTxt(e.target.value),onKeyDown:e=>{if(e.key==='Enter')add();}}),
       h('button',{className:'btn btn-outline btn-sm',onClick:add},'Add'))
   );
-}
-
-function ActionList({data,members,roles,refresh,onChanged}){
-  const [promoting,setPromoting]=useState(null);
-  const [adding,setAdding]=useState(false);
-  const [nt,setNt]=useState({title:'',priority:'Active',ownerText:'',dueQuarter:''});
-  async function addAction(){if(!nt.title.trim())return;await api.post('/api/risk/actions',{categoryId:data.category.id,...nt});setNt({title:'',priority:'Active',ownerText:'',dueQuarter:''});setAdding(false);refresh();onChanged();}
-  async function setStatus(a,status){await api.put('/api/risk/actions/'+a.id,{status});refresh();onChanged();}
-  async function del(a){if(!confirm('Delete this action? Any linked task is left in place.'))return;await api.del('/api/risk/actions/'+a.id);refresh();onChanged();}
-  async function unlink(a){await api.post('/api/risk/actions/'+a.id+'/unlink',{});refresh();}
-  return h('div',null,
-    h('div',{className:'sec'},'Required actions'),
-    data.actions.map(a=>h('div',{className:'line',key:a.id},
-      h('span',null,
-        h('span',{className:'chip '+(a.priority==='Immediate'?'chip-high':a.priority==='Active'?'chip-med':'chip-low'),style:{marginRight:6}},a.priority),
-        a.title,
-        a.ownerText&&h('span',{className:'small muted'},' — '+a.ownerText),
-        a.dueQuarter&&h('span',{className:'small muted'},' ('+a.dueQuarter+')'),
-        a.taskId&&!a.linkedTaskDeleted&&h('span',{className:'pill',style:{marginLeft:6}},'Task: '+(a.task?a.task.status:'')),
-        a.linkedTaskDeleted&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'linked task deleted'),
-        a.status==='incomplete'&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'INCOMPLETE')),
-      roles.riskMember&&h('span',{style:{whiteSpace:'nowrap'}},
-        !a.taskId&&roles.tasksMember&&h('button',{className:'linkbtn',onClick:()=>setPromoting(a)},'add to Task List'),
-        a.taskId&&h('button',{className:'linkbtn',onClick:()=>unlink(a)},'unlink'),
-        a.effectiveStatus!=='done'&&h('button',{className:'linkbtn',style:{marginLeft:8},onClick:()=>setStatus(a,'done')},'done'),
-        a.effectiveStatus==='done'&&!a.taskId&&h('button',{className:'linkbtn',style:{marginLeft:8},onClick:()=>setStatus(a,'open')},'reopen'),
-        h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>del(a)},'delete')))),
-    !data.actions.length&&h('div',{className:'small muted'},'None recorded.'),
-    roles.riskMember&&!adding&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:6},onClick:()=>setAdding(true)},'+ Add action'),
-    adding&&h('div',{style:{marginTop:8}},
-      h('input',{className:'form-input',placeholder:'Action title',value:nt.title,onChange:e=>setNt({...nt,title:e.target.value})}),
-      h('div',{className:'grid2'},
-        h('select',{className:'form-select',value:nt.priority,onChange:e=>setNt({...nt,priority:e.target.value})},PRIORITIES.map(p=>h('option',{key:p,value:p},p))),
-        h('select',{className:'form-select',value:nt.dueQuarter,onChange:e=>setNt({...nt,dueQuarter:e.target.value})},QUARTERS.map(q=>h('option',{key:q,value:q},q||'No due quarter')))),
-      h('input',{className:'form-input',placeholder:'Owner (free text)',value:nt.ownerText,onChange:e=>setNt({...nt,ownerText:e.target.value})}),
-      h('div',{style:{display:'flex',gap:6}},h('button',{className:'btn btn-teal btn-sm',onClick:addAction},'Save'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(false)},'Cancel'))),
-    promoting&&h(PromoteModal,{action:promoting,members,onClose:()=>setPromoting(null),onDone:()=>{setPromoting(null);refresh();onChanged();}})
-  );
-}
-
-function PromoteModal({action,members,onClose,onDone}){
-  const [title,setTitle]=useState(action.title);
-  const [priority,setPriority]=useState(action.priority==='Immediate'?'high':'medium');
-  const [tq,setTq]=useState(action.dueQuarter||'');
-  const [assignedToAll,setAll]=useState(false);
-  const [assignees,setAssignees]=useState([]);
-  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
-  async function go(){
-    setBusy(true);setErr('');
-    try{await api.post('/api/risk/actions/'+action.id+'/promote',{title,priority,targetQuarter:tq,assignedToAll,assigneeIds:assignees});onDone();}
-    catch(e){setErr(e.message);setBusy(false);}
-  }
-  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal modal-sm',onClick:e=>e.stopPropagation()},
-    h('div',{className:'modal-title'},'Add to Family Task List'),
-    h('div',{className:'modal-sub'},'Creates a task under the “02. Risk Management” category and links it to this action.'),
-    err&&h('div',{className:'alert alert-danger'},err),
-    h('label',{className:'form-label'},'Task title'),h('input',{className:'form-input',value:title,onChange:e=>setTitle(e.target.value)}),
-    h('div',{className:'grid2'},
-      h('div',null,h('label',{className:'form-label'},'Priority'),h('select',{className:'form-select',value:priority,onChange:e=>setPriority(e.target.value)},['high','medium','low'].map(p=>h('option',{key:p,value:p},p)))),
-      h('div',null,h('label',{className:'form-label'},'Target quarter'),h('select',{className:'form-select',value:tq,onChange:e=>setTq(e.target.value)},QUARTERS.map(q=>h('option',{key:q,value:q},q||'—'))))),
-    h('label',{className:'form-label'},'Assign to'),
-    h('label',{className:'small',style:{display:'block',marginBottom:6}},h('input',{type:'checkbox',checked:assignedToAll,onChange:e=>setAll(e.target.checked)}),' All family'),
-    !assignedToAll&&members.map(m=>h('label',{key:m.id,className:'small',style:{display:'inline-flex',gap:4,marginRight:10}},
-      h('input',{type:'checkbox',checked:assignees.includes(m.id),onChange:e=>setAssignees(e.target.checked?[...assignees,m.id]:assignees.filter(x=>x!==m.id))}),m.name.split(' ')[0])),
-    h('div',{style:{display:'flex',gap:6,marginTop:14}},
-      h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:go},busy?'Creating…':'Create task'),
-      h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'))
-  ));
 }
 
 function AssessForm({category,latest,probScale,impScale,roles,onSaved}){
@@ -431,7 +515,7 @@ function AssessForm({category,latest,probScale,impScale,roles,onSaved}){
       h('select',{className:'form-select',value:nextReview,onChange:e=>setNextReview(e.target.value)},QUARTERS.map(q=>h('option',{key:q,value:q},q||'No next review')))),
     h('label',{className:'form-label'},'Rationale'),h('textarea',{className:'form-textarea',value:rationale,onChange:e=>setRationale(e.target.value)}),
     h('label',{className:'form-label'},'Why this changed (optional one-liner)'),h('input',{className:'form-input',value:note,onChange:e=>setNote(e.target.value)}),
-    h('button',{className:'btn btn-gold',disabled:busy,onClick:save},busy?'Saving…':'Save new assessment')
+    h('button',{className:'btn btn-gold',disabled:busy,onClick:save},busy?'Saving…':'Save assessment')
   );
 }
 
@@ -524,21 +608,24 @@ function EventsTab({overview,roles}){
 // =======================================================================
 // Profile tab
 // =======================================================================
-function ProfileTab({overview}){
+function ProfileTab({overview,roles,onOpenCategory}){
   const [p,setP]=useState(null);const [basis,setBasis]=useState('residual');
-  useEffect(()=>{api.get('/api/risk/profile').then(setP);},[]);
+  const [actions,setActions]=useState(null);
+  useEffect(()=>{api.get('/api/risk/profile').then(setP);api.get('/api/risk/actions').then(setActions);},[]);
   if(!p)return h('div',null,'Loading…');
   const useInh=basis==='inherent';
   const catName=id=>{const c=overview.categories.find(x=>x.id===id);return c?('#'+c.number+' '+c.title):id;};
-  const pts=p.points.map(pt=>({x:(useInh?pt.inherentProb:pt.residualProb),y:(useInh?pt.inherentImpact:pt.residualImpact),n:pt.number,t:pt.title,band:(useInh?pt.inherentBand:pt.residualBand)}));
+  const pts=p.points.map(pt=>({x:(useInh?pt.inherentProb:pt.residualProb),y:(useInh?pt.inherentImpact:pt.residualImpact),n:pt.number,t:pt.title,band:(useInh?pt.inherentBand:pt.residualBand),cid:pt.categoryId}));
   const jitter={};
-  const scatter=pts.map(pt=>{const k=pt.x+','+pt.y;const c=(jitter[k]=(jitter[k]||0)+1)-1;return {x:pt.x+c*0.12,y:pt.y+c*0.12,_n:pt.n,_t:pt.t,_b:pt.band};});
+  const scatter=pts.map(pt=>{const k=pt.x+','+pt.y;const c=(jitter[k]=(jitter[k]||0)+1)-1;return {x:pt.x+c*0.12,y:pt.y+c*0.12,_n:pt.n,_t:pt.t,_b:pt.band,_cid:pt.cid};});
   const col=b=>b==='Low'?'#1E9E5A':b==='Medium'?'#B45309':'#9D174D';
   const heatData={datasets:[{label:basis,data:scatter,pointRadius:11,pointHoverRadius:13,
     pointBackgroundColor:scatter.map(d=>col(d._b)),pointBorderColor:'#fff',pointBorderWidth:1.5}]};
-  const heatOpts={plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`#${c.raw._n} ${c.raw._t}`}}},
+  const heatOpts={onClick:(e,els)=>{if(els&&els.length){const d=scatter[els[0].index];if(d&&d._cid)onOpenCategory(d._cid);}},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`#${c.raw._n} ${c.raw._t}`}}},
     scales:{x:{min:.5,max:4.5,title:{display:true,text:'Probability'},ticks:{stepSize:1,callback:v=>Number.isInteger(v)&&v>=1&&v<=4?v:''}},
             y:{min:.5,max:4.5,title:{display:true,text:'Impact'},ticks:{stepSize:1,callback:v=>Number.isInteger(v)&&v>=1&&v<=4?v:''}}}};
+  const openActions=(actions||[]).filter(a=>a.effectiveStatus!=='done');
   const trend={labels:p.series.map(s=>s.at.slice(0,10)),datasets:[{label:'Aggregate residual exposure',data:p.series.map(s=>s.residualExposure),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',fill:true,tension:.2}]};
   const domBar={labels:p.domains.map(d=>d.id),datasets:[
     {label:'Mean residual',data:p.domains.map(d=>d.meanResidual),backgroundColor:'#2A7D7B'},
@@ -576,58 +663,25 @@ function ProfileTab({overview}){
             h('tbody',null,p.compare.changes.map(ch=>h('tr',{key:ch.categoryId},
               h('td',null,'#'+ch.number),h('td',null,ch.title),
               h('td',null,(ch.residualFrom==null?'—':ch.residualFrom)+' → '+ch.residualTo),
-              h('td',{className:'small'},ch.statusFrom!==ch.statusTo?((ch.statusFrom||'—')+' → '+ch.statusTo):'—')))))))
-  );
-}
-
-// =======================================================================
-// Actions & Tasks tab
-// =======================================================================
-function ActionsTasksTab({overview,members,roles}){
-  const [actions,setActions]=useState(null);
-  const [tasks,setTasks]=useState(null);
-  const [msg,setMsg]=useState('');
-  const [sel,setSel]=useState(null);
-  function load(){Promise.all([api.get('/api/risk/actions'),api.get('/api/risk/task-list')]).then(([a,t])=>{setActions(a);setTasks(t);});}
-  useEffect(load,[]);
-  if(!actions||!tasks)return h('div',null,'Loading…');
-  const buckets={Immediate:[],Active:[],Monitor:[]};
-  actions.forEach(a=>{(buckets[a.priority]||buckets.Active).push(a);});
-  async function toggleTask(t){
-    if(!roles.tasksMember){setMsg('You need Task List member access to change tasks.');return;}
-    await api.put('/api/tasks/'+t.id,{status:t.status==='done'?'open':'done'});load();
-  }
-  return h('div',null,
-    msg&&h('div',{className:'alert alert-info'},msg),
-    h('div',{className:'card'},
-      h('strong',null,'Risk actions by priority'),
-      Object.keys(buckets).map(bk=>h('div',{key:bk,style:{marginTop:10}},
-        h('div',{className:'chip '+(bk==='Immediate'?'chip-high':bk==='Active'?'chip-med':'chip-low')},bk+' ('+buckets[bk].length+')'),
-        buckets[bk].map(a=>h('div',{className:'line',key:a.id},
-          h('span',null,h('span',{className:'small muted'},'#'+a.categoryNumber+' '),a.title,
-            a.ownerText&&h('span',{className:'small muted'},' — '+a.ownerText),
-            a.dueQuarter&&h('span',{className:'small muted'},' ('+a.dueQuarter+')'),
-            a.taskId&&!a.linkedTaskDeleted&&h('span',{className:'pill',style:{marginLeft:6}},'Task · '+(a.task?a.task.status:'')+(a.task&&a.task.assigneeNames&&a.task.assigneeNames.length?' · '+a.task.assigneeNames.join(', '):'')),
-            a.linkedTaskDeleted&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'linked task deleted')),
-          h('span',{style:{whiteSpace:'nowrap'}},
-            !a.taskId&&roles.tasksMember&&roles.riskMember&&h('button',{className:'linkbtn',onClick:()=>setSel(a)},'add to Task List'),
-            a.taskId&&roles.riskMember&&h('button',{className:'linkbtn',onClick:async()=>{await api.post('/api/risk/actions/'+a.id+'/unlink',{});load();}},'unlink')))))),
-      !actions.length&&h('div',{className:'small muted'},'No risk actions yet.')),
-    h('div',{className:'card'},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-        h('strong',null,'Family Task List — “02. Risk Management”'),
-        h('a',{href:'/tasks',className:'small',style:{color:'var(--teal)'}},'Open full Task List →')),
-      h('div',{className:'small muted',style:{margin:'4px 0 8px'}},roles.tasksMember?'Toggle done here, or open the Task List for full editing.':'Read-only — Task List member access needed to change tasks.'),
-      h('table',{className:'tbl'},h('thead',null,h('tr',null,['','Task','Priority','Target','From risk',''].map(x=>h('th',{key:x},x)))),
-        h('tbody',null,tasks.map(t=>h('tr',{key:t.id},
-          h('td',null,h('input',{type:'checkbox',checked:t.status==='done',onChange:()=>toggleTask(t)})),
-          h('td',null,h('span',{style:{textDecoration:t.status==='done'?'line-through':'none'}},t.title),
-            t.assigneeNames&&t.assigneeNames.length?h('div',{className:'small muted'},t.assigneeNames.join(', ')):null),
-          h('td',null,t.priority),h('td',null,t.targetQuarter||'—'),
-          h('td',{className:'small muted'},t.linkedRiskCategory?('#'+t.linkedRiskCategory.number):'—'),
-          h('td',null))))),
-      !tasks.length&&h('div',{className:'small muted',style:{padding:6}},'No tasks in this category yet — promote a risk action above to create one.')),
-    sel&&h(PromoteModal,{action:sel,members,onClose:()=>setSel(null),onDone:()=>{setSel(null);load();}})
+              h('td',{className:'small'},ch.statusFrom!==ch.statusTo?((ch.statusFrom||'—')+' → '+ch.statusTo):'—'))))))),
+    // Cross-risk open-actions rollup (read-only). Each row opens that risk's screen,
+    // where the action is actually managed — there is no separate actions surface.
+    actions&&h('div',{className:'card'},
+      h('strong',null,'Open actions across all risks ('+openActions.length+')'),
+      h('div',{className:'small muted',style:{marginTop:2,marginBottom:6}},'A rollup for review — open a risk to manage its actions.'),
+      [['Immediate','chip-high'],['Active','chip-med'],['Monitor','chip-low']].map(([bk,cls])=>{
+        const list=openActions.filter(a=>a.priority===bk);
+        if(!list.length)return null;
+        return h('div',{key:bk,style:{marginTop:8}},
+          h('div',{className:'chip '+cls},bk+' ('+list.length+')'),
+          list.map(a=>h('div',{className:'line',key:a.id},
+            h('span',null,h('span',{className:'small muted'},'#'+a.categoryNumber+' '),a.title,
+              a.ownerText&&h('span',{className:'small muted'},' — '+a.ownerText),
+              a.dueQuarter&&h('span',{className:'small muted'},' ('+a.dueQuarter+')'),
+              a.taskId&&!a.linkedTaskDeleted&&h('span',{className:'pill',style:{marginLeft:6}},'RFO task · '+(a.task?a.task.status:''))),
+            h('button',{className:'linkbtn',onClick:()=>onOpenCategory(a.categoryId)},'open risk →'))));
+      }),
+      !openActions.length&&h('div',{className:'small muted',style:{marginTop:6}},'No open actions.'))
   );
 }
 
@@ -751,26 +805,27 @@ function RiskApp({me,roles}){
   const [members,setMembers]=useState([]);
   const [tab,setTab]=useState('register');
   const [err,setErr]=useState('');
+  const [openCat,setOpenCat]=useState(null); // the one risk drawer, openable from any tab
   function load(){
-    Promise.all([api.get('/api/risk/overview'),api.get('/api/members')])
+    return Promise.all([api.get('/api/risk/overview'),api.get('/api/members')])
       .then(([o,m])=>{setOverview(o);setMembers(m.filter(x=>x.isActive!==false));})
       .catch(e=>setErr(e.message));
   }
-  useEffect(load,[]);
+  useEffect(()=>{load();},[]);
   if(err)return h('div',{className:'page'},h('div',{className:'alert alert-danger'},err));
   if(!overview)return h('div',{className:'page'},'Loading…');
-  const TABS=[['register','Register'],['profile','Profile'],['events','Events'],['actions','Actions & Tasks']];
+  const TABS=[['register','Register'],['profile','Profile'],['events','Events']];
   if(roles.riskAdmin)TABS.push(['manage','Manage']);
   return h('div',{className:'page'},
     h('div',{style:{marginBottom:12}},
       h('div',{style:{fontSize:18,fontWeight:700,color:'var(--navy)'}},'Risk Management'),
       h('div',{className:'small muted'},'Robinson Family Office — Enterprise Risk Register v5'+(roles.riskMember?'':' · read-only'))),
     h('div',{className:'tabs'},TABS.map(([k,l])=>h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
-    tab==='register'&&h(RegisterTab,{overview,members,me,roles,onReload:load}),
-    tab==='profile'&&h(ProfileTab,{overview}),
+    tab==='register'&&h(RegisterTab,{overview,members,me,roles,onReload:load,onOpenCategory:setOpenCat}),
+    tab==='profile'&&h(ProfileTab,{overview,roles,onOpenCategory:setOpenCat}),
     tab==='events'&&h(EventsTab,{overview,roles}),
-    tab==='actions'&&h(ActionsTasksTab,{overview,members,roles}),
-    tab==='manage'&&roles.riskAdmin&&h(ManageTab,{overview,members,onReload:load})
+    tab==='manage'&&roles.riskAdmin&&h(ManageTab,{overview,members,onReload:load}),
+    openCat&&h(CategoryDrawer,{categoryId:openCat,members,me,roles,scale:overview.scale,onClose:()=>setOpenCat(null),onChanged:load})
   );
 }
 
