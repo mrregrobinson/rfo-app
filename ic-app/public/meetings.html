@@ -68,11 +68,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
 .attachment-link{cursor:pointer;color:var(--teal);font-weight:600}
 .attachment-link:hover{text-decoration:underline}
+.xlsx-preview,.docx-preview,.pptx-preview{-webkit-overflow-scrolling:touch}
 .xlsx-preview table{border-collapse:collapse;font-size:12px}
 .xlsx-preview td,.xlsx-preview th{border:0.5px solid var(--border);padding:4px 8px;white-space:nowrap}
 .docx-preview{font-size:13px;line-height:1.6}
-.docx-preview table{border-collapse:collapse;margin:8px 0}
+.docx-preview h1,.docx-preview h2,.docx-preview h3{color:var(--navy);margin:12px 0 6px;line-height:1.3}
+.docx-preview h1{font-size:19px}
+.docx-preview h2{font-size:16px}
+.docx-preview h3{font-size:14px}
+.docx-preview p{margin:0 0 10px}
+.docx-preview table{border-collapse:collapse;margin:8px 0;max-width:100%}
 .docx-preview td,.docx-preview th{border:0.5px solid var(--border);padding:4px 8px}
+.docx-preview img{max-width:100%;height:auto}
+/* Attachment viewer on narrow screens: use most of the viewport instead of a small
+   centered card, and shrink the surrounding chrome so the actual content — the part
+   that matters on a phone — gets the room. */
+@media (max-width:600px){
+  .modal{padding:14px;border-radius:10px}
+  .modal-title{font-size:14px;margin-bottom:10px}
+}
 </style>
 </head>
 <body>
@@ -308,10 +322,17 @@ function AgendaItemCard({item,members,categories,editable,onSaveSummary,onAddDec
   );
 }
 
+// iOS Safari has a long-standing, well-documented limitation: it renders PDFs
+// unreliably (often just blank) when embedded via <iframe>, especially from a blob:
+// object URL — direct, full-page navigation to a PDF works fine there, embedding it
+// doesn't. There's no reliable feature-detection for this, so it's a UA sniff.
+const IS_MOBILE=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 // Fetches the file bytes via an authenticated same-origin request (never a public URL —
 // see the CSP comment in server/index.js), then renders in-app: PDF/image via the
-// browser's own native rendering from a blob: object URL, Word/Excel via client-side
-// conversion (mammoth.js / SheetJS). Anything else falls back to Download only.
+// browser's own native rendering from a blob: object URL, Word/Excel/PowerPoint via
+// client-side conversion (mammoth.js / SheetJS / JSZip). Anything else falls back to
+// Download only.
 function AttachmentViewerModal({meetingId,attachment,onClose}){
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
@@ -323,10 +344,12 @@ function AttachmentViewerModal({meetingId,attachment,onClose}){
   const [activeSlide,setActiveSlide]=useState(0);
   const kind=attachmentKind(attachment.filename);
   const fileUrl=`/api/meetings/${meetingId}/attachments/${attachment.id}`;
+  const skipInlinePdf=kind==='pdf'&&IS_MOBILE;
 
   useEffect(()=>{
     let cancelled=false,createdUrl=null;
     setLoading(true);setError('');setBlobUrl(null);setHtmlContent(null);setSheets(null);setActiveSheet(0);setSlides(null);setActiveSlide(0);
+    if(skipInlinePdf){setLoading(false);return;} // No inline preview attempted — the "Open PDF" link below handles it via direct navigation instead, which iOS actually renders correctly.
     (async()=>{
       try{
         const res=await fetch(fileUrl,{credentials:'same-origin'});
@@ -378,7 +401,15 @@ function AttachmentViewerModal({meetingId,attachment,onClose}){
       ),
       loading&&h('div',{style:{padding:40,textAlign:'center'},className:'muted'},'Loading preview…'),
       error&&h('div',{className:'alert alert-danger'},error),
-      !loading&&!error&&kind==='pdf'&&blobUrl&&h('iframe',{src:blobUrl,style:{width:'100%',height:'75vh',border:'0.5px solid var(--border)',borderRadius:8}}),
+      !loading&&!error&&kind==='pdf'&&skipInlinePdf&&h('div',{style:{padding:'40px 20px',textAlign:'center'}},
+        h('div',{className:'muted',style:{marginBottom:16}},'This device doesn’t reliably preview PDFs inline — open it directly instead:'),
+        h('a',{href:fileUrl,target:'_blank',rel:'noopener',className:'btn btn-teal',style:{textDecoration:'none'}},'Open PDF')
+      ),
+      !loading&&!error&&kind==='pdf'&&!skipInlinePdf&&blobUrl&&h('div',null,
+        h('iframe',{src:blobUrl,style:{width:'100%',height:'75vh',border:'0.5px solid var(--border)',borderRadius:8}}),
+        h('div',{style:{textAlign:'center',marginTop:8}},
+          h('a',{href:fileUrl,target:'_blank',rel:'noopener',className:'muted'},'Not displaying correctly? Open in a new tab →'))
+      ),
       !loading&&!error&&kind==='image'&&blobUrl&&h('img',{src:blobUrl,style:{maxWidth:'100%',maxHeight:'75vh',display:'block',margin:'0 auto',borderRadius:8}}),
       !loading&&!error&&kind==='word'&&htmlContent!=null&&h('div',{className:'docx-preview',style:{maxHeight:'75vh',overflowY:'auto',padding:16,border:'0.5px solid var(--border)',borderRadius:8,background:'#fff'},dangerouslySetInnerHTML:{__html:htmlContent}}),
       !loading&&!error&&kind==='excel'&&sheets&&h('div',null,
