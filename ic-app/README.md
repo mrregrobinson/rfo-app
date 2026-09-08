@@ -1,6 +1,6 @@
 # RFO — backend + app
 
-This is the Robinson Family Office umbrella app: one server, one login, and three
+This is the Robinson Family Office umbrella app: one server, one login, and several
 applications under it —
 
 - **PQ Introduced Due Diligence** (`/due-diligence`) — the IC checklist app for
@@ -17,8 +17,17 @@ applications under it —
   finished minutes to every family attendee. A family action item recorded in the
   minutes creates a real task in the Family Task List. See
   `RFO_Meetings_App_BuildSpec_v1.docx` for the full build spec.
+- **Household Expenditures** (`/expenditure`) — tracks household spending from bank and
+  credit-card statements, partitioned into per-household ledgers. See
+  `RFO_Expenditure_App_BuildSpec_v1.md`.
+- **Risk Management** (`/risk`) — the Enterprise Risk Register: 6 domains / 14 risk
+  categories seeded from `RFO_Risk_Register_v5.xlsx` + `..._Notes_v5.docx`, point-in-time
+  assessments (inherent/residual P×I) with history, a risk-event log, a 4×4 heatmap and
+  profile dashboard, a Family-Council PDF report, an optional Claude web-search base-rate
+  lookup, and "Required Actions" that promote to real tasks in the Family Task List's
+  `02. Risk Management` category. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
 
-`/` is the RFO home page — sign in once, land there, and pick an app. All three apps
+`/` is the RFO home page — sign in once, land there, and pick an app. The apps
 share the same accounts, sessions, and database (`data/ic.db`); there is no second
 login.
 
@@ -84,9 +93,12 @@ for the full rationale):
 - **Family Office Administrator** (`users.is_fo_admin`) — family-office-wide: add/delete
   members, reset a lost password/2FA. Reg and Sheri-Dawn hold this today.
 - **Per-application role** (`users.dd_role`, `users.tasks_role`, `users.meetings_role`,
-  each `admin` / `member` / `viewer`) — independent per app. An FO admin is always also
-  an admin of every app. Set from each app's own "Roles" panel, or directly via
-  `PUT /api/admin/members/:userId/app-role` (`app` is `dd`, `tasks`, or `meetings`).
+  `users.risk_role`, each `admin` / `member` / `viewer`) — independent per app. An FO
+  admin is always also an admin of every app. Set from each app's own "Roles" panel, or
+  directly via `PUT /api/admin/members/:userId/app-role` (`app` is `dd`, `tasks`,
+  `meetings`, or `risk`). `risk_role` defaults to `viewer` (the register is readable by
+  anyone with a role; assessments/events/actions need member+, taxonomy needs admin) —
+  unlike the other three, which default to `member`.
 
 ### One-off task import
 
@@ -103,7 +115,7 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 ## Data model
 
 - `users` — the 4 IC members, with a hashed passcode each, plus `is_fo_admin`,
-  `dd_role`, `tasks_role`, and `meetings_role` (see Permissions above).
+  `dd_role`, `tasks_role`, `meetings_role`, and `risk_role` (see Permissions above).
 - `opportunities` — one row per fund/manager under review (title, asset class,
   commitment, the PQ data extracted from the research PDF, etc). Editable after
   creation via "Edit Details" on the checklist page — restricted to the opportunity's
@@ -150,6 +162,24 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 - `meeting_attachments` — metadata only (filename, content type, size, uploader) for a
   meeting's file attachments; the bytes live on disk under
   `data/meeting-attachments/<meetingId>/`, not in SQLite (see `server/attachments.js`).
+- `risk_domains` / `risk_categories` / `risk_scale` — the Risk Register taxonomy (6
+  domains, 14 categories, the 1–4 probability/impact scale labels), seeded by migration
+  028 from `server/risk-seed-data.js`. Categories soft-retire (`is_active = 0`) so their
+  history survives.
+- `risk_assessments` — immutable point-in-time scoring rows (inherent + residual P/I,
+  status, rationale, next-review), chained by `supersedes_id`. The latest row per
+  category is the current state; the chain powers the profile trend and the
+  since-last-review diff.
+- `risk_mitigations` / `risk_actions` / `risk_events` — the "Mitigations in place" list,
+  the "Required Actions" (each with a nullable `task_id` linking to a promoted Family
+  Task List task — a soft reference, not an FK, so deleting the task just leaves the
+  action to fall back to its own status), and the operational log of things that actually
+  happened against a category.
+- `risk_probability_lookups` — cached Claude web-search base-rate estimates
+  (`server/claude.js` `researchRiskProbability`), referenced from an assessment via
+  `external_probability_id`.
+- Risk report PDFs are built by `server/risk-report.js` (`pdfkit` + `chartjs-node-canvas`,
+  same stack as the expenditure report) and emailed through the existing Graph mailer.
 
 ## Scheduled Task List digest
 

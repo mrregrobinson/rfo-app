@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — Risk Management</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px;
+  --low-fg:#065F46;--low-bg:#E8F8EF;--med-fg:#92400E;--med-bg:#FDF6E3;--high-fg:#9D174D;--high-bg:#FCE7F0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.nav-brand a{color:#fff;text-decoration:none}
+.nav-brand span{color:var(--gold);font-size:11px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.page{padding:20px;max-width:1080px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-navy{background:var(--navy);color:#fff}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}
+.btn-danger{background:#fff;color:#991B1B;border:0.5px solid #F3D6D6}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;border-bottom:0.5px solid var(--border)}
+.tab{padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;user-select:none}
+.tab.active{color:var(--navy);border-bottom-color:var(--gold)}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:8px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.chip-low{background:var(--low-bg);color:var(--low-fg)}
+.chip-med{background:var(--med-bg);color:var(--med-fg)}
+.chip-high{background:var(--high-bg);color:var(--high-fg)}
+.pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:var(--navy-l);color:var(--navy)}
+.pill-incomplete{background:var(--high-bg);color:var(--high-fg)}
+.pill-progress{background:var(--amber-l);color:#92400E}
+.dgroup{margin-bottom:14px}
+.dhead{display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer}
+.ddot{width:9px;height:9px;border-radius:50%;background:var(--teal);flex-shrink:0}
+.dtitle{font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.4px}
+.rrow{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:start;padding:10px 8px;border-top:0.5px solid var(--border);cursor:pointer}
+.rrow:hover{background:var(--bg)}
+.rnum{font-size:11px;font-weight:700;color:var(--muted);padding-top:2px}
+.rtitle{font-size:13px;font-weight:600;color:var(--navy)}
+.rdesc{font-size:11.5px;color:var(--muted);margin-top:2px}
+.rmeta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.rmeta .k{font-size:10.5px;color:var(--muted)}
+.rright{display:flex;flex-direction:column;gap:4px;align-items:flex-end;white-space:nowrap}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.filters select,.filters input{border:0.5px solid var(--border);border-radius:7px;padding:6px 10px;font-size:12px;background:#fff}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select,.form-textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit;margin-bottom:12px}
+.form-textarea{resize:vertical;min-height:60px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
+.modal{background:#fff;border-radius:12px;padding:22px;max-width:760px;width:100%}
+.modal-sm{max-width:460px}
+.modal-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.modal-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+.sec{font-size:11px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 6px}
+.line{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:0.5px dashed var(--border);font-size:12px}
+.line:last-child{border-bottom:none}
+.muted{color:var(--muted)}
+.small{font-size:11px}
+.alert{padding:9px 13px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+.alert-info{background:var(--navy-l);border-color:#C7D2FE;color:var(--navy)}
+.kcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kcard{background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:12px}
+.kcard .v{font-size:20px;font-weight:700;color:var(--navy)}
+.kcard .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px}
+table.tbl th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;padding:6px 8px;border-bottom:0.5px solid var(--border)}
+table.tbl td{padding:7px 8px;border-bottom:0.5px solid var(--border);vertical-align:top}
+.scoresel{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.scoresel button{width:30px;height:30px;border-radius:7px;border:0.5px solid var(--border);background:#fff;font-weight:700;font-size:12px;cursor:pointer;color:var(--navy)}
+.scoresel button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.linkbtn{background:none;border:none;color:var(--teal);font-weight:600;font-size:11px;cursor:pointer;padding:0}
+.back-link{display:inline-block;margin-bottom:12px;color:var(--teal);font-size:12px;cursor:pointer}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}.rrow{grid-template-columns:22px 1fr}.rright{align-items:flex-start;margin-top:6px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef}=React;
+const h=React.createElement;
+const api={
+  async get(url){const r=await fetch(url,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(method,url,body){const r=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(url,body){return api.send('POST',url,body)},
+  put(url,body){return api.send('PUT',url,body)},
+  async del(url){const r=await fetch(url,{method:'DELETE',credentials:'same-origin'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+};
+
+// P×I scoring — mirrors server/risk.js scoreOf/bandOf exactly (fixed in code, §5.1).
+const scoreOf=(p,i)=>(Number(p)||0)*(Number(i)||0);
+const bandOf=s=>s<=5?'Low':s<=8?'Medium':'High';
+const bandClass=b=>b==='Low'?'chip-low':b==='Medium'?'chip-med':'chip-high';
+const QUARTERS=['','Q1 2026','Q2 2026','Q3 2026','Q4 2026','Q1 2027','Q2 2027','Q3 2027','Q4 2027'];
+const STATUS_VALUES=['Active — Well Managed','Active — Partially Mitigated','In Progress','INCOMPLETE — Action Required'];
+const PRIORITIES=['Immediate','Active','Monitor'];
+const SEVERITIES=['Near miss','Minor','Moderate','Significant','Severe'];
+function statusPill(s){
+  const cls=s==='INCOMPLETE — Action Required'?'pill-incomplete':s==='In Progress'?'pill-progress':'pill';
+  return h('span',{className:'pill '+cls},s);
+}
+function scoreChip(prob,impact,label){
+  const sc=scoreOf(prob,impact);const b=bandOf(sc);
+  return h('span',{className:'chip '+bandClass(b),title:label||''},`${prob}×${impact}=${sc} ${b}`);
+}
+
+// ---------- Chart wrapper (from expenditure.html) ----------
+function ChartCanvas({type,data,options,height}){
+  const ref=useRef(null);const chartRef=useRef(null);
+  // Force a fixed-height container + maintainAspectRatio:false — otherwise Chart.js's
+  // responsive sizing grows the canvas to fill available width at its aspect ratio,
+  // which on a wide page makes the chart absurdly tall (see expenditure.html's note).
+  const opts=Object.assign({responsive:true,maintainAspectRatio:false},options||{});
+  useEffect(()=>{
+    if(!ref.current)return;
+    if(chartRef.current&&chartRef.current.config.type===type){
+      chartRef.current.data=data;chartRef.current.options=opts;chartRef.current.update();
+    }else{
+      if(chartRef.current)chartRef.current.destroy();
+      chartRef.current=new Chart(ref.current,{type,data,options:opts});
+    }
+  },[JSON.stringify(data),JSON.stringify(options),type]);
+  useEffect(()=>()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}},[]);
+  return h('div',{style:{position:'relative',height:(height||240)+'px',width:'100%'}},h('canvas',{ref}));
+}
+
+// =======================================================================
+// Register tab
+// =======================================================================
+function RegisterTab({overview,members,me,roles,onReload}){
+  const [basis,setBasis]=useState('residual');
+  const [fDomain,setFDomain]=useState('');
+  const [fStatus,setFStatus]=useState('');
+  const [fBand,setFBand]=useState('');
+  const [fAcc,setFAcc]=useState('');
+  const [fFlags,setFFlags]=useState('');
+  const [openId,setOpenId]=useState(null);
+
+  const cats=overview.categories.filter(c=>c.isActive);
+  function matches(c){
+    const a=c.latestAssessment;
+    if(fDomain&&c.domainId!==fDomain)return false;
+    if(fStatus&&(!a||a.status!==fStatus))return false;
+    if(fBand){const b=a?(basis==='residual'?a.residualBand:a.inherentBand):null;if(b!==fBand)return false;}
+    if(fAcc&&!(c.accountable||'').toLowerCase().includes(fAcc.toLowerCase()))return false;
+    if(fFlags==='review'){const nr=a&&a.nextReview;if(!nr)return false;}
+    if(fFlags==='immediate'&&c.actionCounts.immediate===0)return false;
+    return true;
+  }
+  const shown=cats.filter(matches);
+
+  return h('div',null,
+    h('div',{className:'filters'},
+      h('div',{style:{display:'flex',border:'0.5px solid var(--border)',borderRadius:7,overflow:'hidden'}},
+        ['residual','inherent'].map(bv=>h('div',{key:bv,onClick:()=>setBasis(bv),style:{padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer',background:basis===bv?'var(--navy)':'#fff',color:basis===bv?'#fff':'var(--navy)'}},bv[0].toUpperCase()+bv.slice(1)))),
+      h('select',{value:fDomain,onChange:e=>setFDomain(e.target.value)},h('option',{value:''},'All domains'),overview.domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name))),
+      h('select',{value:fStatus,onChange:e=>setFStatus(e.target.value)},h('option',{value:''},'Any status'),STATUS_VALUES.map(s=>h('option',{key:s,value:s},s))),
+      h('select',{value:fBand,onChange:e=>setFBand(e.target.value)},h('option',{value:''},'Any level'),['Low','Medium','High'].map(b=>h('option',{key:b,value:b},b))),
+      h('input',{placeholder:'Accountable…',value:fAcc,onChange:e=>setFAcc(e.target.value),style:{width:130}}),
+      h('select',{value:fFlags,onChange:e=>setFFlags(e.target.value)},h('option',{value:''},'—'),h('option',{value:'review'},'Has next review'),h('option',{value:'immediate'},'Open Immediate action')),
+      h('div',{style:{flex:1}}),
+      h(ReportButtons,{filters:{domain:fDomain,status:fStatus,band:fBand,accountable:fAcc},members})
+    ),
+    overview.domains.map(d=>{
+      const dcats=shown.filter(c=>c.domainId===d.id);
+      if(!dcats.length)return null;
+      const scores=dcats.map(c=>c.latestAssessment?(basis==='residual'?c.latestAssessment.residualScore:c.latestAssessment.inherentScore):0);
+      const worst=Math.max(0,...scores);
+      return h('div',{className:'card dgroup',key:d.id},
+        h('div',{className:'dhead'},h('span',{className:'ddot'}),h('span',{className:'dtitle'},d.id+' — '+d.name),
+          h('span',{className:'small muted',style:{marginLeft:'auto'}},`${dcats.length} risk${dcats.length>1?'s':''} · worst ${basis} ${worst} (${bandOf(worst)})`)),
+        dcats.map(c=>{
+          const a=c.latestAssessment;
+          const sc=a?(basis==='residual'?[a.residualProb,a.residualImpact]:[a.inherentProb,a.inherentImpact]):null;
+          return h('div',{className:'rrow',key:c.id,onClick:()=>setOpenId(c.id)},
+            h('div',{className:'rnum'},'#'+c.number),
+            h('div',null,
+              h('div',{className:'rtitle'},c.title),
+              h('div',{className:'rdesc'},c.description),
+              h('div',{className:'rmeta'},
+                a?statusPill(a.status):h('span',{className:'small muted'},'Not yet assessed'),
+                h('span',{className:'k'},'· '+(c.accountable||'—')),
+                a&&a.nextReview&&h('span',{className:'k'},'· review '+a.nextReview),
+                c.actionCounts.open>0&&h('span',{className:'k'},'· '+c.actionCounts.open+' open action'+(c.actionCounts.open>1?'s':'')),
+                c.actionCounts.immediate>0&&h('span',{style:{color:'var(--high-fg)',fontWeight:700,fontSize:10.5}},'· '+c.actionCounts.immediate+' Immediate'),
+                c.events12mo>0&&h('span',{className:'k'},'· '+c.events12mo+' event'+(c.events12mo>1?'s':'')+'/12mo')
+              )
+            ),
+            h('div',{className:'rright'},
+              a&&h('div',null,h('span',{className:'small muted'},'Inh '),scoreChip(a.inherentProb,a.inherentImpact)),
+              a&&h('div',null,h('span',{className:'small muted'},'Res '),scoreChip(a.residualProb,a.residualImpact)),
+              !a&&h('span',{className:'small muted'},'—')
+            )
+          );
+        })
+      );
+    }),
+    openId&&h(CategoryDrawer,{categoryId:openId,members,me,roles,scale:overview.scale,onClose:()=>setOpenId(null),onChanged:()=>{onReload();}})
+  );
+}
+
+// =======================================================================
+// Category drawer — detail + assessment + mitigations + actions + events
+// =======================================================================
+function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
+  const [data,setData]=useState(null);
+  const [err,setErr]=useState('');
+  const [tab,setTab]=useState('overview');
+  function load(){api.get('/api/risk/categories/'+categoryId).then(setData).catch(e=>setErr(e.message));}
+  useEffect(load,[categoryId]);
+  function refresh(){return api.get('/api/risk/categories/'+categoryId).then(setData);}
+
+  if(err)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},h('div',{className:'alert alert-danger'},err),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')));
+  if(!data)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
+  const c=data.category;
+  const latest=data.assessments[data.assessments.length-1];
+  const probScale=scale.filter(s=>s.kind==='probability');
+  const impScale=scale.filter(s=>s.kind==='impact');
+
+  return h('div',{className:'modal-overlay',onClick:onClose},
+    h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+        h('div',null,
+          h('div',{className:'modal-title'},'#'+c.number+'  '+c.title),
+          h('div',{className:'modal-sub'},c.description)),
+        h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')),
+      latest&&h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:8}},
+        h('span',null,h('span',{className:'small muted'},'Inherent '),scoreChip(latest.inherentProb,latest.inherentImpact)),
+        h('span',null,h('span',{className:'small muted'},'Residual '),scoreChip(latest.residualProb,latest.residualImpact)),
+        statusPill(latest.status),
+        latest.nextReview&&h('span',{className:'small muted'},'Next review '+latest.nextReview)),
+      h('div',{className:'tabs',style:{marginTop:8}},
+        ['overview','assess','events','history'].map(t=>h('div',{key:t,className:'tab'+(tab===t?' active':''),onClick:()=>setTab(t)},
+          t==='overview'?'Overview':t==='assess'?'New assessment':t==='events'?('Events ('+data.events.length+')'):'History'))),
+
+      tab==='overview'&&h('div',null,
+        h('div',{className:'sec'},'Rationale'),
+        h('div',{className:'small'},latest&&latest.rationale?latest.rationale:h('span',{className:'muted'},'No rationale recorded on the latest assessment.')),
+        h('div',{className:'sec'},'Dalio Framework Note'),
+        h('div',{className:'small muted'},c.dalioNote||'—'),
+        h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
+        h(MitigationList,{data,roles,refresh}),
+        h(ActionList,{data,members,roles,refresh,onChanged})
+      ),
+      tab==='assess'&&h(AssessForm,{category:c,latest,probScale,impScale,roles,onSaved:()=>{refresh();onChanged();setTab('history');}}),
+      tab==='events'&&h(EventListForCategory,{data,roles,refresh,onChanged}),
+      tab==='history'&&h(AssessHistory,{assessments:data.assessments})
+    )
+  );
+}
+
+function MitigationList({data,roles,refresh}){
+  const [txt,setTxt]=useState('');
+  const canEdit=roles.riskMember;
+  async function add(){if(!txt.trim())return;await api.post('/api/risk/categories/'+data.category.id+'/mitigations',{text:txt.trim()});setTxt('');refresh();}
+  async function toggle(m){await api.put('/api/risk/mitigations/'+m.id,{inPlace:!m.inPlace});refresh();}
+  async function del(m){if(!confirm('Remove this mitigation?'))return;await api.del('/api/risk/mitigations/'+m.id);refresh();}
+  return h('div',null,
+    h('div',{className:'sec'},'Mitigations in place'),
+    data.mitigations.map(m=>h('div',{className:'line',key:m.id},
+      h('span',{style:{opacity:m.inPlace?1:.5}},m.text,!m.inPlace&&h('span',{className:'small muted'},' (planned)')),
+      canEdit&&h('span',{style:{whiteSpace:'nowrap'}},
+        h('button',{className:'linkbtn',onClick:()=>toggle(m)},m.inPlace?'mark planned':'mark in place'),
+        h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>del(m)},'remove')))),
+    !data.mitigations.length&&h('div',{className:'small muted'},'None recorded.'),
+    canEdit&&h('div',{style:{display:'flex',gap:6,marginTop:6}},
+      h('input',{className:'form-input',style:{marginBottom:0},placeholder:'Add a mitigation…',value:txt,onChange:e=>setTxt(e.target.value),onKeyDown:e=>{if(e.key==='Enter')add();}}),
+      h('button',{className:'btn btn-outline btn-sm',onClick:add},'Add'))
+  );
+}
+
+function ActionList({data,members,roles,refresh,onChanged}){
+  const [promoting,setPromoting]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [nt,setNt]=useState({title:'',priority:'Active',ownerText:'',dueQuarter:''});
+  async function addAction(){if(!nt.title.trim())return;await api.post('/api/risk/actions',{categoryId:data.category.id,...nt});setNt({title:'',priority:'Active',ownerText:'',dueQuarter:''});setAdding(false);refresh();onChanged();}
+  async function setStatus(a,status){await api.put('/api/risk/actions/'+a.id,{status});refresh();onChanged();}
+  async function del(a){if(!confirm('Delete this action? Any linked task is left in place.'))return;await api.del('/api/risk/actions/'+a.id);refresh();onChanged();}
+  async function unlink(a){await api.post('/api/risk/actions/'+a.id+'/unlink',{});refresh();}
+  return h('div',null,
+    h('div',{className:'sec'},'Required actions'),
+    data.actions.map(a=>h('div',{className:'line',key:a.id},
+      h('span',null,
+        h('span',{className:'chip '+(a.priority==='Immediate'?'chip-high':a.priority==='Active'?'chip-med':'chip-low'),style:{marginRight:6}},a.priority),
+        a.title,
+        a.ownerText&&h('span',{className:'small muted'},' — '+a.ownerText),
+        a.dueQuarter&&h('span',{className:'small muted'},' ('+a.dueQuarter+')'),
+        a.taskId&&!a.linkedTaskDeleted&&h('span',{className:'pill',style:{marginLeft:6}},'Task: '+(a.task?a.task.status:'')),
+        a.linkedTaskDeleted&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'linked task deleted'),
+        a.status==='incomplete'&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'INCOMPLETE')),
+      roles.riskMember&&h('span',{style:{whiteSpace:'nowrap'}},
+        !a.taskId&&roles.tasksMember&&h('button',{className:'linkbtn',onClick:()=>setPromoting(a)},'add to Task List'),
+        a.taskId&&h('button',{className:'linkbtn',onClick:()=>unlink(a)},'unlink'),
+        a.effectiveStatus!=='done'&&h('button',{className:'linkbtn',style:{marginLeft:8},onClick:()=>setStatus(a,'done')},'done'),
+        a.effectiveStatus==='done'&&!a.taskId&&h('button',{className:'linkbtn',style:{marginLeft:8},onClick:()=>setStatus(a,'open')},'reopen'),
+        h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>del(a)},'delete')))),
+    !data.actions.length&&h('div',{className:'small muted'},'None recorded.'),
+    roles.riskMember&&!adding&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:6},onClick:()=>setAdding(true)},'+ Add action'),
+    adding&&h('div',{style:{marginTop:8}},
+      h('input',{className:'form-input',placeholder:'Action title',value:nt.title,onChange:e=>setNt({...nt,title:e.target.value})}),
+      h('div',{className:'grid2'},
+        h('select',{className:'form-select',value:nt.priority,onChange:e=>setNt({...nt,priority:e.target.value})},PRIORITIES.map(p=>h('option',{key:p,value:p},p))),
+        h('select',{className:'form-select',value:nt.dueQuarter,onChange:e=>setNt({...nt,dueQuarter:e.target.value})},QUARTERS.map(q=>h('option',{key:q,value:q},q||'No due quarter')))),
+      h('input',{className:'form-input',placeholder:'Owner (free text)',value:nt.ownerText,onChange:e=>setNt({...nt,ownerText:e.target.value})}),
+      h('div',{style:{display:'flex',gap:6}},h('button',{className:'btn btn-teal btn-sm',onClick:addAction},'Save'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(false)},'Cancel'))),
+    promoting&&h(PromoteModal,{action:promoting,members,onClose:()=>setPromoting(null),onDone:()=>{setPromoting(null);refresh();onChanged();}})
+  );
+}
+
+function PromoteModal({action,members,onClose,onDone}){
+  const [title,setTitle]=useState(action.title);
+  const [priority,setPriority]=useState(action.priority==='Immediate'?'high':'medium');
+  const [tq,setTq]=useState(action.dueQuarter||'');
+  const [assignedToAll,setAll]=useState(false);
+  const [assignees,setAssignees]=useState([]);
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  async function go(){
+    setBusy(true);setErr('');
+    try{await api.post('/api/risk/actions/'+action.id+'/promote',{title,priority,targetQuarter:tq,assignedToAll,assigneeIds:assignees});onDone();}
+    catch(e){setErr(e.message);setBusy(false);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal modal-sm',onClick:e=>e.stopPropagation()},
+    h('div',{className:'modal-title'},'Add to Family Task List'),
+    h('div',{className:'modal-sub'},'Creates a task under the “02. Risk Management” category and links it to this action.'),
+    err&&h('div',{className:'alert alert-danger'},err),
+    h('label',{className:'form-label'},'Task title'),h('input',{className:'form-input',value:title,onChange:e=>setTitle(e.target.value)}),
+    h('div',{className:'grid2'},
+      h('div',null,h('label',{className:'form-label'},'Priority'),h('select',{className:'form-select',value:priority,onChange:e=>setPriority(e.target.value)},['high','medium','low'].map(p=>h('option',{key:p,value:p},p)))),
+      h('div',null,h('label',{className:'form-label'},'Target quarter'),h('select',{className:'form-select',value:tq,onChange:e=>setTq(e.target.value)},QUARTERS.map(q=>h('option',{key:q,value:q},q||'—'))))),
+    h('label',{className:'form-label'},'Assign to'),
+    h('label',{className:'small',style:{display:'block',marginBottom:6}},h('input',{type:'checkbox',checked:assignedToAll,onChange:e=>setAll(e.target.checked)}),' All family'),
+    !assignedToAll&&members.map(m=>h('label',{key:m.id,className:'small',style:{display:'inline-flex',gap:4,marginRight:10}},
+      h('input',{type:'checkbox',checked:assignees.includes(m.id),onChange:e=>setAssignees(e.target.checked?[...assignees,m.id]:assignees.filter(x=>x!==m.id))}),m.name.split(' ')[0])),
+    h('div',{style:{display:'flex',gap:6,marginTop:14}},
+      h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:go},busy?'Creating…':'Create task'),
+      h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'))
+  ));
+}
+
+function AssessForm({category,latest,probScale,impScale,roles,onSaved}){
+  const [ip,setIp]=useState(latest?latest.inherentProb:2);
+  const [ii,setIi]=useState(latest?latest.inherentImpact:2);
+  const [rp,setRp]=useState(latest?latest.residualProb:2);
+  const [ri,setRi]=useState(latest?latest.residualImpact:2);
+  const [status,setStatus]=useState(latest?latest.status:STATUS_VALUES[1]);
+  const [rationale,setRationale]=useState(latest?latest.rationale:'');
+  const [nextReview,setNextReview]=useState(latest?latest.nextReview||'':'');
+  const [note,setNote]=useState('');
+  const [lookup,setLookup]=useState(null);
+  const [lookupState,setLookupState]=useState('idle');
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  if(!roles.riskMember)return h('div',{className:'alert alert-info'},'Read-only — Risk member or admin access is needed to record an assessment.');
+
+  function Sel({val,set,sc,lbl}){
+    return h('div',{style:{marginBottom:10}},
+      h('label',{className:'form-label'},lbl),
+      h('div',{className:'scoresel'},[1,2,3,4].map(n=>h('button',{key:n,className:val===n?'on':'',onClick:()=>set(n)},n)),
+        h('span',{className:'small muted'},(sc.find(s=>s.score===val)||{}).label+' — '+(sc.find(s=>s.score===val)||{}).detail)));
+  }
+  async function doLookup(){
+    setLookupState('loading');setErr('');
+    try{
+      const r=await api.post('/api/risk/probability-lookup',{categoryId:category.id,title:category.title,description:category.description});
+      if(!r.configured){setLookupState('unconfigured');return;}
+      setLookup(r.lookup);setLookupState('done');
+    }catch(e){setErr(e.message);setLookupState('idle');}
+  }
+  async function save(){
+    setBusy(true);setErr('');
+    try{
+      await api.post('/api/risk/categories/'+category.id+'/assessments',{
+        inherentProb:ip,inherentImpact:ii,residualProb:rp,residualImpact:ri,status,rationale,nextReview,note,
+        externalProbabilityId:lookup?lookup.id:undefined});
+      onSaved();
+    }catch(e){setErr(e.message);setBusy(false);}
+  }
+  return h('div',null,
+    err&&h('div',{className:'alert alert-danger'},err),
+    h('div',{className:'sec'},'Inherent (before mitigations)'),
+    Sel({val:ip,set:setIp,sc:probScale,lbl:'Probability'}),Sel({val:ii,set:setIi,sc:impScale,lbl:'Impact'}),
+    h('div',{className:'small muted'},'Inherent score: ',scoreChip(ip,ii)),
+    h('div',{className:'sec'},'Residual (after mitigations)'),
+    Sel({val:rp,set:setRp,sc:probScale,lbl:'Probability'}),
+    h('div',{style:{margin:'-4px 0 10px'}},
+      h('button',{className:'btn btn-outline btn-sm',onClick:doLookup,disabled:lookupState==='loading'},lookupState==='loading'?'Searching…':'🔎 Look up base rate'),
+      lookupState==='unconfigured'&&h('span',{className:'small muted',style:{marginLeft:8}},'Claude web search is not configured on the server — enter Probability manually.'),
+      lookup&&h('div',{className:'alert alert-info',style:{marginTop:8}},
+        h('div',null,h('strong',null,'External base rate: '),lookup.probabilityLow!=null?`${Math.round(lookup.probabilityLow*100)}–${Math.round(lookup.probabilityHigh*100)}%/yr`:'not estimable',
+          lookup.mappedScore?h('span',null,' → suggests Probability ',h('strong',null,lookup.mappedScore)):null),
+        h('div',{className:'small',style:{marginTop:4}},lookup.estimateText),
+        lookup.caveats&&h('div',{className:'small muted',style:{marginTop:4}},'Caveat: '+lookup.caveats),
+        lookup.sources&&lookup.sources.length?h('div',{className:'small',style:{marginTop:4}},'Sources: ',lookup.sources.map((s,i)=>h('a',{key:i,href:s.url,target:'_blank',rel:'noreferrer',style:{marginRight:8}},s.title||s.url))):null,
+        h('div',{className:'small muted',style:{marginTop:4}},'This is decision support — you still choose the Probability score below.'))),
+    Sel({val:ri,set:setRi,sc:impScale,lbl:'Impact'}),
+    h('div',{className:'small muted'},'Residual score: ',scoreChip(rp,ri)),
+    h('div',{className:'sec'},'Status & review'),
+    h('div',{className:'grid2'},
+      h('select',{className:'form-select',value:status,onChange:e=>setStatus(e.target.value)},STATUS_VALUES.map(s=>h('option',{key:s,value:s},s))),
+      h('select',{className:'form-select',value:nextReview,onChange:e=>setNextReview(e.target.value)},QUARTERS.map(q=>h('option',{key:q,value:q},q||'No next review')))),
+    h('label',{className:'form-label'},'Rationale'),h('textarea',{className:'form-textarea',value:rationale,onChange:e=>setRationale(e.target.value)}),
+    h('label',{className:'form-label'},'Why this changed (optional one-liner)'),h('input',{className:'form-input',value:note,onChange:e=>setNote(e.target.value)}),
+    h('button',{className:'btn btn-gold',disabled:busy,onClick:save},busy?'Saving…':'Save new assessment')
+  );
+}
+
+function AssessHistory({assessments}){
+  if(!assessments.length)return h('div',{className:'small muted'},'No assessments recorded.');
+  const data={labels:assessments.map(a=>a.assessedAt.slice(0,10)),datasets:[
+    {label:'Residual',data:assessments.map(a=>a.residualScore),borderColor:'#9D174D',backgroundColor:'rgba(157,23,80,.12)',tension:.2},
+    {label:'Inherent',data:assessments.map(a=>a.inherentScore),borderColor:'#6B7280',borderDash:[4,4],tension:.2}]};
+  return h('div',null,
+    h('div',{style:{maxWidth:460,marginBottom:12}},h(ChartCanvas,{type:'line',data,options:{scales:{y:{beginAtZero:true,max:16}},plugins:{legend:{position:'bottom'}}},height:180})),
+    h('table',{className:'tbl'},h('thead',null,h('tr',null,['Date','By','Inherent','Residual','Status','Note'].map(x=>h('th',{key:x},x)))),
+      h('tbody',null,assessments.slice().reverse().map(a=>h('tr',{key:a.id},
+        h('td',null,a.assessedAt.slice(0,10)),h('td',null,a.assessedByName||'—'),
+        h('td',null,scoreChip(a.inherentProb,a.inherentImpact)),
+        h('td',null,scoreChip(a.residualProb,a.residualImpact)),
+        h('td',null,a.status),h('td',{className:'small muted'},a.note||'')))))
+  );
+}
+
+function EventListForCategory({data,roles,refresh,onChanged}){
+  const [adding,setAdding]=useState(false);
+  return h('div',null,
+    roles.riskMember&&!adding&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(true)},'+ Log event'),
+    adding&&h(EventForm,{categoryId:data.category.id,categories:null,onSaved:()=>{setAdding(false);refresh();onChanged();},onCancel:()=>setAdding(false)}),
+    h('table',{className:'tbl',style:{marginTop:10}},h('thead',null,h('tr',null,['Date','Title','Severity','Impact (CAD)','Status',''].map(x=>h('th',{key:x},x)))),
+      h('tbody',null,data.events.map(e=>h('tr',{key:e.id},
+        h('td',null,e.occurredOn),h('td',null,e.title,e.description&&h('div',{className:'small muted'},e.description)),
+        h('td',null,e.severity),h('td',null,e.financialImpactCad!=null?('$'+Math.round(e.financialImpactCad).toLocaleString()):'—'),
+        h('td',null,e.status),
+        h('td',null,roles.riskMember&&e.status!=='closed'&&h('button',{className:'linkbtn',onClick:async()=>{await api.post('/api/risk/events/'+e.id+'/close',{});refresh();onChanged();}},'close')))))),
+    !data.events.length&&h('div',{className:'small muted',style:{marginTop:8}},'No events logged for this category.')
+  );
+}
+
+// =======================================================================
+// Events tab (all categories)
+// =======================================================================
+function EventForm({categoryId,categories,onSaved,onCancel}){
+  const [f,setF]=useState({categoryId:categoryId||'',occurredOn:new Date().toISOString().slice(0,10),title:'',description:'',severity:'Minor',financialImpactCad:'',status:'open',responseNotes:''});
+  const [err,setErr]=useState('');
+  async function save(){
+    setErr('');
+    try{await api.post('/api/risk/events',f);onSaved();}catch(e){setErr(e.message);}
+  }
+  return h('div',{className:'card',style:{background:'var(--bg)'}},
+    err&&h('div',{className:'alert alert-danger'},err),
+    categories&&h('select',{className:'form-select',value:f.categoryId,onChange:e=>setF({...f,categoryId:e.target.value})},
+      h('option',{value:''},'Choose risk category…'),categories.map(c=>h('option',{key:c.id,value:c.id},'#'+c.number+' '+c.title))),
+    h('div',{className:'grid2'},
+      h('input',{className:'form-input',type:'date',value:f.occurredOn,onChange:e=>setF({...f,occurredOn:e.target.value})}),
+      h('select',{className:'form-select',value:f.severity,onChange:e=>setF({...f,severity:e.target.value})},SEVERITIES.map(s=>h('option',{key:s,value:s},s)))),
+    h('input',{className:'form-input',placeholder:'What happened (title)',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
+    h('textarea',{className:'form-textarea',placeholder:'Description',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
+    h('div',{className:'grid2'},
+      h('input',{className:'form-input',type:'number',placeholder:'Financial impact CAD (optional)',value:f.financialImpactCad,onChange:e=>setF({...f,financialImpactCad:e.target.value})}),
+      h('select',{className:'form-select',value:f.status,onChange:e=>setF({...f,status:e.target.value})},['open','monitoring','closed'].map(s=>h('option',{key:s,value:s},s)))),
+    h('textarea',{className:'form-textarea',placeholder:'Response notes',value:f.responseNotes,onChange:e=>setF({...f,responseNotes:e.target.value})}),
+    h('div',{style:{display:'flex',gap:6}},h('button',{className:'btn btn-teal btn-sm',onClick:save},'Save event'),h('button',{className:'btn btn-outline btn-sm',onClick:onCancel},'Cancel'))
+  );
+}
+
+function EventsTab({overview,roles}){
+  const [events,setEvents]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [fCat,setFCat]=useState('');const [fSev,setFSev]=useState('');const [fStatus,setFStatus]=useState('');
+  function load(){api.get('/api/risk/events').then(setEvents);}
+  useEffect(load,[]);
+  if(!events)return h('div',null,'Loading…');
+  const shown=events.filter(e=>(!fCat||e.categoryId===fCat)&&(!fSev||e.severity===fSev)&&(!fStatus||e.status===fStatus));
+  return h('div',null,
+    h('div',{className:'filters'},
+      h('select',{value:fCat,onChange:e=>setFCat(e.target.value)},h('option',{value:''},'All categories'),overview.categories.map(c=>h('option',{key:c.id,value:c.id},'#'+c.number+' '+c.title))),
+      h('select',{value:fSev,onChange:e=>setFSev(e.target.value)},h('option',{value:''},'Any severity'),SEVERITIES.map(s=>h('option',{key:s,value:s},s))),
+      h('select',{value:fStatus,onChange:e=>setFStatus(e.target.value)},h('option',{value:''},'Any status'),['open','monitoring','closed'].map(s=>h('option',{key:s,value:s},s))),
+      h('div',{style:{flex:1}}),
+      roles.riskMember&&h('button',{className:'btn btn-gold btn-sm',onClick:()=>setAdding(!adding)},adding?'Close':'+ Log event')),
+    adding&&h(EventForm,{categories:overview.categories,onSaved:()=>{setAdding(false);load();},onCancel:()=>setAdding(false)}),
+    h('div',{className:'card'},
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,['Date','Category','Title','Severity','Impact (CAD)','Status','Logged by',''].map(x=>h('th',{key:x},x)))),
+        h('tbody',null,shown.map(e=>h('tr',{key:e.id},
+          h('td',null,e.occurredOn),h('td',null,'#'+e.categoryNumber+' '+e.categoryTitle),
+          h('td',null,e.title,e.description&&h('div',{className:'small muted'},e.description)),
+          h('td',null,e.severity),h('td',null,e.financialImpactCad!=null?('$'+Math.round(e.financialImpactCad).toLocaleString()):'—'),
+          h('td',null,e.status),h('td',{className:'small muted'},e.loggedByName),
+          h('td',null,roles.riskMember&&e.status!=='closed'&&h('button',{className:'linkbtn',onClick:async()=>{await api.post('/api/risk/events/'+e.id+'/close',{});load();}},'close')))))),
+      !shown.length&&h('div',{className:'small muted',style:{padding:8}},'No events match.'))
+  );
+}
+
+// =======================================================================
+// Profile tab
+// =======================================================================
+function ProfileTab({overview}){
+  const [p,setP]=useState(null);const [basis,setBasis]=useState('residual');
+  useEffect(()=>{api.get('/api/risk/profile').then(setP);},[]);
+  if(!p)return h('div',null,'Loading…');
+  const useInh=basis==='inherent';
+  const catName=id=>{const c=overview.categories.find(x=>x.id===id);return c?('#'+c.number+' '+c.title):id;};
+  const pts=p.points.map(pt=>({x:(useInh?pt.inherentProb:pt.residualProb),y:(useInh?pt.inherentImpact:pt.residualImpact),n:pt.number,t:pt.title,band:(useInh?pt.inherentBand:pt.residualBand)}));
+  const jitter={};
+  const scatter=pts.map(pt=>{const k=pt.x+','+pt.y;const c=(jitter[k]=(jitter[k]||0)+1)-1;return {x:pt.x+c*0.12,y:pt.y+c*0.12,_n:pt.n,_t:pt.t,_b:pt.band};});
+  const col=b=>b==='Low'?'#1E9E5A':b==='Medium'?'#B45309':'#9D174D';
+  const heatData={datasets:[{label:basis,data:scatter,pointRadius:11,pointHoverRadius:13,
+    pointBackgroundColor:scatter.map(d=>col(d._b)),pointBorderColor:'#fff',pointBorderWidth:1.5}]};
+  const heatOpts={plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`#${c.raw._n} ${c.raw._t}`}}},
+    scales:{x:{min:.5,max:4.5,title:{display:true,text:'Probability'},ticks:{stepSize:1,callback:v=>Number.isInteger(v)&&v>=1&&v<=4?v:''}},
+            y:{min:.5,max:4.5,title:{display:true,text:'Impact'},ticks:{stepSize:1,callback:v=>Number.isInteger(v)&&v>=1&&v<=4?v:''}}}};
+  const trend={labels:p.series.map(s=>s.at.slice(0,10)),datasets:[{label:'Aggregate residual exposure',data:p.series.map(s=>s.residualExposure),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',fill:true,tension:.2}]};
+  const domBar={labels:p.domains.map(d=>d.id),datasets:[
+    {label:'Mean residual',data:p.domains.map(d=>d.meanResidual),backgroundColor:'#2A7D7B'},
+    {label:'Worst residual',data:p.domains.map(d=>d.worstResidual),backgroundColor:'#C9A84C'}]};
+  return h('div',null,
+    h('div',{className:'kcards'},
+      h('div',{className:'kcard'},h('div',{className:'v'},p.residualExposure),h('div',{className:'l'},'Residual exposure')),
+      h('div',{className:'kcard'},h('div',{className:'v'},p.inherentExposure),h('div',{className:'l'},'Inherent exposure')),
+      h('div',{className:'kcard'},h('div',{className:'v'},p.bands.residual.High),h('div',{className:'l'},'High residual risks')),
+      h('div',{className:'kcard'},h('div',{className:'v'},p.bands.residual.Medium),h('div',{className:'l'},'Medium residual')),
+      h('div',{className:'kcard'},h('div',{className:'v'},p.incompleteCount),h('div',{className:'l'},'Incomplete status')),
+      h('div',{className:'kcard'},h('div',{className:'v'},p.immediateOpen),h('div',{className:'l'},'Open Immediate actions')),
+      h('div',{className:'kcard'},h('div',{className:'v'},p.events12mo.count),h('div',{className:'l'},'Events / 12mo')),
+      h('div',{className:'kcard'},h('div',{className:'v'},'$'+Math.round(p.events12mo.financialImpactCad).toLocaleString()),h('div',{className:'l'},'Event impact / 12mo'))),
+    h('div',{className:'card'},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('strong',null,'Risk heatmap'),
+        h('div',{style:{display:'flex',border:'0.5px solid var(--border)',borderRadius:7,overflow:'hidden'}},
+          ['residual','inherent'].map(b=>h('div',{key:b,onClick:()=>setBasis(b),style:{padding:'4px 10px',fontSize:11,fontWeight:600,cursor:'pointer',background:basis===b?'var(--navy)':'#fff',color:basis===b?'#fff':'var(--navy)'}},b[0].toUpperCase()+b.slice(1))))),
+      h('div',{style:{maxWidth:520}},h(ChartCanvas,{type:'scatter',data:heatData,options:heatOpts,height:320}))),
+    p.series.length>1&&h('div',{className:'card'},h('strong',null,'Aggregate residual exposure over time'),h('div',{style:{maxWidth:640}},h(ChartCanvas,{type:'line',data:trend,options:{plugins:{legend:{display:false}}},height:200}))),
+    h('div',{className:'card'},h('strong',null,'By domain'),h('div',{style:{maxWidth:640}},h(ChartCanvas,{type:'bar',data:domBar,options:{plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true}}},height:220})),
+      h('table',{className:'tbl',style:{marginTop:8}},h('thead',null,h('tr',null,['Domain','Mean residual','Worst','Open actions'].map(x=>h('th',{key:x},x)))),
+        h('tbody',null,p.domains.map(d=>h('tr',{key:d.id},h('td',null,d.id+' — '+d.name),h('td',null,d.meanResidual),h('td',null,d.worstResidual),h('td',null,d.openActions)))))),
+    h('div',{className:'card'},
+      h('strong',null,'Changes since last review'),
+      p.compare.from===p.compare.to
+        ?h('div',{className:'small muted',style:{marginTop:6}},'Only one assessment round on record so far — nothing to compare.')
+        :h('div',null,
+          h('div',{className:'small muted',style:{margin:'4px 0 8px'}},p.compare.from.slice(0,10)+'  →  '+p.compare.to.slice(0,10)),
+          p.compare.mostImproved&&h('div',{className:'small'},'Most improved: ',h('strong',null,catName(p.compare.mostImproved.categoryId)),` (${p.compare.mostImproved.residualFrom} → ${p.compare.mostImproved.residualTo})`),
+          p.compare.mostDeteriorated&&h('div',{className:'small'},'Most deteriorated: ',h('strong',null,catName(p.compare.mostDeteriorated.categoryId)),` (${p.compare.mostDeteriorated.residualFrom} → ${p.compare.mostDeteriorated.residualTo})`),
+          !p.compare.changes.length&&h('div',{className:'small muted',style:{marginTop:6}},'No category changed residual score or status between these rounds.'),
+          p.compare.changes.length>0&&h('table',{className:'tbl',style:{marginTop:8}},h('thead',null,h('tr',null,['#','Risk','Residual','Status'].map(x=>h('th',{key:x},x)))),
+            h('tbody',null,p.compare.changes.map(ch=>h('tr',{key:ch.categoryId},
+              h('td',null,'#'+ch.number),h('td',null,ch.title),
+              h('td',null,(ch.residualFrom==null?'—':ch.residualFrom)+' → '+ch.residualTo),
+              h('td',{className:'small'},ch.statusFrom!==ch.statusTo?((ch.statusFrom||'—')+' → '+ch.statusTo):'—')))))))
+  );
+}
+
+// =======================================================================
+// Actions & Tasks tab
+// =======================================================================
+function ActionsTasksTab({overview,members,roles}){
+  const [actions,setActions]=useState(null);
+  const [tasks,setTasks]=useState(null);
+  const [msg,setMsg]=useState('');
+  const [sel,setSel]=useState(null);
+  function load(){Promise.all([api.get('/api/risk/actions'),api.get('/api/risk/task-list')]).then(([a,t])=>{setActions(a);setTasks(t);});}
+  useEffect(load,[]);
+  if(!actions||!tasks)return h('div',null,'Loading…');
+  const buckets={Immediate:[],Active:[],Monitor:[]};
+  actions.forEach(a=>{(buckets[a.priority]||buckets.Active).push(a);});
+  async function toggleTask(t){
+    if(!roles.tasksMember){setMsg('You need Task List member access to change tasks.');return;}
+    await api.put('/api/tasks/'+t.id,{status:t.status==='done'?'open':'done'});load();
+  }
+  return h('div',null,
+    msg&&h('div',{className:'alert alert-info'},msg),
+    h('div',{className:'card'},
+      h('strong',null,'Risk actions by priority'),
+      Object.keys(buckets).map(bk=>h('div',{key:bk,style:{marginTop:10}},
+        h('div',{className:'chip '+(bk==='Immediate'?'chip-high':bk==='Active'?'chip-med':'chip-low')},bk+' ('+buckets[bk].length+')'),
+        buckets[bk].map(a=>h('div',{className:'line',key:a.id},
+          h('span',null,h('span',{className:'small muted'},'#'+a.categoryNumber+' '),a.title,
+            a.ownerText&&h('span',{className:'small muted'},' — '+a.ownerText),
+            a.dueQuarter&&h('span',{className:'small muted'},' ('+a.dueQuarter+')'),
+            a.taskId&&!a.linkedTaskDeleted&&h('span',{className:'pill',style:{marginLeft:6}},'Task · '+(a.task?a.task.status:'')+(a.task&&a.task.assigneeNames&&a.task.assigneeNames.length?' · '+a.task.assigneeNames.join(', '):'')),
+            a.linkedTaskDeleted&&h('span',{className:'pill pill-incomplete',style:{marginLeft:6}},'linked task deleted')),
+          h('span',{style:{whiteSpace:'nowrap'}},
+            !a.taskId&&roles.tasksMember&&roles.riskMember&&h('button',{className:'linkbtn',onClick:()=>setSel(a)},'add to Task List'),
+            a.taskId&&roles.riskMember&&h('button',{className:'linkbtn',onClick:async()=>{await api.post('/api/risk/actions/'+a.id+'/unlink',{});load();}},'unlink')))))),
+      !actions.length&&h('div',{className:'small muted'},'No risk actions yet.')),
+    h('div',{className:'card'},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('strong',null,'Family Task List — “02. Risk Management”'),
+        h('a',{href:'/tasks',className:'small',style:{color:'var(--teal)'}},'Open full Task List →')),
+      h('div',{className:'small muted',style:{margin:'4px 0 8px'}},roles.tasksMember?'Toggle done here, or open the Task List for full editing.':'Read-only — Task List member access needed to change tasks.'),
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,['','Task','Priority','Target','From risk',''].map(x=>h('th',{key:x},x)))),
+        h('tbody',null,tasks.map(t=>h('tr',{key:t.id},
+          h('td',null,h('input',{type:'checkbox',checked:t.status==='done',onChange:()=>toggleTask(t)})),
+          h('td',null,h('span',{style:{textDecoration:t.status==='done'?'line-through':'none'}},t.title),
+            t.assigneeNames&&t.assigneeNames.length?h('div',{className:'small muted'},t.assigneeNames.join(', ')):null),
+          h('td',null,t.priority),h('td',null,t.targetQuarter||'—'),
+          h('td',{className:'small muted'},t.linkedRiskCategory?('#'+t.linkedRiskCategory.number):'—'),
+          h('td',null))))),
+      !tasks.length&&h('div',{className:'small muted',style:{padding:6}},'No tasks in this category yet — promote a risk action above to create one.')),
+    sel&&h(PromoteModal,{action:sel,members,onClose:()=>setSel(null),onDone:()=>{setSel(null);load();}})
+  );
+}
+
+// =======================================================================
+// Manage tab (admin)
+// =======================================================================
+function ManageTab({overview,members,onReload}){
+  const [scale,setScale]=useState(overview.scale.map(s=>({...s})));
+  const [savingScale,setSavingScale]=useState(false);
+  const [settings,setSettings]=useState(null);
+  const [showRoles,setShowRoles]=useState(false);
+  useEffect(()=>{api.get('/api/risk/settings').then(setSettings);},[]);
+  async function saveScale(){setSavingScale(true);try{await api.put('/api/risk/scale',{scale});onReload();}finally{setSavingScale(false);}}
+  async function saveSettings(){await api.put('/api/risk/settings',settings);}
+  return h('div',null,
+    h('div',{className:'card'},
+      h('div',{style:{display:'flex',justifyContent:'space-between'}},h('strong',null,'Roles'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setShowRoles(true)},'Manage roles')),
+      h('div',{className:'small muted',style:{marginTop:4}},'Who can read the register (everyone with a role), record assessments/events (member+), and edit the taxonomy (admin).')),
+    h('div',{className:'card'},
+      h('strong',null,'Taxonomy'),
+      h('div',{className:'small muted',style:{marginTop:4,marginBottom:8}},'Rename domains, and add / edit / retire risk categories. Scoring is P×I with fixed bands (1–5 Low, 6–8 Medium, 9–16 High) — not editable.'),
+      h(TaxonomyEditor,{overview,onReload})),
+    h('div',{className:'card'},
+      h('strong',null,'Scoring scale labels'),
+      h('table',{className:'tbl',style:{marginTop:6}},h('thead',null,h('tr',null,['Kind','Score','Label','Detail'].map(x=>h('th',{key:x},x)))),
+        h('tbody',null,scale.map((s,i)=>h('tr',{key:s.kind+s.score},
+          h('td',null,s.kind),h('td',null,s.score),
+          h('td',null,h('input',{className:'form-input',style:{marginBottom:0},value:s.label,onChange:e=>{const n=[...scale];n[i]={...s,label:e.target.value};setScale(n);}})),
+          h('td',null,h('input',{className:'form-input',style:{marginBottom:0},value:s.detail,onChange:e=>{const n=[...scale];n[i]={...s,detail:e.target.value};setScale(n);}})))))),
+      h('button',{className:'btn btn-teal btn-sm',style:{marginTop:8},disabled:savingScale,onClick:saveScale},savingScale?'Saving…':'Save scale')),
+    settings&&h('div',{className:'card'},
+      h('strong',null,'Quarterly review reminder'),
+      h('div',{className:'small muted',style:{marginTop:4,marginBottom:8}},'Stored for the phase-2 email reminder (categories past their next-review quarter, incomplete statuses, overdue Immediate actions).'),
+      h('label',{className:'small',style:{display:'block',marginBottom:8}},h('input',{type:'checkbox',checked:settings.reviewEnabled,onChange:e=>setSettings({...settings,reviewEnabled:e.target.checked})}),' Enable reminder'),
+      h('div',{className:'grid2'},
+        h('select',{className:'form-select',value:settings.reviewCadence,onChange:e=>setSettings({...settings,reviewCadence:e.target.value})},['weekly','monthly','quarterly'].map(c=>h('option',{key:c,value:c},c))),
+        h('input',{className:'form-input',type:'number',min:0,max:23,value:settings.reviewHourLocal,onChange:e=>setSettings({...settings,reviewHourLocal:Number(e.target.value)})})),
+      h('button',{className:'btn btn-teal btn-sm',onClick:saveSettings},'Save reminder settings')),
+    showRoles&&h(RolesModal,{members,onClose:()=>setShowRoles(false),onReload})
+  );
+}
+
+function TaxonomyEditor({overview,onReload}){
+  const [adding,setAdding]=useState(false);
+  const [nc,setNc]=useState({domainId:overview.domains[0].id,title:'',description:'',accountable:'',dalioNote:''});
+  const [editId,setEditId]=useState(null);
+  async function addCat(){if(!nc.title||!nc.description)return;await api.post('/api/risk/categories',nc);setAdding(false);setNc({domainId:overview.domains[0].id,title:'',description:'',accountable:'',dalioNote:''});onReload();}
+  async function renameDomain(d){const name=prompt('Rename domain '+d.id,d.name);if(name&&name!==d.name){await api.put('/api/risk/domains/'+d.id,{name});onReload();}}
+  async function retire(c){if(!confirm('Retire "'+c.title+'"? History is kept; it leaves the active register.'))return;await api.del('/api/risk/categories/'+c.id);onReload();}
+  return h('div',null,
+    overview.domains.map(d=>h('div',{key:d.id,style:{marginBottom:8}},
+      h('div',{style:{display:'flex',gap:8,alignItems:'center'}},
+        h('span',{className:'dtitle'},d.id+' — '+d.name),
+        h('button',{className:'linkbtn',onClick:()=>renameDomain(d)},'rename')),
+      overview.categories.filter(c=>c.domainId===d.id).map(c=>h('div',{className:'line',key:c.id},
+        h('span',{style:{opacity:c.isActive?1:.5}},'#'+c.number+' '+c.title,!c.isActive&&h('span',{className:'small muted'},' (retired)')),
+        h('span',null,
+          h('button',{className:'linkbtn',onClick:()=>setEditId(editId===c.id?null:c.id)},'edit'),
+          c.isActive&&h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>retire(c)},'retire'))),
+      ),
+      overview.categories.filter(c=>c.domainId===d.id&&c.id===editId).map(c=>h(CatEdit,{key:'e'+c.id,cat:c,domains:overview.domains,onSaved:()=>{setEditId(null);onReload();}})))),
+    !adding&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(true)},'+ Add category'),
+    adding&&h('div',{style:{marginTop:8}},
+      h('select',{className:'form-select',value:nc.domainId,onChange:e=>setNc({...nc,domainId:e.target.value})},overview.domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name))),
+      h('input',{className:'form-input',placeholder:'Title',value:nc.title,onChange:e=>setNc({...nc,title:e.target.value})}),
+      h('input',{className:'form-input',placeholder:'One-line description',value:nc.description,onChange:e=>setNc({...nc,description:e.target.value})}),
+      h('input',{className:'form-input',placeholder:'Accountable',value:nc.accountable,onChange:e=>setNc({...nc,accountable:e.target.value})}),
+      h('div',{style:{display:'flex',gap:6}},h('button',{className:'btn btn-teal btn-sm',onClick:addCat},'Add'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(false)},'Cancel')))
+  );
+}
+function CatEdit({cat,domains,onSaved}){
+  const [f,setF]=useState({domainId:cat.domainId,number:cat.number,title:cat.title,description:cat.description,accountable:cat.accountable,dalioNote:cat.dalioNote,isActive:cat.isActive});
+  async function save(){await api.put('/api/risk/categories/'+cat.id,f);onSaved();}
+  return h('div',{className:'card',style:{background:'var(--bg)',marginTop:6}},
+    h('div',{className:'grid2'},
+      h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id))),
+      h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})})),
+    h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
+    h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
+    h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('textarea',{className:'form-textarea',placeholder:'Dalio note',value:f.dalioNote,onChange:e=>setF({...f,dalioNote:e.target.value})}),
+    h('label',{className:'small'},h('input',{type:'checkbox',checked:f.isActive,onChange:e=>setF({...f,isActive:e.target.checked})}),' Active in register'),
+    h('div',{style:{marginTop:8}},h('button',{className:'btn btn-teal btn-sm',onClick:save},'Save')));
+}
+
+function RolesModal({members,onClose,onReload}){
+  const [busy,setBusy]=useState(null);
+  async function setRole(m,role){setBusy(m.id);try{await api.put('/api/admin/members/'+m.id+'/app-role',{app:'risk',role});onReload&&onReload();}catch(e){alert(e.message);}finally{setBusy(null);}}
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal modal-sm',onClick:e=>e.stopPropagation()},
+    h('div',{className:'modal-title'},'Risk Management roles'),
+    members.filter(m=>m.isActive!==false).map(m=>h('div',{key:m.id,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}},
+      h('span',{style:{flex:1,fontSize:13}},m.name),
+      h('select',{value:m.riskRole,disabled:busy===m.id,onChange:e=>setRole(m,e.target.value)},
+        ['admin','member','viewer'].map(r=>h('option',{key:r,value:r},r[0].toUpperCase()+r.slice(1)))))),
+    h('div',{style:{textAlign:'right',marginTop:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close'))
+  ));
+}
+
+function ReportButtons({filters,members}){
+  const [emailing,setEmailing]=useState(false);const [to,setTo]=useState('');const [msg,setMsg]=useState('');
+  function qs(){const q=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>{if(v)q.set(k,v);});return q.toString();}
+  async function sendEmail(){
+    setMsg('');
+    try{await api.post('/api/risk/report/email',{to:to.split(',').map(s=>s.trim()).filter(Boolean),filters});setMsg('Sent.');setEmailing(false);}
+    catch(e){setMsg(e.message);}
+  }
+  return h('span',{style:{display:'inline-flex',gap:6,alignItems:'center'}},
+    h('a',{className:'btn btn-outline btn-sm',href:'/api/risk/report/pdf?'+qs(),target:'_blank'},'Print / PDF'),
+    h('button',{className:'btn btn-outline btn-sm',onClick:()=>setEmailing(!emailing)},'Email PDF'),
+    emailing&&h('span',null,h('input',{placeholder:'email addresses, comma-separated',value:to,onChange:e=>setTo(e.target.value),style:{width:220}}),
+      h('button',{className:'btn btn-teal btn-sm',style:{marginLeft:4},onClick:sendEmail},'Send')),
+    msg&&h('span',{className:'small muted'},msg)
+  );
+}
+
+// =======================================================================
+// Shell
+// =======================================================================
+function RiskApp({me,roles}){
+  const [overview,setOverview]=useState(null);
+  const [members,setMembers]=useState([]);
+  const [tab,setTab]=useState('register');
+  const [err,setErr]=useState('');
+  function load(){
+    Promise.all([api.get('/api/risk/overview'),api.get('/api/members')])
+      .then(([o,m])=>{setOverview(o);setMembers(m.filter(x=>x.isActive!==false));})
+      .catch(e=>setErr(e.message));
+  }
+  useEffect(load,[]);
+  if(err)return h('div',{className:'page'},h('div',{className:'alert alert-danger'},err));
+  if(!overview)return h('div',{className:'page'},'Loading…');
+  const TABS=[['register','Register'],['profile','Profile'],['events','Events'],['actions','Actions & Tasks']];
+  if(roles.riskAdmin)TABS.push(['manage','Manage']);
+  return h('div',{className:'page'},
+    h('div',{style:{marginBottom:12}},
+      h('div',{style:{fontSize:18,fontWeight:700,color:'var(--navy)'}},'Risk Management'),
+      h('div',{className:'small muted'},'Robinson Family Office — Enterprise Risk Register v5'+(roles.riskMember?'':' · read-only'))),
+    h('div',{className:'tabs'},TABS.map(([k,l])=>h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
+    tab==='register'&&h(RegisterTab,{overview,members,me,roles,onReload:load}),
+    tab==='profile'&&h(ProfileTab,{overview}),
+    tab==='events'&&h(EventsTab,{overview,roles}),
+    tab==='actions'&&h(ActionsTasksTab,{overview,members,roles}),
+    tab==='manage'&&roles.riskAdmin&&h(ManageTab,{overview,members,onReload:load})
+  );
+}
+
+function Shell(){
+  const [me,setMe]=useState(null);const [checking,setChecking]=useState(true);const [menu,setMenu]=useState(false);
+  useEffect(()=>{
+    api.get('/api/me').then(setMe).catch(()=>{location.href='/due-diligence?returnTo='+encodeURIComponent(location.pathname);}).finally(()=>setChecking(false));
+  },[]);
+  async function logout(){await api.post('/api/logout');location.href='/due-diligence';}
+  if(checking||!me)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  const roles={riskAdmin:me.riskAdmin,riskMember:me.riskAdmin||me.riskRole==='member',tasksMember:me.tasksAdmin||me.tasksRole==='member',tasksAdmin:me.tasksAdmin};
+  return h('div',null,
+    h('nav',{className:'nav'},
+      h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Risk Management'),
+        h('a',{href:'/tasks',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Family Task List →')),
+      h('div',{className:'nav-user',onClick:()=>setMenu(!menu)},me.name.split(' ')[0])),
+    menu&&h('div',{style:{position:'fixed',top:56,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:180,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
+      h('div',{style:{padding:'8px 10px',fontSize:13,fontWeight:600,color:'var(--navy)'}},me.name),
+      h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},roles.riskAdmin?'Risk Admin':roles.riskMember?'Risk Member':'Read-only'),
+      me.isAdmin&&h('a',{href:'/admin',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'Manage Members'),
+      h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')),
+    h(RiskApp,{me,roles})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(Shell));
+</script>
+</body>
+</html>

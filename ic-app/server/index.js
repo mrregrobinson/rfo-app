@@ -25,6 +25,7 @@ const { startDigestScheduler } = require('./digest');
 const registerMeetingRoutes = require('./meetings');
 const { startMeetingsScheduler } = require('./meetings-scheduler');
 const registerExpenditureRoutes = require('./expenditure');
+const registerRiskRoutes = require('./risk');
 
 ensureSeeded();
 scheduleBackups();
@@ -169,6 +170,8 @@ function userPublic(row) {
     tasksRole: row.tasks_role,
     meetingsAdmin: isFoAdmin || row.meetings_role === 'admin',
     meetingsRole: row.meetings_role,
+    riskAdmin: isFoAdmin || row.risk_role === 'admin',
+    riskRole: row.risk_role,
     needsSetup: !row.password_hash,
     isActive: !!row.is_active,
   };
@@ -452,12 +455,12 @@ app.put('/api/admin/members/:userId/admin', requireAuth, (req, res) => {
 // route is called from due-diligence.html (app='dd') and tasks.html (app='tasks').
 app.put('/api/admin/members/:userId/app-role', requireAuth, (req, res) => {
   const { app: appName, role } = req.body || {};
-  if (!['dd', 'tasks', 'meetings'].includes(appName)) return res.status(400).json({ error: 'app must be "dd", "tasks", or "meetings"' });
+  if (!['dd', 'tasks', 'meetings', 'risk'].includes(appName)) return res.status(400).json({ error: 'app must be "dd", "tasks", "meetings", or "risk"' });
   if (!['admin', 'member', 'viewer'].includes(role)) return res.status(400).json({ error: 'role must be admin, member, or viewer' });
-  const me = db.prepare('SELECT is_fo_admin, dd_role, tasks_role, meetings_role FROM users WHERE id = ?').get(req.session.userId);
-  const column = appName === 'dd' ? 'dd_role' : appName === 'tasks' ? 'tasks_role' : 'meetings_role';
+  const me = db.prepare('SELECT is_fo_admin, dd_role, tasks_role, meetings_role, risk_role FROM users WHERE id = ?').get(req.session.userId);
+  const column = appName === 'dd' ? 'dd_role' : appName === 'tasks' ? 'tasks_role' : appName === 'meetings' ? 'meetings_role' : 'risk_role';
   const isAppAdmin = !!me && (me.is_fo_admin || me[column] === 'admin');
-  const appLabel = appName === 'dd' ? 'Due Diligence' : appName === 'tasks' ? 'Task List' : 'Meetings';
+  const appLabel = appName === 'dd' ? 'Due Diligence' : appName === 'tasks' ? 'Task List' : appName === 'meetings' ? 'Meetings' : 'Risk Management';
   if (!isAppAdmin) return res.status(403).json({ error: `${appLabel} admin only` });
   const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.userId);
   if (!target) return res.status(404).json({ error: 'Member not found' });
@@ -1354,6 +1357,10 @@ startMeetingsScheduler(db);
 
 registerExpenditureRoutes(app, { db, logAudit });
 
+// ---- risk management routes ----
+
+registerRiskRoutes(app, { db, logAudit });
+
 // ---- static frontend ----
 //
 // Umbrella shell (Section 3.2): "/" is the RFO home page (links to both apps), with the
@@ -1369,6 +1376,7 @@ app.get('/due-diligence', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'due-
 app.get('/tasks', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'tasks.html')));
 app.get('/meetings', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'meetings.html')));
 app.get('/expenditure', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'expenditure.html')));
+app.get('/risk', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'risk.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
 
 const PORT = process.env.PORT || 3000;

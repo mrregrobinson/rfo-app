@@ -364,4 +364,28 @@ Format your response as a JSON object with exactly these keys, in this order: {"
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, ClaudeNotConfiguredError };
+// Estimates the base rate — a published or reasoned annual probability — that a given
+// risk category materialises for a Canadian family office, and maps it onto the family's
+// 1–4 annualised Probability scale. Decision support for a risk assessment (see
+// RFO_Risk_App_BuildSpec_v1 §6.2/§7) — the assessor still picks the score. Same
+// web_search tool, extractJson handling and not-configured contract as research() above.
+async function researchRiskProbability({ title, description, context }) {
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const systemPrompt = `You are helping a Canadian family office (Robinson Family Office, Ontario, ~CAD $30M AUM, 6 family members across three couples) estimate how often a specific risk tends to occur, for an enterprise risk register. Search the web for actuarial data, insurer statistics, regulator/industry reports, and credible studies. Prefer figures expressed as an annual probability or frequency. Be explicit about uncertainty and about how well the external data fits this family's situation. Today is ${today}.`;
+  const userPrompt = `${title}${description ? ' — ' + description : ''}.${context ? ' Additional context: ' + context : ''}
+
+Return ONLY valid JSON, no markdown fences:
+{"estimateText":"2-4 plain-English sentences a non-expert can follow","probabilityLow":0.05,"probabilityHigh":0.20,"mappedScore":2,"rationale":"one sentence on why this score, including any adjustment for the family's specifics","sources":[{"title":"...","url":"..."}],"caveats":"one sentence on what the external data does NOT capture"}
+
+probabilityLow/probabilityHigh are annual probabilities as decimals (0-1); use null for both only if genuinely not estimable. mappedScore is 1-4 on this scale: 1 = under 5%/yr, 2 = 5-20%/yr, 3 = 20-50%/yr, 4 = over 50%/yr — pick the band the probability range mostly falls in. Include the 2-4 most load-bearing sources.`;
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 3000,
+    system: systemPrompt,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
+module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, ClaudeNotConfiguredError };
