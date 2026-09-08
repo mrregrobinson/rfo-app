@@ -373,6 +373,10 @@ drawer.
   category's **Key mitigations in place** list inline (the spreadsheet's column, at a
   glance without opening the risk). `GET /api/risk/overview` returns a `mitigations`
   array per category for this.
+- Filter row also has a **"Show retired"** checkbox (retired risks render dimmed with a
+  "(retired)" tag; open one to restore it) and, for admins, a **"+ Add risk"** button →
+  a small modal (domain, title, description, accountable) that creates the category and
+  opens its drawer.
 - Click a row → the **Risk detail** drawer (§6.2).
 
 ### 6.2 Risk detail drawer — the single place a risk is managed
@@ -382,11 +386,19 @@ member/admin. Header (sticky) shows number, title, description, the **Inherent �
 score chips, Status pill and next-review.
 
 **No sub-tabs.** The body is one scrolling panel with every attribute of the risk managed
-together, in this order: Current scoring → Scoring rationale → Key mitigations in place →
-**Required actions** (with the per-action Family-Task-List sync toggle, §6.5) → Notes →
-Accountable → a collapsible **Events** section → a collapsible **Assessment history**
-section. The `.modal` gets `max-height: calc(100vh - 48px); overflow-y: auto` so the
-panel scrolls internally.
+together, in this order: **Risk details editor** (admin only) → Current scoring → Scoring
+rationale → Key mitigations in place → **Required actions** (with the per-action
+Family-Task-List sync toggle, §6.5) → Notes → Accountable → a collapsible **Events**
+section → a collapsible **Assessment history** section. The `.modal` gets
+`max-height: calc(100vh - 48px); overflow-y: auto` so the panel scrolls internally.
+
+- **Risk details editor** (admin, collapsed behind an "✎ Edit risk details" link): domain,
+  number, title, one-line description, accountable — inline, saved via
+  `PUT /api/risk/categories/:id` — plus a **Retire risk / Restore risk** toggle
+  (`PUT … {isActive}`). This is the *only* place an individual risk's descriptive
+  attributes are edited; the Manage tab no longer carries a per-category edit form
+  (§6.6). Everything about a risk — its details, scoring, rationale, mitigations, actions,
+  notes, events — is edited here, in one screen.
 
 - **Current scoring** panel: Inherent (`P×I`, before mitigations) → Residual (after
   mitigations) chips side by side with the arrow between them, status, and "assessed
@@ -502,11 +514,12 @@ Works through the existing Task List API and data; no parallel task store.
 
 ### 6.6 Manage tab (admin only)
 
-- **Taxonomy editor:** rename domains; add / rename / retire (`is_active = 0`) categories;
-  edit a category's description, accountable text, and notes; reorder. Retiring a
-  category hides it from the register but keeps its assessments/events/actions for history
-  and the trend. Adding a category requires domain + title + description; it enters the
-  register with no assessment until someone runs one (shows as "Not yet assessed").
+Only the genuinely global, non-per-risk configuration lives here — everything about an
+individual risk (details, retire/restore, scoring, mitigations, actions, notes) is
+managed from that risk's drawer (§6.2), and "+ Add risk" lives on the Register (§6.1).
+
+- **Domains:** rename a domain (`PUT /api/risk/domains/:id`). That's it — no per-category
+  list.
 - **Scoring-scale editor:** edit the `risk_scale` labels/details (e.g. re-word an impact
   band). The `score = P×I` and band cutoffs (5 / 8) are **not** user-editable — they are
   the constant in code; note this in the UI.

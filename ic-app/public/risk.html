@@ -145,8 +145,10 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
   const [fAcc,setFAcc]=useState('');
   const [fFlags,setFFlags]=useState('');
   const [expandMits,setExpandMits]=useState({});
+  const [showRetired,setShowRetired]=useState(false);
+  const [addingCat,setAddingCat]=useState(false);
 
-  const cats=overview.categories.filter(c=>c.isActive);
+  const cats=overview.categories.filter(c=>showRetired||c.isActive);
   function matches(c){
     const a=c.latestAssessment;
     if(fDomain&&c.domainId!==fDomain)return false;
@@ -168,9 +170,12 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
       h('select',{value:fBand,onChange:e=>setFBand(e.target.value)},h('option',{value:''},'Any level'),['Low','Medium','High'].map(b=>h('option',{key:b,value:b},b))),
       h('input',{placeholder:'Accountable…',value:fAcc,onChange:e=>setFAcc(e.target.value),style:{width:130}}),
       h('select',{value:fFlags,onChange:e=>setFFlags(e.target.value)},h('option',{value:''},'—'),h('option',{value:'review'},'Has next review'),h('option',{value:'immediate'},'Open Immediate action')),
+      h('label',{className:'small',style:{display:'inline-flex',alignItems:'center',gap:4}},h('input',{type:'checkbox',checked:showRetired,onChange:e=>setShowRetired(e.target.checked)}),'Show retired'),
       h('div',{style:{flex:1}}),
+      roles.riskAdmin&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAddingCat(true)},'+ Add risk'),
       h(ReportButtons,{filters:{domain:fDomain,status:fStatus,band:fBand,accountable:fAcc},members})
     ),
+    addingCat&&h(AddCategoryModal,{domains:overview.domains,onClose:()=>setAddingCat(false),onDone:(newId)=>{setAddingCat(false);onReload().then(()=>onOpenCategory(newId));}}),
     overview.domains.map(d=>{
       const dcats=shown.filter(c=>c.domainId===d.id);
       if(!dcats.length)return null;
@@ -184,10 +189,10 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
           const mits=c.mitigations||[];
           const open=!!expandMits[c.id];
           return h('div',{key:c.id},
-            h('div',{className:'rrow',onClick:()=>onOpenCategory(c.id)},
+            h('div',{className:'rrow',style:{opacity:c.isActive?1:.5},onClick:()=>onOpenCategory(c.id)},
               h('div',{className:'rnum'},'#'+c.number),
               h('div',null,
-                h('div',{className:'rtitle'},c.title),
+                h('div',{className:'rtitle'},c.title,!c.isActive&&h('span',{className:'small muted',style:{fontWeight:400}},'  (retired)')),
                 h('div',{className:'rdesc'},c.description),
                 h('div',{className:'rmeta'},
                   a?statusPill(a.status):h('span',{className:'small muted'},'Not yet assessed'),
@@ -221,7 +226,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
 // actions (with per-action Family-Task-List sync), notes, events, history.
 // No sub-tabs — every attribute of the risk is managed here together.
 // =======================================================================
-function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
+function CategoryDrawer({categoryId,members,me,roles,scale,domains,onClose,onChanged}){
   const [data,setData]=useState(null);
   const [err,setErr]=useState('');
   function load(){api.get('/api/risk/categories/'+categoryId).then(setData).catch(e=>setErr(e.message));}
@@ -245,14 +250,15 @@ function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
         h('span',{className:'small muted'},'→'),
         h('span',null,h('span',{className:'small muted'},'Residual '),scoreChip(latest.residualProb,latest.residualImpact)),
         statusPill(latest.status),
-        latest.nextReview&&h('span',{className:'small muted'},'Next review '+latest.nextReview)),
-      h(RiskPanel,{data,members,latest,scale,roles,refresh})
+        latest.nextReview&&h('span',{className:'small muted'},'Next review '+latest.nextReview),
+        !data.category.isActive&&h('span',{className:'pill pill-incomplete'},'RETIRED')),
+      h(RiskPanel,{data,members,latest,scale,domains,roles,refresh})
     )
   );
 }
 
 // The one scrolling body — all of a risk's attributes managed side by side.
-function RiskPanel({data,members,latest,scale,roles,refresh}){
+function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
   const [reassessing,setReassessing]=useState(false);
   const [showHistory,setShowHistory]=useState(false);
   const [showEvents,setShowEvents]=useState(data.events.length>0);
@@ -260,6 +266,7 @@ function RiskPanel({data,members,latest,scale,roles,refresh}){
   const probScale=scale.filter(s=>s.kind==='probability');
   const impScale=scale.filter(s=>s.kind==='impact');
   return h('div',null,
+    roles.riskAdmin&&h(RiskDetailsEditor,{category:c,domains,refresh}),
     h('div',{className:'sec'},'Current scoring'),
     latest
       ? h('div',{className:'card',style:{background:'var(--bg)',marginBottom:4}},
@@ -289,6 +296,44 @@ function RiskPanel({data,members,latest,scale,roles,refresh}){
     h('div',{className:'sec',style:{cursor:'pointer',userSelect:'none'},onClick:()=>setShowHistory(!showHistory)},(showHistory?'▾ ':'▸ ')+'Assessment history ('+data.assessments.length+')'),
     showHistory&&h(AssessHistory,{assessments:data.assessments})
   );
+}
+
+// Admin-only: edit the risk's descriptive attributes (domain, number, title,
+// description, accountable) and retire/restore it — right here in the drawer, so a risk
+// is edited in ONE place, not split between here and the Manage tab.
+function RiskDetailsEditor({category,domains,refresh}){
+  const [open,setOpen]=useState(false);
+  const [f,setF]=useState(null);
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  function begin(){setF({domainId:category.domainId,number:category.number,title:category.title,description:category.description,accountable:category.accountable||''});setOpen(true);setErr('');}
+  async function save(){
+    setBusy(true);setErr('');
+    try{await api.put('/api/risk/categories/'+category.id,f);setOpen(false);refresh();}
+    catch(e){setErr(e.message);}finally{setBusy(false);}
+  }
+  async function setActive(isActive){
+    if(!isActive&&!confirm('Retire "'+category.title+'"? Its history is kept; it just leaves the active register (turn on "Show retired" to find it again).'))return;
+    setBusy(true);
+    try{await api.put('/api/risk/categories/'+category.id,{isActive});refresh();}
+    finally{setBusy(false);}
+  }
+  if(!open)return h('div',{style:{marginBottom:6}},
+    h('button',{className:'linkbtn',onClick:begin},'✎ Edit risk details'),
+    category.isActive
+      ? h('button',{className:'linkbtn',style:{marginLeft:12,color:'#991B1B'},disabled:busy,onClick:()=>setActive(false)},'Retire risk')
+      : h('button',{className:'linkbtn',style:{marginLeft:12,color:'var(--teal)'},disabled:busy,onClick:()=>setActive(true)},'Restore risk'));
+  return h('div',{className:'card',style:{background:'var(--bg)',marginBottom:8}},
+    h('div',{className:'sec',style:{marginTop:0}},'Risk details'),
+    err&&h('div',{className:'alert alert-danger'},err),
+    h('div',{className:'grid2'},
+      h('div',null,h('label',{className:'form-label'},'Domain'),h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name)))),
+      h('div',null,h('label',{className:'form-label'},'Number'),h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})}))),
+    h('label',{className:'form-label'},'Title'),h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
+    h('label',{className:'form-label'},'One-line description'),h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
+    h('label',{className:'form-label'},'Accountable'),h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('div',{style:{display:'flex',gap:6}},
+      h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:save},busy?'Saving…':'Save details'),
+      h('button',{className:'btn btn-outline btn-sm',onClick:()=>setOpen(false)},'Cancel')));
 }
 
 // Edit the current assessment's "why" without recording a whole new re-score.
@@ -711,9 +756,9 @@ function ManageTab({overview,members,onReload}){
       h('div',{style:{display:'flex',justifyContent:'space-between'}},h('strong',null,'Roles'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setShowRoles(true)},'Manage roles')),
       h('div',{className:'small muted',style:{marginTop:4}},'Who can read the register (everyone with a role), record assessments/events (member+), and edit the taxonomy (admin).')),
     h('div',{className:'card'},
-      h('strong',null,'Taxonomy'),
-      h('div',{className:'small muted',style:{marginTop:4,marginBottom:8}},'Rename domains, and add / edit / retire risk categories. Scoring is P×I with fixed bands (1–5 Low, 6–8 Medium, 9–16 High) — not editable.'),
-      h(TaxonomyEditor,{overview,onReload})),
+      h('strong',null,'Domains'),
+      h('div',{className:'small muted',style:{marginTop:4,marginBottom:8}},'Rename a domain. To add, edit, retire or restore an individual risk, open it from the Register (use "+ Add risk" there, and "Show retired" to reach retired ones). Scoring is P×I with fixed bands (1–5 Low, 6–8 Medium, 9–16 High) — not editable.'),
+      h(DomainNames,{overview,onReload})),
     h('div',{className:'card'},
       h('strong',null,'Scoring scale labels'),
       h('table',{className:'tbl',style:{marginTop:6}},h('thead',null,h('tr',null,['Kind','Score','Label','Detail'].map(x=>h('th',{key:x},x)))),
@@ -734,47 +779,37 @@ function ManageTab({overview,members,onReload}){
   );
 }
 
-function TaxonomyEditor({overview,onReload}){
-  const [adding,setAdding]=useState(false);
-  const [nc,setNc]=useState({domainId:overview.domains[0].id,title:'',description:'',accountable:'',notes:''});
-  const [editId,setEditId]=useState(null);
-  async function addCat(){if(!nc.title||!nc.description)return;await api.post('/api/risk/categories',nc);setAdding(false);setNc({domainId:overview.domains[0].id,title:'',description:'',accountable:'',notes:''});onReload();}
+function DomainNames({overview,onReload}){
   async function renameDomain(d){const name=prompt('Rename domain '+d.id,d.name);if(name&&name!==d.name){await api.put('/api/risk/domains/'+d.id,{name});onReload();}}
-  async function retire(c){if(!confirm('Retire "'+c.title+'"? History is kept; it leaves the active register.'))return;await api.del('/api/risk/categories/'+c.id);onReload();}
   return h('div',null,
-    overview.domains.map(d=>h('div',{key:d.id,style:{marginBottom:8}},
-      h('div',{style:{display:'flex',gap:8,alignItems:'center'}},
-        h('span',{className:'dtitle'},d.id+' — '+d.name),
-        h('button',{className:'linkbtn',onClick:()=>renameDomain(d)},'rename')),
-      overview.categories.filter(c=>c.domainId===d.id).map(c=>h('div',{className:'line',key:c.id},
-        h('span',{style:{opacity:c.isActive?1:.5}},'#'+c.number+' '+c.title,!c.isActive&&h('span',{className:'small muted'},' (retired)')),
-        h('span',null,
-          h('button',{className:'linkbtn',onClick:()=>setEditId(editId===c.id?null:c.id)},'edit'),
-          c.isActive&&h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>retire(c)},'retire'))),
-      ),
-      overview.categories.filter(c=>c.domainId===d.id&&c.id===editId).map(c=>h(CatEdit,{key:'e'+c.id,cat:c,domains:overview.domains,onSaved:()=>{setEditId(null);onReload();}})))),
-    !adding&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(true)},'+ Add category'),
-    adding&&h('div',{style:{marginTop:8}},
-      h('select',{className:'form-select',value:nc.domainId,onChange:e=>setNc({...nc,domainId:e.target.value})},overview.domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name))),
-      h('input',{className:'form-input',placeholder:'Title',value:nc.title,onChange:e=>setNc({...nc,title:e.target.value})}),
-      h('input',{className:'form-input',placeholder:'One-line description',value:nc.description,onChange:e=>setNc({...nc,description:e.target.value})}),
-      h('input',{className:'form-input',placeholder:'Accountable',value:nc.accountable,onChange:e=>setNc({...nc,accountable:e.target.value})}),
-      h('div',{style:{display:'flex',gap:6}},h('button',{className:'btn btn-teal btn-sm',onClick:addCat},'Add'),h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAdding(false)},'Cancel')))
+    overview.domains.map(d=>h('div',{className:'line',key:d.id},
+      h('span',{className:'dtitle'},d.id+' — '+d.name),
+      h('button',{className:'linkbtn',onClick:()=>renameDomain(d)},'rename')))
   );
 }
-function CatEdit({cat,domains,onSaved}){
-  const [f,setF]=useState({domainId:cat.domainId,number:cat.number,title:cat.title,description:cat.description,accountable:cat.accountable,notes:cat.notes,isActive:cat.isActive});
-  async function save(){await api.put('/api/risk/categories/'+cat.id,f);onSaved();}
-  return h('div',{className:'card',style:{background:'var(--bg)',marginTop:6}},
-    h('div',{className:'grid2'},
-      h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id))),
-      h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})})),
-    h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
-    h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
-    h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
-    h('textarea',{className:'form-textarea',placeholder:'Notes — general context on this risk',value:f.notes,onChange:e=>setF({...f,notes:e.target.value})}),
-    h('label',{className:'small'},h('input',{type:'checkbox',checked:f.isActive,onChange:e=>setF({...f,isActive:e.target.checked})}),' Active in register'),
-    h('div',{style:{marginTop:8}},h('button',{className:'btn btn-teal btn-sm',onClick:save},'Save')));
+
+function AddCategoryModal({domains,onClose,onDone}){
+  const [f,setF]=useState({domainId:domains[0].id,title:'',description:'',accountable:''});
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  async function go(){
+    if(!f.title.trim()||!f.description.trim()){setErr('Title and description are required.');return;}
+    setBusy(true);setErr('');
+    try{const r=await api.post('/api/risk/categories',f);onDone(r.id);}
+    catch(e){setErr(e.message);setBusy(false);}
+  }
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal modal-sm',onClick:e=>e.stopPropagation()},
+    h('div',{className:'modal-title'},'Add a risk category'),
+    h('div',{className:'modal-sub'},'It enters the register unassessed — open it and run the first assessment.'),
+    err&&h('div',{className:'alert alert-danger'},err),
+    h('label',{className:'form-label'},'Domain'),
+    h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name))),
+    h('label',{className:'form-label'},'Title'),h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
+    h('label',{className:'form-label'},'One-line description'),h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
+    h('label',{className:'form-label'},'Accountable'),h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('div',{style:{display:'flex',gap:6,marginTop:8}},
+      h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:go},busy?'Adding…':'Add risk'),
+      h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'))
+  ));
 }
 
 function RolesModal({members,onClose,onReload}){
@@ -835,7 +870,7 @@ function RiskApp({me,roles}){
     tab==='profile'&&h(ProfileTab,{overview,roles,onOpenCategory:setOpenCat}),
     tab==='events'&&h(EventsTab,{overview,roles}),
     tab==='manage'&&roles.riskAdmin&&h(ManageTab,{overview,members,onReload:load}),
-    openCat&&h(CategoryDrawer,{categoryId:openCat,members,me,roles,scale:overview.scale,onClose:()=>setOpenCat(null),onChanged:load})
+    openCat&&h(CategoryDrawer,{categoryId:openCat,members,me,roles,scale:overview.scale,domains:overview.domains,onClose:()=>setOpenCat(null),onChanged:load})
   );
 }
 
