@@ -110,6 +110,15 @@ async function buildRiskReportPdf(model) {
       doc.font('Helvetica').fillColor('#374151').text(r.category.description);
       doc.fillColor('#111').text(`Inherent ${inh}   |   Residual ${resd}   |   ${a ? a.status : ''}`);
       doc.fillColor('#6B7280').text(`Accountable: ${r.category.accountable || '—'}   |   Next review: ${a && a.nextReview ? a.nextReview : '—'}`);
+      if ((r.mitigations || []).length) {
+        doc.fillColor('#2A7D7B').text('Key mitigations in place:');
+        doc.fillColor('#374151');
+        for (const m of r.mitigations) {
+          if (doc.y > 730) doc.addPage();
+          doc.text(`   • ${m.text}${m.inPlace ? '' : ' (planned)'}`);
+        }
+        doc.fillColor('#111');
+      }
       doc.moveDown(0.35);
     }
     doc.moveDown(0.2);

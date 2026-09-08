@@ -369,15 +369,24 @@ drawer.
 - Filters: domain, status, residual band, accountable (substring), "review due this
   quarter or overdue", "has open Immediate action". Filters also constrain the PDF export
   (§8), same as the Expenditure app's filter→report contract.
+- Each row's meta line carries a **"N mitigations ▸"** disclosure that expands the
+  category's **Key mitigations in place** list inline (the spreadsheet's column, at a
+  glance without opening the risk). `GET /api/risk/overview` returns a `mitigations`
+  array per category for this.
 - Click a row → the **Risk detail** drawer (§6.2).
 
 ### 6.2 Risk detail drawer — the single place a risk is managed
 
 Opens from a Register row or any Profile rollup row. Read-only for viewers; editable for
-member/admin. Header shows number, title, description, the **Inherent → Residual** score
-chips, Status pill and next-review. Three sub-tabs:
+member/admin. Header (sticky) shows number, title, description, the **Inherent → Residual**
+score chips, Status pill and next-review.
 
-**Assessment** (default)
+**No sub-tabs.** The body is one scrolling panel with every attribute of the risk managed
+together, in this order: Current scoring → Scoring rationale → Key mitigations in place →
+**Required actions** (with the per-action Family-Task-List sync toggle, §6.5) → Notes →
+Accountable → a collapsible **Events** section → a collapsible **Assessment history**
+section. The `.modal` gets `max-height: calc(100vh - 48px); overflow-y: auto` so the
+panel scrolls internally.
 
 - **Current scoring** panel: Inherent (`P×I`, before mitigations) → Residual (after
   mitigations) chips side by side with the arrow between them, status, and "assessed
@@ -398,19 +407,19 @@ chips, Status pill and next-review. Three sub-tabs:
   in place (superseded snapshots stay immutable; the endpoint 409s if the id isn't the
   latest). This is how you record *why it was scored a particular way* without a full
   re-score.
-- **Mitigations — the steps that reduce inherent risk to residual**: the `risk_mitigations`
-  list, relabelled to read as the inherent→residual bridge. Add / toggle `in_place` /
-  remove inline.
+- **Key mitigations in place — the steps that reduce inherent risk to residual**: the
+  `risk_mitigations` list (the spreadsheet's "Key Mitigations In Place" column), phrased
+  as the inherent→residual bridge. Add / toggle `in_place` / remove inline.
+- **Required actions ( N open of M )** — the risk's actions with the per-action sync
+  toggle, inline (§6.5). Managing actions sits right here with the other risk attributes,
+  not on a separate screen.
 - **Notes**: general standing commentary (`risk_categories.notes`), member-editable
   inline, seeded from v5's "Dalio Framework Note".
-- **Accountable**, and a collapsible **Assessment history** (the old separate "History"
-  tab, folded in): a residual/inherent sparkline plus a table of every `risk_assessments`
-  row with who assessed it and the `note`.
-
-**Actions ( N open )** — see §6.5.
-
-**Events ( N )** — the category's `risk_events`, newest first, with "Log event",
-"create action from event" and "reassess this risk" (§6.3).
+- **Accountable**.
+- Collapsible **Events ( N )** — the category's `risk_events`, newest first, with "Log
+  event", "create action from event" and "reassess this risk" (§6.3).
+- Collapsible **Assessment history ( N )** — a residual/inherent sparkline plus a table
+  of every `risk_assessments` row with who assessed it and the `note`.
 
 ### 6.3 Events tab / "Log event" (member/admin)
 
@@ -455,11 +464,11 @@ chips, Status pill and next-review. Three sub-tabs:
   risk's drawer. This is the only cross-risk actions view; actions are *managed* only on
   the risk's own screen (§6.5).
 
-### 6.5 Actions sub-tab (in the risk drawer) — per-action Family Task List sync
+### 6.5 Required actions section (in the risk drawer) — per-action Family Task List sync
 
-The "add and change tasks in the RFO task list" requirement, integrated into the risk's
-own screen — **not** a separate tab. Works through the existing Task List API and data;
-no parallel task store.
+The "add and change tasks in the RFO task list" requirement, managed **inline in the risk
+drawer alongside every other risk attribute** — not a separate tab, not a separate sub-tab.
+Works through the existing Task List API and data; no parallel task store.
 
 - The risk's `risk_actions`, grouped by the Immediate / Active / Monitor priority
   buckets (the register's RAG grouping). Inline "+ Add action" (title, detail, priority,
@@ -561,8 +570,9 @@ casually (each call costs a few cents and some seconds).
     filters, the aggregate residual vs. inherent exposure numbers.
   - The 4×4 heatmap as a rendered PNG (`chartjs-node-canvas`, `scatter`, integer axes,
     `backgroundColour: 'white'`).
-  - The register table grouped by domain (number, title, inherent, residual, status,
-    accountable, next review) — respecting the caller's filters.
+  - The register grouped by domain (number, title, description, inherent, residual,
+    status, accountable, next review, **and the "Key mitigations in place" list per
+    risk** — the spreadsheet's column) — respecting the caller's filters.
   - Open actions grouped Immediate / Active / Monitor, each with owner and due quarter,
     and a marker for those linked to a live Task List task.
   - Risk events in the reporting window (or last 12 months if unfiltered).
@@ -614,7 +624,8 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
   `requireAuth`, role-checked via a local `myRoles(userId)` helper reading
   `is_fo_admin` + `risk_role` (copy `server/tasks.js`'s `myRoles`):
   - `GET /api/risk/overview` — domains, categories each with their latest assessment,
-    open-action counts, 12-month event counts (the Register payload).
+    open-action counts, 12-month event counts, and the `mitigations` list (the Register
+    payload; the last is for the row's inline "Key mitigations in place" disclosure).
   - `GET /api/risk/categories/:id` — full detail: all assessments, mitigations, actions
     (with linked-task join), events.
   - `POST/PUT/DELETE /api/risk/categories` and `…/domains` and `…/scale` — admin only
@@ -699,8 +710,8 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
    sparkline. Run a second assessment on one category and confirm history/supersede.
 5. **Mitigations + Actions (without the Task List link yet):** editable lists.
 6. **Task List integration (§6.5):** the per-action "RFO Task List" sync toggle in the
-   risk drawer's Actions sub-tab, `promote` / `unlink`, the read-through join. Test
-   sync-from-risk, complete-in-`/tasks`-reflects-in-risk, delete-task fallback.
+   risk drawer's Required actions section, `promote` / `unlink`, the read-through join.
+   Test sync-from-risk, complete-in-`/tasks`-reflects-in-risk, delete-task fallback.
 7. **Events (§6.3):** Events tab, log/edit/close, "create action from event",
    "reassess this risk".
 8. **Profile dashboard (§6.4):** heatmap, summary cards, trend, domain rollup, changes-

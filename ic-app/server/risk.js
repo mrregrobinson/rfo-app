@@ -181,6 +181,10 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       latestAssessment: assessmentRowToJson(latestAssessment(c.id)),
       actionCounts: actionCounts(c.id),
       events12mo: events12mo(c.id),
+      // Included so the Register grid can show "Key mitigations in place" inline (the
+      // spreadsheet's column), without a round-trip per row.
+      mitigations: db.prepare('SELECT id, text, in_place FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id)
+        .map((m) => ({ id: m.id, text: m.text, inPlace: !!m.in_place })),
     }));
     const scale = db.prepare('SELECT * FROM risk_scale ORDER BY kind, score').all()
       .map((s) => ({ kind: s.kind, score: s.score, label: s.label, detail: s.detail }));
@@ -686,7 +690,13 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     if (query.domain) cats = cats.filter((c) => String(query.domain).split(',').includes(c.domain_id));
     const rows = cats.map((c) => {
       const a = assessmentRowToJson(latestAssessment(c.id));
-      return { category: c, assessment: a, actions: db.prepare('SELECT * FROM risk_actions WHERE category_id = ?').all(c.id).map(actionRowToJson) };
+      return {
+        category: c,
+        assessment: a,
+        actions: db.prepare('SELECT * FROM risk_actions WHERE category_id = ?').all(c.id).map(actionRowToJson),
+        mitigations: db.prepare('SELECT text, in_place FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id)
+          .map((m) => ({ text: m.text, inPlace: !!m.in_place })),
+      };
     }).filter((r) => {
       if (query.status && r.assessment && String(query.status).split(',').indexOf(r.assessment.status) === -1) return false;
       if (query.band && r.assessment && String(query.band).split(',').indexOf(r.assessment.residualBand) === -1) return false;

@@ -56,7 +56,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .form-textarea{resize:vertical;min-height:60px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
-.modal{background:#fff;border-radius:12px;padding:22px;max-width:760px;width:100%}
+.modal{background:#fff;border-radius:12px;padding:22px;max-width:760px;width:100%;max-height:calc(100vh - 48px);overflow-y:auto}
 .modal-sm{max-width:460px}
 .modal-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:4px}
 .modal-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
@@ -144,6 +144,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
   const [fBand,setFBand]=useState('');
   const [fAcc,setFAcc]=useState('');
   const [fFlags,setFFlags]=useState('');
+  const [expandMits,setExpandMits]=useState({});
 
   const cats=overview.categories.filter(c=>c.isActive);
   function matches(c){
@@ -180,26 +181,33 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
           h('span',{className:'small muted',style:{marginLeft:'auto'}},`${dcats.length} risk${dcats.length>1?'s':''} · worst ${basis} ${worst} (${bandOf(worst)})`)),
         dcats.map(c=>{
           const a=c.latestAssessment;
-          const sc=a?(basis==='residual'?[a.residualProb,a.residualImpact]:[a.inherentProb,a.inherentImpact]):null;
-          return h('div',{className:'rrow',key:c.id,onClick:()=>onOpenCategory(c.id)},
-            h('div',{className:'rnum'},'#'+c.number),
-            h('div',null,
-              h('div',{className:'rtitle'},c.title),
-              h('div',{className:'rdesc'},c.description),
-              h('div',{className:'rmeta'},
-                a?statusPill(a.status):h('span',{className:'small muted'},'Not yet assessed'),
-                h('span',{className:'k'},'· '+(c.accountable||'—')),
-                a&&a.nextReview&&h('span',{className:'k'},'· review '+a.nextReview),
-                c.actionCounts.open>0&&h('span',{className:'k'},'· '+c.actionCounts.open+' open action'+(c.actionCounts.open>1?'s':'')),
-                c.actionCounts.immediate>0&&h('span',{style:{color:'var(--high-fg)',fontWeight:700,fontSize:10.5}},'· '+c.actionCounts.immediate+' Immediate'),
-                c.events12mo>0&&h('span',{className:'k'},'· '+c.events12mo+' event'+(c.events12mo>1?'s':'')+'/12mo')
+          const mits=c.mitigations||[];
+          const open=!!expandMits[c.id];
+          return h('div',{key:c.id},
+            h('div',{className:'rrow',onClick:()=>onOpenCategory(c.id)},
+              h('div',{className:'rnum'},'#'+c.number),
+              h('div',null,
+                h('div',{className:'rtitle'},c.title),
+                h('div',{className:'rdesc'},c.description),
+                h('div',{className:'rmeta'},
+                  a?statusPill(a.status):h('span',{className:'small muted'},'Not yet assessed'),
+                  h('span',{className:'k'},'· '+(c.accountable||'—')),
+                  a&&a.nextReview&&h('span',{className:'k'},'· review '+a.nextReview),
+                  c.actionCounts.open>0&&h('span',{className:'k'},'· '+c.actionCounts.open+' open action'+(c.actionCounts.open>1?'s':'')),
+                  c.actionCounts.immediate>0&&h('span',{style:{color:'var(--high-fg)',fontWeight:700,fontSize:10.5}},'· '+c.actionCounts.immediate+' Immediate'),
+                  c.events12mo>0&&h('span',{className:'k'},'· '+c.events12mo+' event'+(c.events12mo>1?'s':'')+'/12mo'),
+                  mits.length>0&&h('span',{style:{cursor:'pointer',color:'var(--teal)',fontWeight:600,fontSize:10.5},onClick:e=>{e.stopPropagation();setExpandMits(m=>({...m,[c.id]:!m[c.id]}));}},'· '+(open?'▾':'▸')+' '+mits.length+' mitigation'+(mits.length>1?'s':''))
+                )
+              ),
+              h('div',{className:'rright'},
+                a&&h('div',null,h('span',{className:'small muted'},'Inh '),scoreChip(a.inherentProb,a.inherentImpact)),
+                a&&h('div',null,h('span',{className:'small muted'},'Res '),scoreChip(a.residualProb,a.residualImpact)),
+                !a&&h('span',{className:'small muted'},'—')
               )
             ),
-            h('div',{className:'rright'},
-              a&&h('div',null,h('span',{className:'small muted'},'Inh '),scoreChip(a.inherentProb,a.inherentImpact)),
-              a&&h('div',null,h('span',{className:'small muted'},'Res '),scoreChip(a.residualProb,a.residualImpact)),
-              !a&&h('span',{className:'small muted'},'—')
-            )
+            open&&h('div',{style:{padding:'6px 12px 12px 44px',borderTop:'0.5px dashed var(--border)',background:'#fff'}},
+              h('div',{style:{fontSize:10.5,fontWeight:700,color:'var(--teal)',textTransform:'uppercase',letterSpacing:'.3px',margin:'6px 0 3px'}},'Key mitigations in place'),
+              mits.map(m=>h('div',{key:m.id,className:'small',style:{padding:'2px 0',opacity:m.inPlace?1:.55}},'• '+m.text+(m.inPlace?'':' (planned)'))))
           );
         })
       );
@@ -208,13 +216,14 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
 }
 
 // =======================================================================
-// Category drawer — THE single place a risk is managed: scoring + rationale +
-// mitigations + actions (with Family-Task-List sync) + events, all here.
+// Category drawer — THE single place a risk is managed. One scrolling panel:
+// scoring, why-it-was-scored, the inherent→residual mitigation steps, the
+// actions (with per-action Family-Task-List sync), notes, events, history.
+// No sub-tabs — every attribute of the risk is managed here together.
 // =======================================================================
 function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
   const [data,setData]=useState(null);
   const [err,setErr]=useState('');
-  const [tab,setTab]=useState('assessment');
   function load(){api.get('/api/risk/categories/'+categoryId).then(setData).catch(e=>setErr(e.message));}
   useEffect(load,[categoryId]);
   function refresh(){return api.get('/api/risk/categories/'+categoryId).then((d)=>{setData(d);onChanged&&onChanged();});}
@@ -223,11 +232,10 @@ function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
   if(!data)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
   const c=data.category;
   const latest=data.assessments[data.assessments.length-1];
-  const openActions=data.actions.filter(a=>a.effectiveStatus!=='done').length;
 
   return h('div',{className:'modal-overlay',onClick:onClose},
     h('div',{className:'modal',onClick:e=>e.stopPropagation()},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',position:'sticky',top:'-22px',background:'#fff',paddingTop:2,zIndex:1}},
         h('div',null,
           h('div',{className:'modal-title'},'#'+c.number+'  '+c.title),
           h('div',{className:'modal-sub'},c.description)),
@@ -238,20 +246,16 @@ function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
         h('span',null,h('span',{className:'small muted'},'Residual '),scoreChip(latest.residualProb,latest.residualImpact)),
         statusPill(latest.status),
         latest.nextReview&&h('span',{className:'small muted'},'Next review '+latest.nextReview)),
-      h('div',{className:'tabs',style:{marginTop:8}},
-        [['assessment','Assessment'],['actions','Actions ('+openActions+' open)'],['events','Events ('+data.events.length+')']].map(([k,l])=>
-          h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
-      tab==='assessment'&&h(AssessmentPanel,{data,latest,scale,roles,refresh}),
-      tab==='actions'&&h(ActionsPanel,{data,members,roles,refresh}),
-      tab==='events'&&h(EventListForCategory,{data,roles,refresh,onChanged:refresh})
+      h(RiskPanel,{data,members,latest,scale,roles,refresh})
     )
   );
 }
 
-// ---- Assessment sub-tab: scoring, why-it-was-scored, the inherent->residual bridge ----
-function AssessmentPanel({data,latest,scale,roles,refresh}){
+// The one scrolling body — all of a risk's attributes managed side by side.
+function RiskPanel({data,members,latest,scale,roles,refresh}){
   const [reassessing,setReassessing]=useState(false);
   const [showHistory,setShowHistory]=useState(false);
+  const [showEvents,setShowEvents]=useState(data.events.length>0);
   const c=data.category;
   const probScale=scale.filter(s=>s.kind==='probability');
   const impScale=scale.filter(s=>s.kind==='impact');
@@ -272,9 +276,15 @@ function AssessmentPanel({data,latest,scale,roles,refresh}){
 
     h(RationaleEditor,{assessment:latest,roles,refresh}),
     h(MitigationList,{data,roles,refresh}),
-    h(NotesEditor,{category:c,roles,refresh}),
 
+    h('div',{className:'sec'},'Required actions'+(data.actions.length?' ('+data.actions.filter(a=>a.effectiveStatus!=='done').length+' open of '+data.actions.length+')':'')),
+    h(ActionsPanel,{data,members,roles,refresh}),
+
+    h(NotesEditor,{category:c,roles,refresh}),
     h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
+
+    h('div',{className:'sec',style:{cursor:'pointer',userSelect:'none'},onClick:()=>setShowEvents(!showEvents)},(showEvents?'▾ ':'▸ ')+'Events ('+data.events.length+')'),
+    showEvents&&h(EventListForCategory,{data,roles,refresh,onChanged:refresh}),
 
     h('div',{className:'sec',style:{cursor:'pointer',userSelect:'none'},onClick:()=>setShowHistory(!showHistory)},(showHistory?'▾ ':'▸ ')+'Assessment history ('+data.assessments.length+')'),
     showHistory&&h(AssessHistory,{assessments:data.assessments})
@@ -440,7 +450,7 @@ function MitigationList({data,roles,refresh}){
   async function toggle(m){await api.put('/api/risk/mitigations/'+m.id,{inPlace:!m.inPlace});refresh();}
   async function del(m){if(!confirm('Remove this mitigation?'))return;await api.del('/api/risk/mitigations/'+m.id);refresh();}
   return h('div',null,
-    h('div',{className:'sec'},'Mitigations — the steps that reduce inherent risk to residual'),
+    h('div',{className:'sec'},'Key mitigations in place — the steps that reduce inherent risk to residual'),
     data.mitigations.map(m=>h('div',{className:'line',key:m.id},
       h('span',{style:{opacity:m.inPlace?1:.5}},m.text,!m.inPlace&&h('span',{className:'small muted'},' (planned)')),
       canEdit&&h('span',{style:{whiteSpace:'nowrap'}},
