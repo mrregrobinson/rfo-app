@@ -3,11 +3,18 @@
 // Same stack and reasoning as server/expenditure-report.js: pdfkit (draw-based) +
 // chartjs-node-canvas (renders a real Chart.js image via node-canvas, no headless
 // browser) — appropriate for a low-frequency report export inside a shared single Node
-// process. See RFO_Risk_App_BuildSpec_v1 §8. No new dependency.
+// process. See RFO_Risk_App_BuildSpec_v1 §8.
 const PDFDocument = require('pdfkit');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+const { FONT_FAMILY, registerChartFonts } = require('./chart-fonts');
 
-const chartCanvas = new ChartJSNodeCanvas({ width: 520, height: 360, backgroundColour: 'white' });
+const chartCanvas = new ChartJSNodeCanvas({
+  width: 520,
+  height: 360,
+  backgroundColour: 'white',
+  chartCallback: (ChartJS) => { ChartJS.defaults.font.family = FONT_FAMILY; },
+});
+registerChartFonts(chartCanvas);
 
 // Mirrors server/risk.js's scoreOf/bandOf — kept local so the report never diverges.
 const scoreOf = (p, i) => (Number(p) || 0) * (Number(i) || 0);

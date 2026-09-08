@@ -8,8 +8,15 @@
 // justify. See RFO_Expenditure_App_BuildSpec_v1.md's Export section.
 const PDFDocument = require('pdfkit');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+const { FONT_FAMILY, registerChartFonts } = require('./chart-fonts');
 
-const chartCanvas = new ChartJSNodeCanvas({ width: 520, height: 260, backgroundColour: 'white' });
+const chartCanvas = new ChartJSNodeCanvas({
+  width: 520,
+  height: 260,
+  backgroundColour: 'white',
+  chartCallback: (ChartJS) => { ChartJS.defaults.font.family = FONT_FAMILY; },
+});
+registerChartFonts(chartCanvas);
 
 function fmtCAD(n) {
   return (n || 0).toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 });
