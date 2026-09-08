@@ -242,24 +242,33 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     let reclassified = 0;
     const affected = [];
     if (b.applyToExisting) {
-      // Every non-transfer transaction in the ledger that matches, regardless of its
-      // CURRENT category — not just ones still sitting in Miscellaneous/Unknown. A rule
-      // is a statement of "this payee always means this category," so creating one
-      // should bring every existing instance of that payee into line with it, including
-      // ones that had been auto- or manually categorized as something else (a lower-
-      // priority rule's guess, a one-off correction that turns out to not generalize,
-      // etc.) — otherwise the same payee ends up split across categories depending on
-      // when each transaction happened to be imported relative to when the rule was
-      // created, which defeats the point of having a rule at all.
+      // Every non-transfer transaction this rule's pattern matches — not just ones
+      // still sitting in Miscellaneous/Unknown, and not narrowed to "not already at the
+      // target category" the way this used to work, since the target category is no
+      // longer assumed to be the outcome (see below). A rule is a statement of "this
+      // payee always means this category," so creating one should reconsider every
+      // existing instance of that payee, including ones that had been auto- or manually
+      // categorized as something else — otherwise the same payee ends up split across
+      // categories depending on when each transaction happened to be imported relative
+      // to when the rule was created, which defeats the point of having a rule at all.
       const candidates = db.prepare(
         `SELECT t.id, t.raw_description, t.category_id FROM expenditure_transactions t
          JOIN expenditure_accounts a ON a.id = t.account_id
-         WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id IS NULL OR t.category_id != ?)`
-      ).all(req.expenditureLedger.id, b.categoryId);
+         WHERE a.ledger_id = ? AND t.is_transfer = 0`
+      ).all(req.expenditureLedger.id);
       const rule = db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(id);
       for (const c of candidates) {
-        if (matchesRule(c.raw_description, rule)) {
-          db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(b.categoryId, c.id);
+        if (!matchesRule(c.raw_description, rule)) continue;
+        // The actual outcome is decided by categorize() — the full priority/specificity
+        // arbitration across ALL rules, this new one included — not just stamped as
+        // this rule's own category. If some OTHER rule already outranks this one for
+        // this description (higher priority, or a more specific pattern), that other
+        // rule keeps winning, exactly as if this rule had existed all along; a
+        // transaction only actually changes here when the arbitrated result disagrees
+        // with what it currently has.
+        const resolvedCategoryId = categorize(req.expenditureLedger.id, c.raw_description);
+        if (resolvedCategoryId && resolvedCategoryId !== c.category_id) {
+          db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(resolvedCategoryId, c.id);
           // Previous value, not the new one — this is what "Undo" restores each
           // transaction to, so the whole batch can be reverted in one action.
           affected.push({ id: c.id, categoryId: c.category_id, isTransfer: false });
@@ -294,15 +303,20 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     let reclassified = 0;
     const affected = [];
     if (b.applyToExisting) {
+      // Same arbitration as the create endpoint above (see its comment): the outcome
+      // for each matching transaction is whatever categorize() resolves across ALL
+      // rules including this edited one, not unconditionally this rule's own category.
       const candidates = db.prepare(
         `SELECT t.id, t.raw_description, t.category_id FROM expenditure_transactions t
          JOIN expenditure_accounts a ON a.id = t.account_id
-         WHERE a.ledger_id = ? AND t.is_transfer = 0 AND (t.category_id IS NULL OR t.category_id != ?)`
-      ).all(req.expenditureLedger.id, categoryId);
+         WHERE a.ledger_id = ? AND t.is_transfer = 0`
+      ).all(req.expenditureLedger.id);
       const rule = db.prepare('SELECT * FROM expenditure_category_rules WHERE id = ?').get(req.params.id);
       for (const c of candidates) {
-        if (matchesRule(c.raw_description, rule)) {
-          db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(categoryId, c.id);
+        if (!matchesRule(c.raw_description, rule)) continue;
+        const resolvedCategoryId = categorize(req.expenditureLedger.id, c.raw_description);
+        if (resolvedCategoryId && resolvedCategoryId !== c.category_id) {
+          db.prepare('UPDATE expenditure_transactions SET category_id = ? WHERE id = ?').run(resolvedCategoryId, c.id);
           affected.push({ id: c.id, categoryId: c.category_id, isTransfer: false });
           reclassified++;
         }
@@ -318,11 +332,16 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     res.json({ ok: true });
   });
 
-  // Highest-priority matching rule wins; ties broken by whichever rule was created most
-  // recently (a later, presumably more specific correction should win over an older,
-  // broader one at the same priority).
+  // Highest-priority matching rule wins — priority defaults to 0 for every rule and is
+  // only ever set explicitly by a person who's noticed a real conflict and wants a
+  // specific rule to win it (see the rule create/edit forms), so it's rare for it to
+  // actually differ between two matching rules. The tiebreak that DOES fire routinely,
+  // then, is pattern length: a longer, more specific pattern ("COSTCO GAS BAR #4821")
+  // beats a shorter, broader one ("COSTCO*") that happens to also match, without anyone
+  // having to set a priority for the common case. Recency is the final, rarely-reached
+  // tiebreak for two same-priority, same-length patterns.
   function categorize(ledgerId, description) {
-    const rules = db.prepare('SELECT * FROM expenditure_category_rules WHERE ledger_id = ? ORDER BY priority DESC, created_at DESC').all(ledgerId);
+    const rules = db.prepare('SELECT * FROM expenditure_category_rules WHERE ledger_id = ? ORDER BY priority DESC, LENGTH(pattern) DESC, created_at DESC').all(ledgerId);
     for (const rule of rules) {
       if (matchesRule(description, rule)) return rule.category_id;
     }

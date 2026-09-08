@@ -374,3 +374,77 @@ describe('system categories (role) survive being renamed', () => {
     }
   });
 });
+
+// categorize()'s tiebreak between two rules that both match the same description:
+// priority first (an explicit override), then pattern length (a more specific pattern
+// beats a broader one automatically, with no priority needed for the common case) —
+// see categorize()'s own comment in server/expenditure.js.
+describe('rule priority and specificity arbitration', () => {
+  function makeTxn(description, categoryId) {
+    const accountId = crypto.randomUUID();
+    const statementId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO expenditure_accounts (id, ledger_id, name, account_type, currency, created_at) VALUES (?, ?, 'Test Account', 'chequing', 'CAD', ?)`).run(accountId, LEDGER_ID, now);
+    db.prepare(`INSERT INTO expenditure_statements (id, account_id, period_start, period_end, imported_at) VALUES (?, ?, '2026-07-01', '2026-07-31', ?)`).run(statementId, accountId, now);
+    const txnId = crypto.randomUUID();
+    db.prepare(`INSERT INTO expenditure_transactions (id, account_id, statement_id, txn_date, description, raw_description, amount, currency, amount_cad, category_id, is_transfer, created_at) VALUES (?, ?, ?, '2026-07-15', ?, ?, 40, 'CAD', 40, ?, 0, ?)`)
+      .run(txnId, accountId, statementId, description, description, categoryId, now);
+    return txnId;
+  }
+
+  test('a more specific (longer) pattern wins over a broader one at equal priority, regardless of which was created first', async () => {
+    const { body: broadCategory } = await post('/api/expenditure/categories', { name: 'Broad Rule Target' });
+    const { body: specificCategory } = await post('/api/expenditure/categories', { name: 'Specific Rule Target' });
+    // The broad rule is created FIRST — under the old "most recent wins" tiebreak this
+    // would have lost to whichever rule below is created later, regardless of which
+    // pattern is actually more specific.
+    await post('/api/expenditure/category-rules', { pattern: 'COSTCO*', categoryId: broadCategory.id });
+    await post('/api/expenditure/category-rules', { pattern: 'COSTCO GAS BAR', categoryId: specificCategory.id });
+
+    const txnId = makeTxn('COSTCO GAS BAR #4821', null);
+    await post('/api/expenditure/reclassify', {});
+    const row = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId);
+    assert.equal(row.category_id, specificCategory.id, 'the longer, more specific pattern wins even though the broader rule existed first');
+  });
+
+  test('an explicit priority override beats a longer pattern', async () => {
+    const { body: longPatternCategory } = await post('/api/expenditure/categories', { name: 'Long Pattern Target' });
+    const { body: prioritizedCategory } = await post('/api/expenditure/categories', { name: 'Prioritized Target' });
+    await post('/api/expenditure/category-rules', { pattern: 'HERITAGE COOP GROCERY STORE', categoryId: longPatternCategory.id });
+    await post('/api/expenditure/category-rules', { pattern: 'HERITAGE', categoryId: prioritizedCategory.id, priority: 10 });
+
+    const txnId = makeTxn('HERITAGE COOP GROCERY STORE #99', null);
+    await post('/api/expenditure/reclassify', {});
+    const row = db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId);
+    assert.equal(row.category_id, prioritizedCategory.id, 'explicit priority outranks pattern length');
+  });
+
+  test('creating a new broad rule with applyToExisting does not steal a transaction a more specific existing rule already owns', async () => {
+    const { body: specificCategory } = await post('/api/expenditure/categories', { name: 'Existing Specific Target' });
+    const { body: broadCategory } = await post('/api/expenditure/categories', { name: 'New Broad Target' });
+    // The specific rule already exists and already claimed this transaction.
+    const txnId = makeTxn('ZELLERS DOWNTOWN LOCATION 42', null);
+    await post('/api/expenditure/category-rules', { pattern: 'ZELLERS DOWNTOWN LOCATION', categoryId: specificCategory.id, applyToExisting: true });
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId).category_id, specificCategory.id);
+
+    // Now a broader, newer rule is created for the same payee, pointed at a DIFFERENT
+    // category, with applyToExisting — under the old "blindly stamp this rule's
+    // category" behaviour this would have overwritten the transaction even though the
+    // specific rule above is the better match.
+    const { body } = await post('/api/expenditure/category-rules', { pattern: 'ZELLERS*', categoryId: broadCategory.id, applyToExisting: true });
+    assert.equal(body.reclassified, 0, 'the specific rule still wins arbitration, so nothing actually changes for this transaction');
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId).category_id, specificCategory.id, 'left alone — the new broad rule never actually outranks the existing specific one');
+  });
+
+  test('editing a rule to be broader than another existing rule does not steal that rule\'s transactions', async () => {
+    const { body: keptCategory } = await post('/api/expenditure/categories', { name: 'Kept By Specific Rule' });
+    const { body: editedCategory } = await post('/api/expenditure/categories', { name: 'Edited Rule Target' });
+    await post('/api/expenditure/category-rules', { pattern: 'DOBSON YARD CARE INVOICE', categoryId: keptCategory.id });
+    const { body: editedRule } = await post('/api/expenditure/category-rules', { pattern: 'UNRELATED FOR NOW', categoryId: editedCategory.id });
+
+    const txnId = makeTxn('DOBSON YARD CARE INVOICE #77', keptCategory.id);
+    const { body } = await put(`/api/expenditure/category-rules/${editedRule.rule.id}`, { pattern: 'DOBSON*', applyToExisting: true });
+    assert.equal(body.reclassified, 0, 'the more specific pre-existing rule still wins');
+    assert.equal(db.prepare('SELECT category_id FROM expenditure_transactions WHERE id = ?').get(txnId).category_id, keptCategory.id);
+  });
+});

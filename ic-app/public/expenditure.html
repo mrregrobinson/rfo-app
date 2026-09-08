@@ -724,7 +724,7 @@ function ExclusionRulesSection({exclusionRules,onAdd,onEdit,onDelete}){
 function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename,onDelete,onEditRule,onDeleteRule,onAddExclusionRule,onEditExclusionRule,onDeleteExclusionRule}){
   const [newName,setNewName]=useState('');
   const [editing,setEditing]=useState(null); // {id,name}
-  const [editingRule,setEditingRule]=useState(null); // {id,pattern,categoryId}
+  const [editingRule,setEditingRule]=useState(null); // {id,pattern,categoryId,priority}
   const [ruleSearch,setRuleSearch]=useState('');
   const [error,setError]=useState('');
   const [ruleError,setRuleError]=useState('');
@@ -753,7 +753,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
   async function saveRuleEdit(){
     if(!editingRule.pattern.trim()||!editingRule.categoryId)return;
     setRuleError('');
-    try{await onEditRule(editingRule.id,editingRule.pattern.trim(),editingRule.categoryId);setEditingRule(null);}catch(err){setRuleError(err.message);}
+    try{await onEditRule(editingRule.id,editingRule.pattern.trim(),editingRule.categoryId,Number(editingRule.priority)||0);setEditingRule(null);}catch(err){setRuleError(err.message);}
   }
   return h('div',{className:'modal-overlay',onClick:onClose},
     h('div',{className:'modal',style:{maxWidth:620,maxHeight:'90vh',overflowY:'auto'},onClick:e=>e.stopPropagation()},
@@ -791,6 +791,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
         ruleError&&h('div',{className:'alert alert-danger'},ruleError),
         rules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},'No rules yet — create one from the Research Unknown Payees panel, or the "+Rule" button on a transaction below.'),
         rules.length>0&&h('input',{className:'form-input',style:{width:'100%',marginBottom:10},placeholder:'Search rules, e.g. COST* or a category name',title:'* matches any characters, ? matches exactly one',value:ruleSearch,onChange:e=>setRuleSearch(e.target.value)}),
+        rules.length>0&&h('div',{className:'muted',style:{marginBottom:8}},'When two rules could both match the same transaction, the more specific (longer) pattern wins automatically. Set a priority only to force a particular rule to win regardless of pattern length — higher wins.'),
         rules.length>0&&visibleRules.length===0&&h('div',{className:'muted',style:{marginBottom:14}},`No rules match "${ruleSearch}".`),
         visibleRules.length>0&&h('div',{style:{maxHeight:220,overflowY:'auto',marginBottom:14}},
           h('table',null,
@@ -803,6 +804,9 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
                     categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
                   )
                 :`→ ${categoryName(r.categoryId)}`),
+              h('td',{className:'muted',style:{width:90}},editingRule&&editingRule.id===r.id
+                ?h('input',{type:'number',className:'form-input',style:{margin:0,width:70},title:'Higher wins when two rules both match the same transaction',value:editingRule.priority,onChange:e=>setEditingRule({...editingRule,priority:e.target.value}),onKeyDown:e=>e.key==='Enter'&&saveRuleEdit()})
+                :(r.priority?`priority ${r.priority}`:'')),
               h('td',{style:{whiteSpace:'nowrap'}},
                 editingRule&&editingRule.id===r.id
                   ?h(React.Fragment,null,
@@ -810,7 +814,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
                       h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:4},onClick:()=>setEditingRule(null)},'Cancel')
                     )
                   :h(React.Fragment,null,
-                      h('button',{className:'btn btn-outline btn-sm',onClick:()=>setEditingRule({id:r.id,pattern:r.pattern,categoryId:r.categoryId})},'Edit'),
+                      h('button',{className:'btn btn-outline btn-sm',onClick:()=>setEditingRule({id:r.id,pattern:r.pattern,categoryId:r.categoryId,priority:r.priority||0})},'Edit'),
                       h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:4},onClick:()=>onDeleteRule(r.id)},'Remove')
                     )
               )
@@ -887,6 +891,7 @@ function PayeeRow({payee,categories,onResearched,onAffected}){
 function ManualRuleForm({categories,onAdd}){
   const [pattern,setPattern]=useState('');
   const [categoryId,setCategoryId]=useState('');
+  const [priority,setPriority]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
@@ -894,9 +899,9 @@ function ManualRuleForm({categories,onAdd}){
     if(!pattern.trim()||!categoryId)return;
     setBusy(true);setError('');setMessage('');
     try{
-      const res=await onAdd(pattern.trim(),categoryId);
+      const res=await onAdd(pattern.trim(),categoryId,Number(priority)||0);
       setMessage(`Rule saved. Re-categorized ${res.reclassified} matching transaction${res.reclassified===1?'':'s'}.${res.reclassified===0?' If you expected a match, double-check the pattern actually appears in that payee\'s description.':''}`);
-      setPattern('');setCategoryId('');
+      setPattern('');setCategoryId('');setPriority('');
     }catch(err){setError(err.message);}
     setBusy(false);
   }
@@ -908,6 +913,7 @@ function ManualRuleForm({categories,onAdd}){
         h('option',{value:''},'— pick a category —'),
         categories.map(c=>h('option',{key:c.id,value:c.id},c.name))
       ),
+      h('input',{type:'number',className:'form-input',style:{width:80},placeholder:'Priority',title:'Optional — only needed to force this rule to win over another matching rule regardless of pattern length. Higher wins.',value:priority,onChange:e=>setPriority(e.target.value),onKeyDown:e=>e.key==='Enter'&&add()}),
       h('button',{className:'btn btn-gold btn-sm',disabled:!pattern.trim()||!categoryId||busy,onClick:add},'Add Rule')
     ),
     error&&h('div',{className:'alert alert-danger',style:{marginTop:8}},error),
@@ -921,8 +927,8 @@ function ResearchModal({categories,onClose,onChanged,onAffected}){
   function load(){api.get('/api/expenditure/unknown-payees').then(setPayees).catch(err=>setError(err.message));}
   useEffect(load,[]);
   function refresh(){load();onChanged();}
-  async function addManualRule(pattern,categoryId){
-    const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,applyToExisting:true});
+  async function addManualRule(pattern,categoryId,priority){
+    const res=await api.post('/api/expenditure/category-rules',{pattern,categoryId,priority,applyToExisting:true});
     onAffected(pattern,res);
     refresh();
     return res;
@@ -1141,8 +1147,8 @@ function ExpenditureApp({ledger}){
     load();loadRules();loadExclusionRules();
   }
 
-  async function editRule(id,pattern,categoryId){
-    const res=await api.put('/api/expenditure/category-rules/'+id,{pattern,categoryId,applyToExisting:true});
+  async function editRule(id,pattern,categoryId,priority){
+    const res=await api.put('/api/expenditure/category-rules/'+id,{pattern,categoryId,priority,applyToExisting:true});
     loadRules();load();
     recordAffected(`Edited rule "${pattern}" — reclassified ${res.affected.length} transaction${res.affected.length===1?'':'s'}.`,res);
   }
