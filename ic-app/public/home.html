@@ -28,7 +28,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .tile-icon svg{width:21px;height:21px}
 .tile-title{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px}
 .tile-desc{font-size:12px;color:var(--muted);line-height:1.6}
+.tile-badge{align-self:flex-start;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:var(--bg);border:0.5px solid var(--border);border-radius:10px;padding:2px 8px;margin-top:10px}
 .loading{padding:48px;text-align:center;color:var(--muted);font-size:13px}
+.cs-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
+.cs-modal{background:#fff;border-radius:12px;padding:26px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.cs-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:10px}
+.cs-body{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:20px}
+.cs-close{background:var(--navy);color:#fff;border:none;border-radius:8px;padding:8px 22px;font-size:12px;font-weight:600;cursor:pointer}
 </style>
 </head>
 <body>
@@ -52,7 +58,29 @@ const ICONS = {
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
   wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H6a3 3 0 000 6h1"/><path d="M3 8V7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H6a3 3 0 01-3-3V8z"/><circle cx="16" cy="14" r="1.2"/></svg>',
   admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 21v-1.5a6 6 0 0112 0V21"/><circle cx="19" cy="6" r="2"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>',
+  gauge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a8 8 0 1116 0"/><path d="M12 15l4-4"/><circle cx="12" cy="15" r="1"/></svg>',
+  briefcase: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>',
 };
+
+// A tile with `comingSoon: true` has no real destination yet — clicking it opens this
+// dialog instead of navigating. Global (rather than an addEventListener-bound handler)
+// since tiles are rendered via one big innerHTML template string, same as everything
+// else on this page — an inline onclick is the natural fit here, not a special case.
+function showComingSoon(name) {
+  const overlay = document.createElement('div');
+  overlay.className = 'cs-overlay';
+  overlay.innerHTML = `
+    <div class="cs-modal">
+      <div class="cs-title">Coming Soon</div>
+      <div class="cs-body">${name} is under construction.</div>
+      <button class="cs-close">Close</button>
+    </div>`;
+  const close = () => document.body.removeChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('.cs-close').addEventListener('click', close);
+  document.body.appendChild(overlay);
+}
 
 // Mirrors the family office's own org chart (Strategic / People / Investing / Legacy /
 // Operational Services, plus Governance for the office's own internal administration) —
@@ -65,12 +93,15 @@ const GROUPS = [
     tiles: [
       { href: '/meetings', title: 'Family Office Meetings', desc: 'Schedule meetings with an agenda, send calendar invitations to family attendees, and record minutes.', icon: ICONS.calendar },
       { href: '/tasks', title: 'Family Task List', desc: 'Shared, prioritized task tracker across Strategy, People, Core Business, and Operations.', icon: ICONS.checklist },
+      { title: 'Risk Management', desc: 'Enterprise-wide risk identification, monitoring, and mitigation across the family office.', icon: ICONS.shield, comingSoon: true },
+      { title: 'Maturity Assessment', desc: 'Evaluate the family office\'s operational maturity across governance, process, and reporting.', icon: ICONS.gauge, comingSoon: true },
     ],
   },
   {
     key: 'investing', label: 'Investing Services', color: '#2E75B6', tint: '#EAF2FA',
     tiles: [
       { href: '/due-diligence', title: 'PQ Introduced Due Diligence', desc: 'Review investment opportunities Prime Quadrant has introduced, complete the IC checklist, and track decisions.', icon: ICONS.search },
+      { title: 'Direct Investing Due Diligence', desc: 'Diligence workflow for direct (non-fund) investment opportunities.', icon: ICONS.briefcase, comingSoon: true },
     ],
   },
   {
@@ -85,11 +116,18 @@ function greeting() {
 }
 
 function tileHtml(t, group) {
+  // Inline onclick attributes are blocked by this app's CSP (script-src-attr 'none') —
+  // coming-soon tiles get a data-coming-soon marker instead, and init() below attaches
+  // real addEventListener handlers to every one after rendering, same as the sign-out
+  // button already does.
+  const href = t.comingSoon ? '#' : t.href;
+  const marker = t.comingSoon ? `data-coming-soon="${t.title}"` : '';
   return `
-        <a class="tile" href="${t.href}">
+        <a class="tile" href="${href}" ${marker}>
           <div class="tile-icon" style="background:${group.tint};color:${group.color}">${t.icon}</div>
           <div class="tile-title">${t.title}</div>
           <div class="tile-desc">${t.desc}</div>
+          ${t.comingSoon ? '<span class="tile-badge">Coming soon</span>' : ''}
         </a>`;
 }
 
@@ -142,6 +180,9 @@ async function init() {
       ${GROUPS.map(groupHtml).join('')}
     </div>
   `;
+  document.querySelectorAll('[data-coming-soon]').forEach((el) => {
+    el.addEventListener('click', (e) => { e.preventDefault(); showComingSoon(el.dataset.comingSoon); });
+  });
   document.getElementById('signout').addEventListener('click', async () => {
     await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
     location.href = '/due-diligence';
