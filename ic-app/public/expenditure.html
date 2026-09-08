@@ -1247,17 +1247,12 @@ function ExpenditureApp({ledger}){
   }
 
   return h('div',{className:'page'},
-    h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
     h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
       h('button',{className:'btn btn-outline',onClick:downloadPdf},'View/Download PDF'),
-      h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF'),
-      h('div',{className:'toolbar-divider'}),
-      h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
-      h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
-      h('button',{className:'btn btn-outline',onClick:()=>setShowExcluded(true),title:'View and re-include transactions currently marked as transfers/income'},'Manage Excluded'),
-      h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories & Rules')
+      h('button',{className:'btn btn-teal',onClick:()=>setShowEmail(true)},'Email as PDF')
     ),
+    h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
     lastAction&&h('div',{className:'undo-bar no-print'},
       h('div',null,lastAction.label),
       h('div',{style:{display:'flex',gap:8,flexShrink:0}},
@@ -1273,6 +1268,12 @@ function ExpenditureApp({ledger}){
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
     h(ChartsCard,{summary,compareSummary,compareMode,trailing12Summary}),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
+    h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+      h('button',{className:'btn btn-outline',onClick:()=>setShowResearch(true)},'Research Unknown Payees'),
+      h('button',{className:'btn btn-outline',onClick:cleanUpExistingData,title:'Re-check all existing transactions against the current transfer/income detection and category rules'},'Clean Up Existing Data'),
+      h('button',{className:'btn btn-outline',onClick:()=>setShowExcluded(true),title:'View and re-include transactions currently marked as transfers/income'},'Manage Excluded'),
+      h('button',{className:'btn btn-outline',style:{marginLeft:'auto'},onClick:()=>setShowCategories(true)},'Manage Categories & Rules')
+    ),
     h(ImportPanel,{onImported:load}),
     h(ManualTransactionPanel,{categories,onAdded:load}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
