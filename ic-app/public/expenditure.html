@@ -1247,8 +1247,6 @@ function ExpenditureApp({ledger}){
   }
 
   return h('div',{className:'page'},
-    h(ImportPanel,{onImported:load}),
-    h(ManualTransactionPanel,{categories,onAdded:load}),
     h(FiltersBar,{categories,filters,setFilters,compareMode,setCompareMode}),
     h('div',{className:'card no-print',style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
       h('button',{className:'btn btn-outline',onClick:()=>window.print()},'Print'),
@@ -1275,6 +1273,8 @@ function ExpenditureApp({ledger}){
       :h('div',{className:'card'},h(SummaryBlock,{summary,dateFrom:filters.dateFrom,dateTo:filters.dateTo})),
     h(ChartsCard,{summary,compareSummary,compareMode,trailing12Summary}),
     h(TransactionsTable,{transactions,categories,onUpdate:updateTransaction,onCreateRule:createRuleFromTransaction,selectedIds,onToggleSelect:toggleSelect,onToggleSelectAll:toggleSelectAll,onBulkAction:bulkAction}),
+    h(ImportPanel,{onImported:load}),
+    h(ManualTransactionPanel,{categories,onAdded:load}),
     showEmail&&h(EmailModal,{filters,compareMode,onClose:()=>setShowEmail(false)}),
     showCategories&&h(CategoriesModal,{categories,rules,exclusionRules,onClose:()=>setShowCategories(false),onAdd:addCategory,onRename:renameCategory,onDelete:deleteCategory,onEditRule:editRule,onDeleteRule:deleteRule,onAddExclusionRule:addExclusionRule,onEditExclusionRule:editExclusionRule,onDeleteExclusionRule:deleteExclusionRule}),
     showResearch&&h(ResearchModal,{categories,onClose:()=>setShowResearch(false),onChanged:()=>{load();loadRules();},onAffected:recordRuleAffected}),
