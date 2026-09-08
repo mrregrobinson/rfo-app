@@ -132,7 +132,7 @@ risk_categories
   title         TEXT NOT NULL           -- 'Investment & Capital Risk'
   description   TEXT NOT NULL           -- the one-line "Risk Description" from the sheet
   accountable   TEXT NOT NULL DEFAULT ''-- free text: 'Reg Robinson / Prime Quadrant'
-  dalio_note    TEXT NOT NULL DEFAULT ''-- the "Dalio Framework Note" paragraph from the docx
+  notes         TEXT NOT NULL DEFAULT ''-- general standing commentary on the risk; seeded from the docx's "Dalio Framework Note" paragraph, but not framework-bound — any longer-lived context or watch-item
   sort_order    INTEGER NOT NULL
   is_active     INTEGER NOT NULL DEFAULT 1  -- soft-delete; retired categories stay for history
 
@@ -320,7 +320,8 @@ Status · Accountable). Scores are computed, shown here for transcription checki
 | E | 13 | Reputational & Privacy Risk | 2×3=6 Med | 1×3=3 Low | Active — Partially Mitigated | Sheri-Dawn Robinson / Reg Robinson |
 | F | 14 | Monetary Hedge & Direct Investment Risk | 2×2=4 Low | 2×2=4 Low | Active — Partially Mitigated | Ross Robinson (Monetary Hedge lead) / Reg Robinson (Watch Collection owner) |
 
-For each category, seed: the one-line `description` and `dalio_note` from the docx; every
+For each category, seed: the one-line `description` and the `notes` field (from the docx's
+"Dalio Framework Note" paragraph) from the docx; every
 "Mitigations In Place" bullet as a `risk_mitigations` row (`in_place = 1`); every "Open
 Action Item" as a `risk_actions` row with `priority` derived from the docx "Summary of
 Open Action Items by Priority" section (`Immediate Action Required` → `Immediate`,
@@ -365,7 +366,8 @@ Tabs across the top: **Register** · **Profile** · **Events** · **Actions & Ta
 Read-only for viewers; editable for member/admin.
 
 - **Header:** number, title, domain, current Residual and Inherent chips, Status pill.
-- **Rationale** (markdown, rendered), **Dalio Framework Note**, **Accountable**,
+- **Rationale** (markdown, rendered), **Notes** (general standing commentary on the risk —
+  member-editable inline, seeded from v5's "Dalio Framework Note"), **Accountable**,
   **Next review**.
 - **Mitigations In Place** — editable list (`risk_mitigations`): add / edit / reorder /
   toggle `in_place` / remove.
@@ -461,7 +463,7 @@ existing Task List API and data** — no parallel task store.
 ### 6.6 Manage tab (admin only)
 
 - **Taxonomy editor:** rename domains; add / rename / retire (`is_active = 0`) categories;
-  edit a category's description, accountable text, and Dalio note; reorder. Retiring a
+  edit a category's description, accountable text, and notes; reorder. Retiring a
   category hides it from the register but keeps its assessments/events/actions for history
   and the trend. Adding a category requires domain + title + description; it enters the
   register with no assessment until someone runs one (shows as "Not yet assessed").
@@ -569,7 +571,7 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
 ### 10.2 Server changes
 
 - **`server/risk-seed-data.js`** (new) — the reconciled v5 content (domains, 14 categories
-  with descriptions + Dalio notes, scale labels, per-category mitigation bullets and
+  with descriptions + notes, scale labels, per-category mitigation bullets and
   action items with priority/status, baseline P/I/status/next-review), plus the IPS
   context constant. Transcription target for the two source docs; keep
   `-- SOURCE DISCREPANCY:` comments where the sheet and notes differ.

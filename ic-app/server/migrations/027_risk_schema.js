@@ -38,7 +38,7 @@ module.exports = function (db) {
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       accountable TEXT NOT NULL DEFAULT '',
-      dalio_note TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',  -- general standing commentary on the risk (framework refs, context, watch-items)
       sort_order INTEGER NOT NULL,
       is_active INTEGER NOT NULL DEFAULT 1
     );

@@ -27,8 +27,8 @@ module.exports = function (db) {
   for (const s of SCALE) insScale.run(s.kind, s.score, s.label, s.detail);
 
   const insCat = db.prepare(
-    `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, dalio_note, sort_order, is_active)
-     VALUES (@id, @domainId, @number, @title, @description, @accountable, @dalioNote, @sortOrder, 1)`
+    `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, notes, sort_order, is_active)
+     VALUES (@id, @domainId, @number, @title, @description, @accountable, @notes, @sortOrder, 1)`
   );
   const insMit = db.prepare(
     `INSERT INTO risk_mitigations (id, category_id, text, in_place, sort_order, created_at, updated_at)
@@ -46,7 +46,7 @@ module.exports = function (db) {
   CATEGORIES.forEach((c, ci) => {
     insCat.run({
       id: c.id, domainId: c.domainId, number: c.number, title: c.title,
-      description: c.description, accountable: c.accountable, dalioNote: c.dalioNote, sortOrder: ci + 1,
+      description: c.description, accountable: c.accountable, notes: c.note, sortOrder: ci + 1,
     });
     c.mitigations.forEach((text, mi) => {
       insMit.run(crypto.randomUUID(), c.id, text, mi + 1, EFFECTIVE_DATE, EFFECTIVE_DATE);

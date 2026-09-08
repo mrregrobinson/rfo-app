@@ -246,8 +246,7 @@ function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
       tab==='overview'&&h('div',null,
         h('div',{className:'sec'},'Rationale'),
         h('div',{className:'small'},latest&&latest.rationale?latest.rationale:h('span',{className:'muted'},'No rationale recorded on the latest assessment.')),
-        h('div',{className:'sec'},'Dalio Framework Note'),
-        h('div',{className:'small muted'},c.dalioNote||'—'),
+        h(NotesEditor,{category:c,roles,refresh}),
         h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
         h(MitigationList,{data,roles,refresh}),
         h(ActionList,{data,members,roles,refresh,onChanged})
@@ -256,6 +255,29 @@ function CategoryDrawer({categoryId,members,me,roles,scale,onClose,onChanged}){
       tab==='events'&&h(EventListForCategory,{data,roles,refresh,onChanged}),
       tab==='history'&&h(AssessHistory,{assessments:data.assessments})
     )
+  );
+}
+
+function NotesEditor({category,roles,refresh}){
+  const [editing,setEditing]=useState(false);
+  const [val,setVal]=useState(category.notes||'');
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{setVal(category.notes||'');},[category.id,category.notes]);
+  async function save(){
+    setBusy(true);
+    try{await api.put('/api/risk/categories/'+category.id+'/notes',{notes:val});setEditing(false);refresh();}
+    finally{setBusy(false);}
+  }
+  return h('div',null,
+    h('div',{style:{display:'flex',alignItems:'baseline',gap:8}},
+      h('div',{className:'sec',style:{marginBottom:0}},'Notes'),
+      roles.riskMember&&!editing&&h('button',{className:'linkbtn',onClick:()=>setEditing(true)},'edit')),
+    !editing&&h('div',{className:'small muted',style:{marginTop:6,whiteSpace:'pre-wrap'}},category.notes||'—'),
+    editing&&h('div',{style:{marginTop:6}},
+      h('textarea',{className:'form-textarea',value:val,onChange:e=>setVal(e.target.value),placeholder:'General context on this risk — framework references, watch-items, anything longer-lived than an assessment.'}),
+      h('div',{style:{display:'flex',gap:6}},
+        h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:save},busy?'Saving…':'Save'),
+        h('button',{className:'btn btn-outline btn-sm',onClick:()=>{setVal(category.notes||'');setEditing(false);}},'Cancel')))
   );
 }
 
@@ -650,9 +672,9 @@ function ManageTab({overview,members,onReload}){
 
 function TaxonomyEditor({overview,onReload}){
   const [adding,setAdding]=useState(false);
-  const [nc,setNc]=useState({domainId:overview.domains[0].id,title:'',description:'',accountable:'',dalioNote:''});
+  const [nc,setNc]=useState({domainId:overview.domains[0].id,title:'',description:'',accountable:'',notes:''});
   const [editId,setEditId]=useState(null);
-  async function addCat(){if(!nc.title||!nc.description)return;await api.post('/api/risk/categories',nc);setAdding(false);setNc({domainId:overview.domains[0].id,title:'',description:'',accountable:'',dalioNote:''});onReload();}
+  async function addCat(){if(!nc.title||!nc.description)return;await api.post('/api/risk/categories',nc);setAdding(false);setNc({domainId:overview.domains[0].id,title:'',description:'',accountable:'',notes:''});onReload();}
   async function renameDomain(d){const name=prompt('Rename domain '+d.id,d.name);if(name&&name!==d.name){await api.put('/api/risk/domains/'+d.id,{name});onReload();}}
   async function retire(c){if(!confirm('Retire "'+c.title+'"? History is kept; it leaves the active register.'))return;await api.del('/api/risk/categories/'+c.id);onReload();}
   return h('div',null,
@@ -677,7 +699,7 @@ function TaxonomyEditor({overview,onReload}){
   );
 }
 function CatEdit({cat,domains,onSaved}){
-  const [f,setF]=useState({domainId:cat.domainId,number:cat.number,title:cat.title,description:cat.description,accountable:cat.accountable,dalioNote:cat.dalioNote,isActive:cat.isActive});
+  const [f,setF]=useState({domainId:cat.domainId,number:cat.number,title:cat.title,description:cat.description,accountable:cat.accountable,notes:cat.notes,isActive:cat.isActive});
   async function save(){await api.put('/api/risk/categories/'+cat.id,f);onSaved();}
   return h('div',{className:'card',style:{background:'var(--bg)',marginTop:6}},
     h('div',{className:'grid2'},
@@ -686,7 +708,7 @@ function CatEdit({cat,domains,onSaved}){
     h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
     h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
     h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
-    h('textarea',{className:'form-textarea',placeholder:'Dalio note',value:f.dalioNote,onChange:e=>setF({...f,dalioNote:e.target.value})}),
+    h('textarea',{className:'form-textarea',placeholder:'Notes — general context on this risk',value:f.notes,onChange:e=>setF({...f,notes:e.target.value})}),
     h('label',{className:'small'},h('input',{type:'checkbox',checked:f.isActive,onChange:e=>setF({...f,isActive:e.target.checked})}),' Active in register'),
     h('div',{style:{marginTop:8}},h('button',{className:'btn btn-teal btn-sm',onClick:save},'Save')));
 }

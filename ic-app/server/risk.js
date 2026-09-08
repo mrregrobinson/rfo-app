@@ -177,7 +177,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       .map((d) => ({ id: d.id, name: d.name, sortOrder: d.sort_order }));
     const cats = db.prepare('SELECT * FROM risk_categories ORDER BY sort_order').all().map((c) => ({
       id: c.id, domainId: c.domain_id, number: c.number, title: c.title, description: c.description,
-      accountable: c.accountable, dalioNote: c.dalio_note, sortOrder: c.sort_order, isActive: !!c.is_active,
+      accountable: c.accountable, notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
       latestAssessment: assessmentRowToJson(latestAssessment(c.id)),
       actionCounts: actionCounts(c.id),
       events12mo: events12mo(c.id),
@@ -198,7 +198,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     res.json({
       category: {
         id: c.id, domainId: c.domain_id, number: c.number, title: c.title, description: c.description,
-        accountable: c.accountable, dalioNote: c.dalio_note, sortOrder: c.sort_order, isActive: !!c.is_active,
+        accountable: c.accountable, notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
       },
       assessments, mitigations, actions, events, lastLookup,
     });
@@ -227,9 +227,9 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     const maxNum = db.prepare('SELECT MAX(number) AS m FROM risk_categories').get().m || 0;
     const maxSort = db.prepare('SELECT MAX(sort_order) AS m FROM risk_categories').get().m || 0;
     db.prepare(
-      `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, dalio_note, sort_order, is_active)
+      `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, notes, sort_order, is_active)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
-    ).run(id, b.domainId, Number(b.number) || maxNum + 1, b.title.trim(), b.description.trim(), (b.accountable || '').trim(), (b.dalioNote || '').trim(), maxSort + 1);
+    ).run(id, b.domainId, Number(b.number) || maxNum + 1, b.title.trim(), b.description.trim(), (b.accountable || '').trim(), (b.notes || '').trim(), maxSort + 1);
     logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_category', entityId: id, details: { created: b.title } });
     res.status(201).json({ id });
   });
@@ -244,7 +244,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     }
     db.prepare(
       `UPDATE risk_categories SET domain_id=@domainId, number=@number, title=@title, description=@description,
-         accountable=@accountable, dalio_note=@dalioNote, sort_order=@sortOrder, is_active=@isActive WHERE id=@id`
+         accountable=@accountable, notes=@notes, sort_order=@sortOrder, is_active=@isActive WHERE id=@id`
     ).run({
       id: c.id,
       domainId: b.domainId || c.domain_id,
@@ -252,12 +252,24 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       title: b.title != null ? String(b.title).trim() : c.title,
       description: b.description != null ? String(b.description).trim() : c.description,
       accountable: b.accountable != null ? String(b.accountable).trim() : c.accountable,
-      dalioNote: b.dalioNote != null ? String(b.dalioNote).trim() : c.dalio_note,
+      notes: b.notes != null ? String(b.notes).trim() : c.notes,
       sortOrder: b.sortOrder != null ? Number(b.sortOrder) : c.sort_order,
       isActive: b.isActive != null ? (b.isActive ? 1 : 0) : c.is_active,
     });
     logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_category', entityId: c.id });
     res.json({ ok: true });
+  });
+
+  // Members can edit a risk's general notes without touching the rest of the taxonomy
+  // (which stays admin-only via PUT /api/risk/categories/:id).
+  app.put('/api/risk/categories/:id/notes', requireAuth, (req, res) => {
+    if (!requireMember(req, res)) return;
+    const c = db.prepare('SELECT id FROM risk_categories WHERE id = ?').get(req.params.id);
+    if (!c) return res.status(404).json({ error: 'Risk category not found' });
+    const notes = String(req.body?.notes ?? '').trim();
+    db.prepare('UPDATE risk_categories SET notes = ? WHERE id = ?').run(notes, c.id);
+    logAudit({ userId: req.session.userId, action: 'risk.notes_updated', entityType: 'risk_category', entityId: c.id });
+    res.json({ ok: true, notes });
   });
 
   app.delete('/api/risk/categories/:id', requireAuth, (req, res) => {

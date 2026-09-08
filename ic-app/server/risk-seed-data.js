@@ -3,7 +3,11 @@
 // Transcribed from the two source documents in the repo root:
 //   - RFO_Risk_Register_v5.xlsx        (Risk Register + IPS + Legend sheets)
 //   - RFO_Risk_Register_Notes_v5.docx  (Appendix C — per-risk rationale, mitigations,
-//                                       open action items, Dalio notes)
+//                                       open action items, framework/context notes)
+//
+// Each category's `note` is general standing commentary on the risk. In v5 this was the
+// "Dalio Framework Note"; it is kept verbatim but the field is no longer framework-bound
+// and can hold any longer-lived context or watch-item for the risk.
 //
 // Where the spreadsheet and the notes disagree, the NOTES win (they are the longer-form,
 // later-reviewed version). Known reconciliations, flagged inline with SOURCE DISCREPANCY:
@@ -60,7 +64,7 @@ const CATEGORIES = [
     title: 'Investment & Capital Risk',
     description: 'Major reduction in investable capital from market dislocation, manager failure, concentration, or fraud',
     accountable: 'Reg Robinson / Prime Quadrant',
-    dalioNote: 'Dalio identifies late-cycle debt dynamics as the defining macro risk today. The fixed income overweight is the single area most exposed to his warning. The Monetary Hedge allocation directly addresses his 5–15% alternative money prescription — partially through watches today, building toward gold and graded cards over time.',
+    note: 'Dalio identifies late-cycle debt dynamics as the defining macro risk today. The fixed income overweight is the single area most exposed to his warning. The Monetary Hedge allocation directly addresses his 5–15% alternative money prescription — partially through watches today, building toward gold and graded cards over time.',
     inherent: [3, 4], residual: [2, 3],
     status: 'Active — Well Managed', nextReview: 'Q2 2027',
     mitigations: [
@@ -82,7 +86,7 @@ const CATEGORIES = [
     title: 'Foreign Exchange Risk',
     description: 'Significant CAD appreciation eroding USD-denominated portfolio value (~50%) and raising CAD cost of USD capital calls (~C$4.8M unfunded)',
     accountable: 'PQ / Reg Robinson',
-    dalioNote: "Dalio explicitly warns of USD debasement. The watch collection's CHF denomination is a meaningful, if modest, response to this risk within the Monetary Hedge allocation.",
+    note: "Dalio explicitly warns of USD debasement. The watch collection's CHF denomination is a meaningful, if modest, response to this risk within the Monetary Hedge allocation.",
     inherent: [2, 2], residual: [2, 2],
     status: 'Active — Partially Mitigated', nextReview: 'Q2 2027',
     mitigations: [
@@ -102,7 +106,7 @@ const CATEGORIES = [
     title: 'Legal & Regulatory Risk',
     description: 'Adverse change to Canadian tax legislation or foreign property reporting failure causing unexpected liability',
     accountable: 'Reg Robinson / EY',
-    dalioNote: 'Dalio identifies political polarization as making fiscal discipline unavailable — which predictably leads to higher taxes on wealth. The legislative watch process is a direct mitigation.',
+    note: 'Dalio identifies political polarization as making fiscal discipline unavailable — which predictably leads to higher taxes on wealth. The legislative watch process is a direct mitigation.',
     inherent: [3, 3], residual: [2, 2],
     status: 'Active — Partially Mitigated', nextReview: 'Q4 2026',
     mitigations: [
@@ -122,7 +126,7 @@ const CATEGORIES = [
     title: 'Family Relationships Risk',
     description: 'Breakdown or sustained strain in family relationships — across the family, within any of the three couples, or between family units',
     accountable: 'Reg Robinson / Sheri-Dawn Robinson',
-    dalioNote: "Not directly addressed in Dalio's framework. The family office's own philosophy is the relevant reference: relationships take priority over financial outcomes.",
+    note: "Not directly addressed in Dalio's framework. The family office's own philosophy is the relevant reference: relationships take priority over financial outcomes.",
     inherent: [2, 4], residual: [1, 3],
     status: 'Active — Well Managed', nextReview: 'Q3 2026',
     mitigations: [
@@ -145,7 +149,7 @@ const CATEGORIES = [
     title: 'Next Generation Readiness Risk',
     description: 'Capacity and capability to responsibly steward wealth or lead the family office',
     accountable: 'Reg Robinson / Ross Robinson',
-    dalioNote: "Consistent with Dalio's counsel that individuals should plan for their own limitations and prepare successors proactively.",
+    note: "Consistent with Dalio's counsel that individuals should plan for their own limitations and prepare successors proactively.",
     inherent: [2, 4], residual: [2, 3],
     status: 'Active — Partially Mitigated', nextReview: 'Q3 2026',
     mitigations: [
@@ -166,7 +170,7 @@ const CATEGORIES = [
     title: 'Personal Health Risk',
     description: 'Acute or chronic health event — physical or mental — affecting any of the six family members',
     accountable: 'All family members / Reg & Sheri-Dawn',
-    dalioNote: "Not directly addressed in Dalio's framework. The family office's own Wellness priority is the relevant reference.",
+    note: "Not directly addressed in Dalio's framework. The family office's own Wellness priority is the relevant reference.",
     inherent: [3, 3], residual: [2, 2],
     status: 'Active — Well Managed', nextReview: 'Q3 2026',
     mitigations: [
@@ -188,7 +192,7 @@ const CATEGORIES = [
     title: 'Personal Safety Risk',
     description: 'Safety incident — personal security, travel, home, or emergency — causing harm, trauma, or financial loss to any family member',
     accountable: 'Ross Robinson / All family members',
-    dalioNote: "Dalio's geopolitical cycle framework — capital wars, social polarization, rising wealth inequality — increases targeted approaches toward high-net-worth families.",
+    note: "Dalio's geopolitical cycle framework — capital wars, social polarization, rising wealth inequality — increases targeted approaches toward high-net-worth families.",
     inherent: [2, 3], residual: [2, 2],
     status: 'Active — Partially Mitigated', nextReview: 'Q3 2026',
     mitigations: [
@@ -208,7 +212,7 @@ const CATEGORIES = [
     title: 'Cognitive & Capacity Decline Risk',
     description: "Gradual reduction in Reg's cognitive or decision-making capacity without a clear trigger for transition",
     accountable: 'Reg Robinson / MLTA / Ross Robinson',
-    dalioNote: "Consistent with Dalio's counsel that individuals should plan for their own limitations and prepare successors proactively.",
+    note: "Consistent with Dalio's counsel that individuals should plan for their own limitations and prepare successors proactively.",
     inherent: [2, 4], residual: [1, 3],
     status: 'Active — Partially Mitigated', nextReview: 'Q3 2026',
     mitigations: [
@@ -228,7 +232,7 @@ const CATEGORIES = [
     title: 'Death / Early Death Risk',
     description: 'Death of any family member — Reg, Sheri-Dawn, Ross, Beisan, Lucas, or Kim — causing estate complexity, governance gaps, equalization implications, and profound family disruption',
     accountable: 'Reg Robinson / MLTA',
-    dalioNote: 'Dalio emphasises estate planning as a financial risk management matter. The incompleteness of life insurance and trustee arrangements represents a genuine gap.',
+    note: 'Dalio emphasises estate planning as a financial risk management matter. The incompleteness of life insurance and trustee arrangements represents a genuine gap.',
     inherent: [2, 4], residual: [1, 3],
     status: 'INCOMPLETE — Action Required', nextReview: 'Q3 2026',
     mitigations: [
@@ -251,7 +255,7 @@ const CATEGORIES = [
     title: 'External Events Risk',
     description: 'Major external disruption — economic recession, pandemic, geopolitical shock, natural disaster — impairing family financial security, physical safety, or access to essential services',
     accountable: 'Reg Robinson / Prime Quadrant',
-    dalioNote: "Dalio's Five Forces framework identifies the current moment as a convergence of late debt cycle, peak geopolitical competition, AI disruption, domestic polarization, and climate events. The Monetary Hedge allocation is the family's most direct structural response to the most acute of these risks.",
+    note: "Dalio's Five Forces framework identifies the current moment as a convergence of late debt cycle, peak geopolitical competition, AI disruption, domestic polarization, and climate events. The Monetary Hedge allocation is the family's most direct structural response to the most acute of these risks.",
     inherent: [2, 3], residual: [2, 2],
     status: 'Active — Well Managed', nextReview: 'Q2 2027',
     mitigations: [
@@ -274,7 +278,7 @@ const CATEGORIES = [
     title: 'Cyber Security Risk',
     description: 'Phishing, wire fraud, ransomware, or data breach targeting family office accounts or family members',
     accountable: 'Ross Robinson',
-    dalioNote: 'State-sponsored cyber activity targeting high-net-worth individuals is an active and escalating threat.',
+    note: 'State-sponsored cyber activity targeting high-net-worth individuals is an active and escalating threat.',
     inherent: [3, 3], residual: [2, 3],
     // SOURCE DISCREPANCY: both sources say "IN PROGRESS — Q3 2026"; normalised to the enum value.
     status: 'In Progress', nextReview: 'Q4 2026',
@@ -295,7 +299,7 @@ const CATEGORIES = [
     title: 'Key Advisor Dependency Risk',
     description: 'Disruption to a primary external advisor (Prime Quadrant, EY, MLTA, RBC) through acquisition, key personnel departure, or service model change',
     accountable: 'Reg Robinson / Ross Robinson',
-    dalioNote: "Dalio's emphasis on diversification applies to advisors as well as investments.",
+    note: "Dalio's emphasis on diversification applies to advisors as well as investments.",
     inherent: [2, 3], residual: [2, 2],
     status: 'Active — Partially Mitigated', nextReview: 'Q2 2027',
     mitigations: [
@@ -314,7 +318,7 @@ const CATEGORIES = [
     title: 'Reputational & Privacy Risk',
     description: 'Unwanted public disclosure of family wealth, social media conduct, or a philanthropy/investment association creating reputational damage',
     accountable: 'Sheri-Dawn Robinson / Reg Robinson',
-    dalioNote: "Dalio's observation that institutional trust erodes during political polarization cycles suggests high-net-worth families face greater scrutiny.",
+    note: "Dalio's observation that institutional trust erodes during political polarization cycles suggests high-net-worth families face greater scrutiny.",
     inherent: [2, 3], residual: [1, 3],
     status: 'Active — Partially Mitigated', nextReview: 'Q2 2027',
     mitigations: [
@@ -332,7 +336,7 @@ const CATEGORIES = [
     title: 'Monetary Hedge & Direct Investment Risk',
     description: 'Fraud, authentication failure, overpayment, inadequate insurance, conflict of interest, or poor exit planning across the Monetary Hedge portfolio (watches, gold, PSA-graded cards) and direct investments',
     accountable: 'Ross Robinson (Monetary Hedge lead) / Reg Robinson (Watch Collection owner)',
-    dalioNote: "The Monetary Hedge allocation is the most direct expression of Dalio's alternative money prescription in the portfolio. His counsel to hold 5–15% in gold or alternative money is being addressed through a diversified approach — watches as the primary holding, gold as the most liquid and standardised expression, and PSA-graded cards as a North American collector-demand asset. At 3% target growing toward 5% maximum, the category partially closes the gap Dalio's scorecard has identified while maintaining the governance discipline appropriate to tangible asset investing.",
+    note: "The Monetary Hedge allocation is the most direct expression of Dalio's alternative money prescription in the portfolio. His counsel to hold 5–15% in gold or alternative money is being addressed through a diversified approach — watches as the primary holding, gold as the most liquid and standardised expression, and PSA-graded cards as a North American collector-demand asset. At 3% target growing toward 5% maximum, the category partially closes the gap Dalio's scorecard has identified while maintaining the governance discipline appropriate to tangible asset investing.",
     inherent: [2, 2], residual: [2, 2],
     status: 'Active — Partially Mitigated', nextReview: 'Q2 2027',
     mitigations: [
