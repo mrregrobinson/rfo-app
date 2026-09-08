@@ -404,6 +404,12 @@ function FiltersBar({categories,filters,setFilters,compareMode,setCompareMode}){
     set.has(id)?set.delete(id):set.add(id);
     setFilters({...filters,categoryIds:[...set]});
   }
+  function selectAllCategories(){
+    setFilters({...filters,categoryIds:categories.map(c=>c.id)});
+  }
+  function clearCategories(){
+    setFilters({...filters,categoryIds:[]});
+  }
   return h('div',{className:'card no-print'},
     h('div',{className:'filters'},
       h(DateRange,{label:'Period A',from:filters.dateFrom,to:filters.dateTo,onFrom:v=>setFilters({...filters,dateFrom:v}),onTo:v=>setFilters({...filters,dateTo:v}),onRange:(from,to)=>setFilters({...filters,dateFrom:from,dateTo:to})}),
@@ -429,7 +435,13 @@ function FiltersBar({categories,filters,setFilters,compareMode,setCompareMode}){
       )
     ),
     h('div',{style:{marginTop:10}},
-      h('label',{className:'form-label'},'Categories (none selected = all)'),
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('label',{className:'form-label'},'Categories (none selected = all)'),
+        h('div',{style:{display:'flex',gap:6}},
+          h('button',{className:'btn btn-outline btn-sm',onClick:selectAllCategories,title:'Select every category, then click one or two to deselect them'},'Select all'),
+          filters.categoryIds.length>0&&h('button',{className:'btn btn-outline btn-sm',onClick:clearCategories},'Clear')
+        )
+      ),
       h('div',{className:'cat-list'},categories.map(c=>
         h('div',{key:c.id,className:'cat-chip'+(filters.categoryIds.includes(c.id)?' active':''),onClick:()=>toggleCategory(c.id)},c.name)
       ))
