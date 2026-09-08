@@ -7,7 +7,10 @@
 // events, actions, taxonomy) is opt-in. An FO admin is always also a Risk admin.
 //
 // Seed content (domains, 14 categories, scale, mitigations, actions, baseline
-// assessments) lands in migration 028 from server/risk-seed-data.js.
+// assessments) is applied by server/seed.js's ensureSeeded() from
+// server/risk-seed-data.js — NOT here. Migrations run before any user exists, and the
+// baseline assessment needs a real user to attribute to; see seedRiskRegister()'s
+// header comment.
 module.exports = function (db) {
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!cols.includes('risk_role')) {

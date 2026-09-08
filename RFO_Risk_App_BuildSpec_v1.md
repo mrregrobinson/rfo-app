@@ -111,11 +111,15 @@ migrations in `server/migrations/` following the existing
 `module.exports = function (db) { db.exec(...) }` pattern. Suggested split:
 
 - `027_risk_schema.js` — the `users.risk_role` column + backfill, plus all `risk_*` tables.
-- `028_risk_seed_v5.js` — seed the domains, categories, scoring scale, and the current
-  (v5) assessment + mitigations + actions for all 14 categories. Keep the seed in a
-  `server/risk-seed-data.js` module (mirrors `server/task-import-data.js`), and guard it
-  the same way `import-tasks.js` is guarded — no-op if `risk_categories` already has rows —
-  so it is safe on every boot.
+- **Seed** the domains, categories, scoring scale, and the current (v5) assessment +
+  mitigations + actions for all 14 categories from a `server/risk-seed-data.js` module
+  (mirrors `server/task-import-data.js`) — but run it from `server/seed.js`'s
+  `ensureSeeded()`, **not** a migration. Migrations run at `db.js` require time, before
+  `ensureSeeded()` creates any user, and the baseline assessment needs a real
+  `assessed_by`; a migration-time seed on a fresh install would find no user and skip
+  permanently. Same reasoning (and placement) as the Household Expenditures ledger seed.
+  Guard it the way the other `ensureSeeded()` blocks are — no-op if `risk_categories`
+  already has rows — so it is safe on every boot.
 
 ### 5.1 Reference data — domains, categories, scoring scale
 
@@ -283,8 +287,8 @@ Log token usage via `logApiUsage` exactly as `server/claude.js` callers already 
 
 ### 5.7 Seed data (v5) and reconciliation notes
 
-Seed `028_risk_seed_v5.js` from the two source files, transcribed into
-`server/risk-seed-data.js`. **The `RFO_Risk_Register_Notes_v5.docx` domain structure is
+Seed from the two source files, transcribed into `server/risk-seed-data.js` and applied
+by `ensureSeeded()`. **The `RFO_Risk_Register_Notes_v5.docx` domain structure is
 authoritative** where the two disagree:
 
 - **6 domains, 14 categories.** Domains: `A` Financial, `B` Family Relationships,
@@ -563,10 +567,10 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
   for its columns); backfill Reg/Sheri-Dawn/Ross → `admin`, Lucas → `member`; create
   `risk_domains`, `risk_categories`, `risk_scale`, `risk_assessments`,
   `risk_mitigations`, `risk_actions`, `risk_events`, `risk_probability_lookups` with
-  `CREATE TABLE IF NOT EXISTS`.
-- **`028_risk_seed_v5.js`** — require `../risk-seed-data.js`; no-op if
-  `SELECT COUNT(*) FROM risk_categories` > 0; else insert domains, categories, scale,
-  mitigations, actions, and one baseline assessment per category (§5.7).
+  `CREATE TABLE IF NOT EXISTS`. **Schema only — no seed here** (see §5, §10.2).
+- Later small migrations as issues surface: `029` drops the `risk_actions → tasks(id)`
+  FK so deleting a promoted task can leave the link dangling; `030` renames
+  `risk_categories.dalio_note → notes`.
 
 ### 10.2 Server changes
 
@@ -575,6 +579,10 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
   action items with priority/status, baseline P/I/status/next-review), plus the IPS
   context constant. Transcription target for the two source docs; keep
   `-- SOURCE DISCREPANCY:` comments where the sheet and notes differ.
+- **`server/seed.js`** — add a `seedRiskRegister()` block to `ensureSeeded()` (after the
+  user and Household Expenditures seeds), idempotent on `risk_categories` row count,
+  consuming `risk-seed-data.js`. This is where the register is seeded — not a migration
+  (see §5).
 - **`server/risk.js`** (new) — `registerRiskRoutes(app, { db, logAudit })`. Routes, all
   `requireAuth`, role-checked via a local `myRoles(userId)` helper reading
   `is_fo_admin` + `risk_role` (copy `server/tasks.js`'s `myRoles`):
@@ -649,9 +657,10 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
 1. **Schema + roles:** `027_risk_schema.js` (tables + `risk_role` + backfill) and the
    `server/index.js` role wiring (`app-role` route, `userPublic`). Confirm the existing
    `node --test` suite still passes.
-2. **Seed:** `server/risk-seed-data.js` + `028_risk_seed_v5.js`. Transcribe both source
-   docs; eyeball the seeded register against the reconciled table in §5.7 and against the
-   docx. This is the step to get right — everything else renders it.
+2. **Seed:** `server/risk-seed-data.js` + a `seedRiskRegister()` block in
+   `server/seed.js`'s `ensureSeeded()`. Transcribe both source docs; eyeball the seeded
+   register against the reconciled table in §5.7 and against the docx. This is the step to
+   get right — everything else renders it.
 3. **Register + detail read path:** `GET /api/risk/overview`, `GET
    /api/risk/categories/:id`, and the Register tab + read-only detail drawer. Verify it
    reproduces the v5 register.

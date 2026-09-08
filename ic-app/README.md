@@ -163,9 +163,11 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   meeting's file attachments; the bytes live on disk under
   `data/meeting-attachments/<meetingId>/`, not in SQLite (see `server/attachments.js`).
 - `risk_domains` / `risk_categories` / `risk_scale` — the Risk Register taxonomy (6
-  domains, 14 categories, the 1–4 probability/impact scale labels), seeded by migration
-  028 from `server/risk-seed-data.js`. Categories soft-retire (`is_active = 0`) so their
-  history survives.
+  domains, 14 categories, the 1–4 probability/impact scale labels). Tables are created by
+  migration 027; the v5 content is seeded from `server/risk-seed-data.js` by
+  `server/seed.js`'s `ensureSeeded()` (not a migration — the baseline assessment needs a
+  user, and migrations run before users exist). Categories soft-retire (`is_active = 0`)
+  so their history survives.
 - `risk_assessments` — immutable point-in-time scoring rows (inherent + residual P/I,
   status, rationale, next-review), chained by `supersedes_id`. The latest row per
   category is the current state; the chain powers the profile trend and the
