@@ -200,7 +200,8 @@ function ensureSeeded() {
   seedRiskRegister();
 }
 
-// Enterprise Risk Register v5 (RFO_Risk_App_BuildSpec_v1 §5.7). Seeded here — after the
+// Enterprise Risk Register — initial content (RFO_Risk_App_BuildSpec_v1 §5.7). Seeded
+// here — after the
 // users above exist — rather than in a migration: migrations run at db.js require time,
 // before ensureSeeded() has created anyone, so a migration-time seed on a fresh install
 // would find no user to attribute the baseline assessment to and skip permanently. Same
@@ -239,7 +240,7 @@ function seedRiskRegister() {
   );
   const insAssess = db.prepare(
     `INSERT INTO risk_assessments (id, category_id, assessed_at, assessed_by, inherent_prob, inherent_impact, residual_prob, residual_impact, status, rationale, next_review, external_probability_id, supersedes_id, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, NULL, NULL, 'Seeded from Enterprise Risk Register v5 (effective June 2026).')`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, NULL, NULL, 'Initial assessment from the Enterprise Risk Register (effective June 2026).')`
   );
 
   riskSeed.CATEGORIES.forEach((c, ci) => {
@@ -259,7 +260,7 @@ function seedRiskRegister() {
     );
   });
 
-  console.log(`Seeded Enterprise Risk Register v5: ${riskSeed.DOMAINS.length} domains, ${riskSeed.CATEGORIES.length} risk categories, scale, mitigations, actions and baseline assessments.`);
+  console.log(`Seeded Enterprise Risk Register: ${riskSeed.DOMAINS.length} domains, ${riskSeed.CATEGORIES.length} risk categories, scale, mitigations, actions and baseline assessments.`);
 }
 
 module.exports = { ensureSeeded, issueSetupCode, IC_MEMBERS };

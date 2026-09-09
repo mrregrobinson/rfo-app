@@ -210,6 +210,28 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
 
   // ---- taxonomy (admin) ----
 
+  app.post('/api/risk/domains', requireAuth, (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const name = (req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    // Domain ids are the single letters used all through the UI (register groups,
+    // heatmap, filters). Take the next unused uppercase letter after the highest
+    // existing one; explicit id in the body wins if it's a free single A–Z letter.
+    const existing = new Set(db.prepare('SELECT id FROM risk_domains').all().map((d) => d.id));
+    let id = String(req.body?.id || '').trim().toUpperCase();
+    if (!/^[A-Z]$/.test(id) || existing.has(id)) {
+      id = null;
+      for (let code = 65; code <= 90; code++) {
+        if (!existing.has(String.fromCharCode(code))) { id = String.fromCharCode(code); break; }
+      }
+      if (!id) return res.status(400).json({ error: 'No free single-letter domain id left (A–Z all used).' });
+    }
+    const maxSort = db.prepare('SELECT MAX(sort_order) AS m FROM risk_domains').get().m || 0;
+    db.prepare('INSERT INTO risk_domains (id, name, sort_order) VALUES (?, ?, ?)').run(id, name, maxSort + 1);
+    logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_domain', entityId: id, details: { created: name } });
+    res.status(201).json({ id, name, sortOrder: maxSort + 1 });
+  });
+
   app.put('/api/risk/domains/:id', requireAuth, (req, res) => {
     if (!requireAdmin(req, res)) return;
     const d = db.prepare('SELECT * FROM risk_domains WHERE id = ?').get(req.params.id);

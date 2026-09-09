@@ -31,17 +31,36 @@ async function heatmapPng(rows, useInherent) {
     const p = useInherent ? r.assessment.inherentProb : r.assessment.residualProb;
     const i = useInherent ? r.assessment.inherentImpact : r.assessment.residualImpact;
     const key = `${p},${i}`;
-    const n = (seen[key] = (seen[key] || 0) + 1);
-    const off = (n - 1) * 0.12;
-    data.push({ x: p + off, y: i + off, label: `#${r.category.number}`, band: bandOf(scoreOf(p, i)) });
+    const c = (seen[key] = (seen[key] || 0) + 1) - 1;
+    const ang = c * 2.399, rad = 0.14 * Math.sqrt(c); // phyllotaxis spread around the cell
+    data.push({ x: p + rad * Math.cos(ang), y: i + rad * Math.sin(ang), num: r.category.number, band: bandOf(scoreOf(p, i)) });
   }
+  // Draw the risk number on each bubble so points are identifiable in print.
+  const numberPlugin = {
+    id: 'bubbleNumbers',
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      const meta = chart.getDatasetMeta(0);
+      meta.data.forEach((pt, idx) => {
+        const num = data[idx] && data[idx].num;
+        if (num == null) return;
+        ctx.save();
+        ctx.font = 'bold 9px Helvetica, Arial';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(num), pt.x, pt.y);
+        ctx.restore();
+      });
+    },
+  };
   return chartCanvas.renderToBuffer({
     type: 'scatter',
     data: {
       datasets: [{
         label: useInherent ? 'Inherent' : 'Residual',
         data,
-        pointRadius: 9,
+        pointRadius: 10,
         pointBackgroundColor: data.map((d) => BAND_COLOR[d.band]),
         pointBorderColor: '#fff',
         pointBorderWidth: 1,
@@ -50,13 +69,14 @@ async function heatmapPng(rows, useInherent) {
     options: {
       plugins: {
         legend: { display: false },
-        title: { display: true, text: `${useInherent ? 'Inherent' : 'Residual'} risk heatmap (Probability × Impact)` },
+        title: { display: true, text: `${useInherent ? 'Inherent' : 'Residual'} risk heatmap — number on each bubble is the risk #` },
       },
       scales: {
         x: { min: 0.5, max: 4.5, ticks: { stepSize: 1, callback: (v) => (Number.isInteger(v) && v >= 1 && v <= 4 ? v : '') }, title: { display: true, text: 'Probability' } },
         y: { min: 0.5, max: 4.5, ticks: { stepSize: 1, callback: (v) => (Number.isInteger(v) && v >= 1 && v <= 4 ? v : '') }, title: { display: true, text: 'Impact' } },
       },
     },
+    plugins: [numberPlugin],
   });
 }
 

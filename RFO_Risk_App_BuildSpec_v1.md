@@ -446,12 +446,15 @@ section → a collapsible **Assessment history** section. The `.modal` gets
 
 ### 6.4 Profile tab — overall risk profile (all roles)
 
-- **4×4 heatmap** (Probability 1–4 on one axis, Impact 1–4 on the other), each cell tinted
-  Low/Med/High by `P×I`. Every category is a dot in its cell at the current
-  **residual** score (toggle to inherent). Dots in the same cell fan out; hover shows the
-  title; click opens the detail drawer. Build with Chart.js `scatter` (integer axes) or a
-  hand-drawn CSS grid — either is fine; the Expenditure app's `ChartCanvas` wrapper is
-  the reference if using Chart.js.
+- **4×4 heatmap** (Probability 1–4 on one axis, Impact 1–4 on the other). Every category
+  is a bubble at its current **residual** score (toggle to inherent), coloured by band.
+  Co-located risks spread around the cell centre (phyllotaxis offset) so each bubble is
+  separately visible; an inline Chart.js plugin (`afterDatasetsDraw`) draws the **risk
+  number** on each bubble; hover shows the title; click opens the drawer. Below the chart,
+  a **key** lists every `#N — Title` with a band-colour dot, each entry clickable to open
+  that risk. The same number-on-bubble treatment is applied to the PDF report's heatmap.
+  Build with Chart.js `scatter` (integer axes); the Expenditure app's `ChartCanvas`
+  wrapper is the reference.
 - **Profile summary cards:**
   - counts of categories in Low / Medium / High residual bands (and the same for
     inherent, for contrast);
@@ -518,7 +521,9 @@ Only the genuinely global, non-per-risk configuration lives here — everything 
 individual risk (details, retire/restore, scoring, mitigations, actions, notes) is
 managed from that risk's drawer (§6.2), and "+ Add risk" lives on the Register (§6.1).
 
-- **Domains:** rename a domain (`PUT /api/risk/domains/:id`). That's it — no per-category
+- **Domains:** add a domain (`POST /api/risk/domains` — id is the next free single letter
+  A–Z, auto-assigned; a new empty domain shows on the Register once it has a risk) or
+  rename one (`PUT /api/risk/domains/:id`). No per-category
   list.
 - **Scoring-scale editor:** edit the `risk_scale` labels/details (e.g. re-word an impact
   band). The `score = P×I` and band cutoffs (5 / 8) are **not** user-editable — they are
@@ -641,7 +646,8 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
     payload; the last is for the row's inline "Key mitigations in place" disclosure).
   - `GET /api/risk/categories/:id` — full detail: all assessments, mitigations, actions
     (with linked-task join), events.
-  - `POST/PUT/DELETE /api/risk/categories` and `…/domains` and `…/scale` — admin only
+  - `POST/PUT/DELETE /api/risk/categories`, `POST /api/risk/domains` (add) +
+    `PUT /api/risk/domains/:id` (rename), and `PUT /api/risk/scale` — admin only
     (Manage tab).
   - `POST /api/risk/categories/:id/assessments` — member/admin; writes a new assessment,
     sets `supersedes_id`.

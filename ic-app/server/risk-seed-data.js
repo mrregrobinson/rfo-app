@@ -1,12 +1,13 @@
-// Reconciled v5 seed content for the Risk Management module.
+// Reconciled initial seed content for the Risk Management module.
 //
 // Transcribed from the two source documents in the repo root:
 //   - RFO_Risk_Register_v5.xlsx        (Risk Register + IPS + Legend sheets)
 //   - RFO_Risk_Register_Notes_v5.docx  (Appendix C — per-risk rationale, mitigations,
 //                                       open action items, framework/context notes)
 //
-// Each category's `note` is general standing commentary on the risk. In v5 this was the
-// "Dalio Framework Note"; it is kept verbatim but the field is no longer framework-bound
+// Each category's `note` is general standing commentary on the risk. In the source
+// register this was the "Dalio Framework Note"; it is kept verbatim but the field is no
+// longer framework-bound
 // and can hold any longer-lived context or watch-item for the risk.
 //
 // Where the spreadsheet and the notes disagree, the NOTES win (they are the longer-form,
@@ -44,7 +45,7 @@ const SCALE = [
 // Static reference shown on the page as "IPS context" (build spec §5.7) — background for
 // Risks 1, 2, 10, 14, not register data.
 const IPS_CONTEXT = {
-  note: 'IPS v5 — 8 asset classes. Monetary Hedge (watches · gold · PSA-graded cards) added as the 8th class, target 3% / max 5%, funded from the cash overweight. No single Monetary Hedge sub-category to exceed 3% of the total portfolio without IC approval.',
+  note: 'IPS — 8 asset classes. Monetary Hedge (watches · gold · PSA-graded cards) added as the 8th class, target 3% / max 5%, funded from the cash overweight. No single Monetary Hedge sub-category to exceed 3% of the total portfolio without IC approval.',
   classes: [
     { name: 'Cash & Equivalents', target: '0%', min: '0%', max: '54%' },
     { name: 'Fixed Income', target: '3%', min: '0%', max: '13%' },

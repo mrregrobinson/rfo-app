@@ -114,8 +114,29 @@ function scoreChip(prob,impact,label){
   return h('span',{className:'chip '+bandClass(b),title:label||''},`${prob}×${impact}=${sc} ${b}`);
 }
 
+// Draws the risk's number centred on each heatmap bubble so a point is identifiable
+// without hovering. Points must carry `_n` (the risk number) in their data objects.
+const bubbleNumberPlugin={
+  id:'bubbleNumbers',
+  afterDatasetsDraw(chart){
+    const ctx=chart.ctx;
+    chart.data.datasets.forEach((ds,di)=>{
+      const meta=chart.getDatasetMeta(di);
+      meta.data.forEach((pt,i)=>{
+        const raw=ds.data[i];
+        if(!raw||raw._n==null)return;
+        ctx.save();
+        ctx.font='bold 9px -apple-system,BlinkMacSystemFont,Arial';
+        ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(String(raw._n),pt.x,pt.y);
+        ctx.restore();
+      });
+    });
+  }
+};
+
 // ---------- Chart wrapper (from expenditure.html) ----------
-function ChartCanvas({type,data,options,height}){
+function ChartCanvas({type,data,options,height,plugins}){
   const ref=useRef(null);const chartRef=useRef(null);
   // Force a fixed-height container + maintainAspectRatio:false — otherwise Chart.js's
   // responsive sizing grows the canvas to fill available width at its aspect ratio,
@@ -127,7 +148,7 @@ function ChartCanvas({type,data,options,height}){
       chartRef.current.data=data;chartRef.current.options=opts;chartRef.current.update();
     }else{
       if(chartRef.current)chartRef.current.destroy();
-      chartRef.current=new Chart(ref.current,{type,data,options:opts});
+      chartRef.current=new Chart(ref.current,{type,data,options:opts,plugins:plugins||[]});
     }
   },[JSON.stringify(data),JSON.stringify(options),type]);
   useEffect(()=>()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}},[]);
@@ -671,15 +692,22 @@ function ProfileTab({overview,roles,onOpenCategory}){
   const useInh=basis==='inherent';
   const catName=id=>{const c=overview.categories.find(x=>x.id===id);return c?('#'+c.number+' '+c.title):id;};
   const pts=p.points.map(pt=>({x:(useInh?pt.inherentProb:pt.residualProb),y:(useInh?pt.inherentImpact:pt.residualImpact),n:pt.number,t:pt.title,band:(useInh?pt.inherentBand:pt.residualBand),cid:pt.categoryId}));
+  // Spread co-located risks around the cell centre (phyllotaxis) so each bubble is
+  // separately visible and its number readable, rather than a self-overlapping line.
   const jitter={};
-  const scatter=pts.map(pt=>{const k=pt.x+','+pt.y;const c=(jitter[k]=(jitter[k]||0)+1)-1;return {x:pt.x+c*0.12,y:pt.y+c*0.12,_n:pt.n,_t:pt.t,_b:pt.band,_cid:pt.cid};});
+  const scatter=pts.map(pt=>{
+    const k=pt.x+','+pt.y;const c=(jitter[k]=(jitter[k]||0)+1)-1;
+    const ang=c*2.399,rad=0.14*Math.sqrt(c);
+    return {x:pt.x+rad*Math.cos(ang),y:pt.y+rad*Math.sin(ang),_n:pt.n,_t:pt.t,_b:pt.band,_cid:pt.cid};
+  });
   const col=b=>b==='Low'?'#1E9E5A':b==='Medium'?'#B45309':'#9D174D';
-  const heatData={datasets:[{label:basis,data:scatter,pointRadius:11,pointHoverRadius:13,
+  const heatData={datasets:[{label:basis,data:scatter,pointRadius:13,pointHoverRadius:15,
     pointBackgroundColor:scatter.map(d=>col(d._b)),pointBorderColor:'#fff',pointBorderWidth:1.5}]};
   const heatOpts={onClick:(e,els)=>{if(els&&els.length){const d=scatter[els[0].index];if(d&&d._cid)onOpenCategory(d._cid);}},
     plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`#${c.raw._n} ${c.raw._t}`}}},
     scales:{x:{min:.5,max:4.5,title:{display:true,text:'Probability'},ticks:{stepSize:1,callback:v=>Number.isInteger(v)&&v>=1&&v<=4?v:''}},
             y:{min:.5,max:4.5,title:{display:true,text:'Impact'},ticks:{stepSize:1,callback:v=>Number.isInteger(v)&&v>=1&&v<=4?v:''}}}};
+  const heatKey=pts.slice().sort((a,b)=>a.n-b.n);
   const openActions=(actions||[]).filter(a=>a.effectiveStatus!=='done');
   const trend={labels:p.series.map(s=>s.at.slice(0,10)),datasets:[{label:'Aggregate residual exposure',data:p.series.map(s=>s.residualExposure),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',fill:true,tension:.2}]};
   const domBar={labels:p.domains.map(d=>d.id),datasets:[
@@ -700,7 +728,13 @@ function ProfileTab({overview,roles,onOpenCategory}){
         h('strong',null,'Risk heatmap'),
         h('div',{style:{display:'flex',border:'0.5px solid var(--border)',borderRadius:7,overflow:'hidden'}},
           ['residual','inherent'].map(b=>h('div',{key:b,onClick:()=>setBasis(b),style:{padding:'4px 10px',fontSize:11,fontWeight:600,cursor:'pointer',background:basis===b?'var(--navy)':'#fff',color:basis===b?'#fff':'var(--navy)'}},b[0].toUpperCase()+b.slice(1))))),
-      h('div',{style:{maxWidth:520}},h(ChartCanvas,{type:'scatter',data:heatData,options:heatOpts,height:320}))),
+      h('div',{style:{maxWidth:520}},h(ChartCanvas,{type:'scatter',data:heatData,options:heatOpts,plugins:[bubbleNumberPlugin],height:320})),
+      h('div',{className:'small muted',style:{margin:'4px 0 6px'}},'The number on each bubble is the risk #. Click a bubble or a key entry to open it.'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',columnGap:14,rowGap:3}},
+        heatKey.map(pt=>h('div',{key:pt.cid,className:'small',style:{display:'flex',gap:6,alignItems:'baseline',cursor:'pointer'},onClick:()=>onOpenCategory(pt.cid)},
+          h('span',{style:{width:9,height:9,borderRadius:'50%',background:col(pt.band),flexShrink:0,alignSelf:'center'}}),
+          h('span',{style:{fontWeight:700,color:'var(--muted)'}},'#'+pt.n),
+          h('span',null,pt.t))))),
     p.series.length>1&&h('div',{className:'card'},h('strong',null,'Aggregate residual exposure over time'),h('div',{style:{maxWidth:640}},h(ChartCanvas,{type:'line',data:trend,options:{plugins:{legend:{display:false}}},height:200}))),
     h('div',{className:'card'},h('strong',null,'By domain'),h('div',{style:{maxWidth:640}},h(ChartCanvas,{type:'bar',data:domBar,options:{plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true}}},height:220})),
       h('table',{className:'tbl',style:{marginTop:8}},h('thead',null,h('tr',null,['Domain','Mean residual','Worst','Open actions'].map(x=>h('th',{key:x},x)))),
@@ -780,11 +814,26 @@ function ManageTab({overview,members,onReload}){
 }
 
 function DomainNames({overview,onReload}){
+  const [adding,setAdding]=useState(false);
+  const [newName,setNewName]=useState('');
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
   async function renameDomain(d){const name=prompt('Rename domain '+d.id,d.name);if(name&&name!==d.name){await api.put('/api/risk/domains/'+d.id,{name});onReload();}}
+  async function addDomain(){
+    if(!newName.trim())return;
+    setBusy(true);setErr('');
+    try{await api.post('/api/risk/domains',{name:newName.trim()});setNewName('');setAdding(false);onReload();}
+    catch(e){setErr(e.message);}finally{setBusy(false);}
+  }
   return h('div',null,
     overview.domains.map(d=>h('div',{className:'line',key:d.id},
       h('span',{className:'dtitle'},d.id+' — '+d.name),
-      h('button',{className:'linkbtn',onClick:()=>renameDomain(d)},'rename')))
+      h('button',{className:'linkbtn',onClick:()=>renameDomain(d)},'rename'))),
+    err&&h('div',{className:'alert alert-danger',style:{marginTop:8}},err),
+    !adding&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:8},onClick:()=>setAdding(true)},'+ Add domain'),
+    adding&&h('div',{style:{display:'flex',gap:6,marginTop:8}},
+      h('input',{className:'form-input',style:{marginBottom:0},placeholder:'New domain name (id auto-assigned)',value:newName,onChange:e=>setNewName(e.target.value),onKeyDown:e=>{if(e.key==='Enter')addDomain();}}),
+      h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:addDomain},busy?'Adding…':'Add'),
+      h('button',{className:'btn btn-outline btn-sm',onClick:()=>{setAdding(false);setNewName('');setErr('');}},'Cancel'))
   );
 }
 
@@ -864,7 +913,7 @@ function RiskApp({me,roles}){
   return h('div',{className:'page'},
     h('div',{style:{marginBottom:12}},
       h('div',{style:{fontSize:18,fontWeight:700,color:'var(--navy)'}},'Risk Management'),
-      h('div',{className:'small muted'},'Robinson Family Office — Enterprise Risk Register v5'+(roles.riskMember?'':' · read-only'))),
+      h('div',{className:'small muted'},'Robinson Family Office — Enterprise Risk Register'+(roles.riskMember?'':' · read-only'))),
     h('div',{className:'tabs'},TABS.map(([k,l])=>h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
     tab==='register'&&h(RegisterTab,{overview,members,me,roles,onReload:load,onOpenCategory:setOpenCat}),
     tab==='profile'&&h(ProfileTab,{overview,roles,onOpenCategory:setOpenCat}),

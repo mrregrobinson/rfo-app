@@ -20,9 +20,10 @@ applications under it —
 - **Household Expenditures** (`/expenditure`) — tracks household spending from bank and
   credit-card statements, partitioned into per-household ledgers. See
   `RFO_Expenditure_App_BuildSpec_v1.md`.
-- **Risk Management** (`/risk`) — the Enterprise Risk Register: 6 domains / 14 risk
-  categories seeded from `RFO_Risk_Register_v5.xlsx` + `..._Notes_v5.docx`, point-in-time
-  assessments (inherent/residual P×I) with history, a risk-event log, a 4×4 heatmap and
+- **Risk Management** (`/risk`) — the Enterprise Risk Register: risk categories grouped
+  by domain (both admin-editable), seeded initially from the family's risk-register
+  spreadsheet + notes, point-in-time assessments (inherent/residual P×I) with history, a
+  risk-event log, a 4×4 heatmap and
   profile dashboard, a Family-Council PDF report, an optional Claude web-search base-rate
   lookup, and "Required Actions" that promote to real tasks in the Family Task List's
   `02. Risk Management` category. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
@@ -162,9 +163,9 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 - `meeting_attachments` — metadata only (filename, content type, size, uploader) for a
   meeting's file attachments; the bytes live on disk under
   `data/meeting-attachments/<meetingId>/`, not in SQLite (see `server/attachments.js`).
-- `risk_domains` / `risk_categories` / `risk_scale` — the Risk Register taxonomy (6
-  domains, 14 categories, the 1–4 probability/impact scale labels). Tables are created by
-  migration 027; the v5 content is seeded from `server/risk-seed-data.js` by
+- `risk_domains` / `risk_categories` / `risk_scale` — the Risk Register taxonomy
+  (domains, categories, the 1–4 probability/impact scale labels). Tables are created by
+  migration 027; the initial content is seeded from `server/risk-seed-data.js` by
   `server/seed.js`'s `ensureSeeded()` (not a migration — the baseline assessment needs a
   user, and migrations run before users exist). Categories soft-retire (`is_active = 0`)
   so their history survives.
