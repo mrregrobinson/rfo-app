@@ -118,6 +118,30 @@ describe('as-of report reconstruction', () => {
   });
 });
 
+describe('accountable person (single family member)', () => {
+  test('seed resolves to one member; PUT validates against users; structural fields stay admin-only for members', async () => {
+    const c = (await j('GET', `/api/risk/categories/${CAT}`)).d.category;
+    assert.ok(c.accountableUserId, 'seeded with a user id, not free text');
+    assert.equal(typeof c.accountableName, 'string');
+
+    const ok = await j('PUT', `/api/risk/categories/${CAT}`, { accountableUserId: 'sd' });
+    assert.equal(ok.s, 200);
+    assert.equal((await j('GET', `/api/risk/categories/${CAT}`)).d.category.accountableName, 'Sheri-Dawn Robinson');
+
+    const bad = await j('PUT', `/api/risk/categories/${CAT}`, { accountableUserId: 'nobody' });
+    assert.equal(bad.s, 400);
+
+    // demote the acting user to a plain member and confirm they can retitle but not re-domain
+    db.prepare("UPDATE users SET risk_role = 'member' WHERE id = 'reg'").run();
+    const before = (await j('GET', `/api/risk/categories/${CAT}`)).d.category;
+    await j('PUT', `/api/risk/categories/${CAT}`, { title: before.title + ' [m]', domainId: before.domainId === 'A' ? 'B' : 'A' });
+    const after = (await j('GET', `/api/risk/categories/${CAT}`)).d.category;
+    assert.ok(after.title.endsWith(' [m]'), 'member can edit the title');
+    assert.equal(after.domainId, before.domainId, 'member cannot move the risk to another domain');
+    db.prepare("UPDATE users SET risk_role = 'admin' WHERE id = 'reg'").run();
+  });
+});
+
 describe('progress metrics', () => {
   test('profile returns a progress block counting closes/opens since a date', async () => {
     // Close an action so there's something to count.
