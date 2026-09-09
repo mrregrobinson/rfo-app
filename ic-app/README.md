@@ -177,7 +177,13 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   the "Required Actions" (each with a nullable `task_id` linking to a promoted Family
   Task List task — a soft reference, not an FK, so deleting the task just leaves the
   action to fall back to its own status), and the operational log of things that actually
-  happened against a category.
+  happened against a category. `risk_actions` carries `completed_at` + `archived_at` and
+  `risk_mitigations` carries `added_at` + `removed_at` (migration 031) — deletes are
+  soft, so a past-dated report can still reconstruct the register's state then.
+- `risk_review_snapshots` — a frozen JSON copy of the whole register taken at a review
+  point (`POST /api/risk/snapshots`), so a past review can be pulled up or re-printed
+  verbatim (`GET /api/risk/snapshots/:id[/pdf]`). `GET /api/risk/report/pdf?asOf=<date>`
+  reconstructs a report for an arbitrary past date from the history columns.
 - `risk_probability_lookups` — cached Claude web-search base-rate estimates
   (`server/claude.js` `researchRiskProbability`), referenced from an assessment via
   `external_probability_id`.

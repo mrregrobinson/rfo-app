@@ -602,6 +602,43 @@ casually (each call costs a few cents and some seconds).
   roles. "Print" in the UI = open the PDF route in a new tab; "Email as PDF" = a small
   recipient form → the email route. Same two actions the Expenditure reports expose.
 
+## 8b. Historical data & review snapshots
+
+Assessments were already append-only (`risk_assessments`, `supersedes_id` chain) — the
+score/status trail. Migration `031_risk_history.js` closes the remaining gaps so
+progress reporting and verbatim historical reports work:
+
+- **`risk_actions`** gains `completed_at` (stamped/cleared as status crosses "done";
+  task-synced actions read the linked task's date) and `archived_at`. `DELETE
+  /api/risk/actions/:id` now **soft-archives** — the row survives so a past-dated report
+  still sees the action existed. All action reads filter `archived_at IS NULL`.
+- **`risk_mitigations`** gains `added_at` and `removed_at`. `DELETE` soft-removes; reads
+  filter `removed_at IS NULL`.
+- **`risk_review_snapshots(id, label, notes, taken_at, taken_by, residual_exposure,
+  inherent_exposure, open_actions, category_count, payload)`** — `payload` is the full
+  register serialized by `buildReportModel({})` at the moment of the snapshot.
+  - `POST /api/risk/snapshots` (member+) freezes one; `GET /api/risk/snapshots` lists;
+    `GET /api/risk/snapshots/:id` returns the payload; `GET /api/risk/snapshots/:id/pdf`
+    renders the historical PDF straight from the frozen payload (`buildRiskReportPdf`
+    with an `asOfLabel`). `DELETE` is admin-only.
+  - UI: a "Review snapshots & progress" card on the Profile tab — a "Take a snapshot"
+    button, the list with view / PDF, and a progress line ("N actions closed, M opened,
+    K mitigations added since <last snapshot | 90 days>"). "View" opens a read-only
+    modal rendering the frozen register, each row linking to the live risk.
+- **`buildReportModel(query)`** accepts `query.asOf` (plain date = end of that day, or
+  full ISO): assessments via `latestAssessment(id, asOf)`, mitigations by
+  `added_at`/`removed_at`, actions by `created_at`/`archived_at` with a per-action
+  `openAsOf` derived from `completed_at`. `GET /api/risk/report/pdf?asOf=YYYY-MM-DD`
+  produces a retrospective report even without a snapshot; the PDF header shows the
+  as-of date in the alert colour.
+- **`GET /api/risk/profile`** returns a `progress` block (`?since=` overrides the
+  default of the last snapshot's `taken_at`, else 90 days): `actionsClosed`,
+  `actionsOpened`, `actionsArchived`, `mitigationsAdded`, `mitigationsRemoved`,
+  `eventsLogged`, `assessmentsRecorded`.
+
+Not doing full bitemporal history on the taxonomy (category/domain/scale renames) —
+snapshots capture the labels as they were, which covers the reporting need.
+
 ## 9. Scheduled Review Reminders (optional — phase 2)
 
 Mirror `server/digest.js` / `server/meetings-scheduler.js`: an hourly sweep started from

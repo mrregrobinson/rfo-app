@@ -444,7 +444,8 @@ function ActionRow({a,roles,onStatus,onDelete,onToggleSync}){
             roles.riskMember
               ? h('select',{style:{fontSize:11,padding:'2px 6px',borderRadius:6,border:'0.5px solid var(--border)'},value:a.status==='incomplete'?'open':a.status,onChange:e=>onStatus(a,e.target.value)},
                   [['open','Open'],['in_progress','In progress'],['done','Done']].map(([v,l])=>h('option',{key:v,value:v},l)))
-              : h('span',{className:'small muted'},a.effectiveStatus))
+              : h('span',{className:'small muted'},a.effectiveStatus),
+            a.effectiveStatus==='done'&&a.completedAt&&h('span',{className:'small muted',style:{marginLeft:6}},'✓ '+a.completedAt.slice(0,10)))
     ),
     h('div',{style:{whiteSpace:'nowrap',textAlign:'right'}},
       h('label',{className:'small',title:canSync?'Sync this action to the Family Task List':'Needs Family Task List member access',style:{display:'inline-flex',alignItems:'center',gap:4,opacity:canSync?1:.5}},
@@ -684,6 +685,85 @@ function EventsTab({overview,roles}){
 // =======================================================================
 // Profile tab
 // =======================================================================
+function defaultReviewLabel(){
+  const d=new Date();return 'Q'+(Math.floor(d.getMonth()/3)+1)+' '+d.getFullYear()+' review';
+}
+
+// Review snapshots (frozen historical copies of the whole register) + a progress line.
+function SnapshotsCard({progress,roles,onOpenCategory}){
+  const [snaps,setSnaps]=useState(null);
+  const [view,setView]=useState(null);
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  function load(){api.get('/api/risk/snapshots').then(setSnaps).catch(e=>setErr(e.message));}
+  useEffect(load,[]);
+  async function take(){
+    const label=prompt('Name this snapshot',defaultReviewLabel());
+    if(!label)return;
+    setBusy(true);setErr('');
+    try{await api.post('/api/risk/snapshots',{label});load();}catch(e){setErr(e.message);}finally{setBusy(false);}
+  }
+  async function del(s){if(!confirm('Delete snapshot "'+s.label+'"? This removes the frozen historical copy.'))return;await api.del('/api/risk/snapshots/'+s.id);load();}
+  const pr=progress||{};
+  const sinceNote=pr.sinceSource==='lastSnapshot'?' (since the last snapshot)':pr.sinceSource==='default90d'?' (last 90 days)':'';
+  return h('div',{className:'card'},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('strong',null,'Review snapshots & progress'),
+      roles.riskMember&&h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:take},busy?'Saving…':'Take a snapshot')),
+    h('div',{className:'small muted',style:{marginTop:2,marginBottom:8}},'A snapshot freezes the whole register — scores, mitigations, actions, events — so a past review can be pulled up exactly as it stood.'),
+    err&&h('div',{className:'alert alert-danger'},err),
+    pr.since&&h('div',{className:'small',style:{marginBottom:10}},
+      h('strong',null,'Progress'+sinceNote+' — from '+pr.since.slice(0,10)+': '),
+      pr.actionsClosed+' actions closed · '+pr.actionsOpened+' opened · '+(pr.actionsArchived||0)+' removed · '+
+      pr.mitigationsAdded+' mitigations added · '+(pr.assessmentsRecorded||0)+' re-assessments · '+pr.eventsLogged+' events logged'),
+    !snaps?h('div',{className:'small muted'},'Loading…'):
+      !snaps.length?h('div',{className:'small muted'},'No snapshots yet — take one at each review so you can compare and reprint later.'):
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,['Taken','Label','Residual','Inherent','Open actions',''].map(x=>h('th',{key:x},x)))),
+        h('tbody',null,snaps.map(s=>h('tr',{key:s.id},
+          h('td',null,s.takenAt.slice(0,10)),
+          h('td',null,s.label,s.notes&&h('div',{className:'small muted'},s.notes),h('div',{className:'small muted'},'by '+(s.takenByName||'—'))),
+          h('td',null,s.residualExposure),h('td',null,s.inherentExposure),h('td',null,s.openActions),
+          h('td',{style:{whiteSpace:'nowrap'}},
+            h('button',{className:'linkbtn',onClick:()=>setView(s.id)},'view'),
+            h('a',{className:'linkbtn',style:{marginLeft:8},href:'/api/risk/snapshots/'+s.id+'/pdf',target:'_blank'},'PDF'),
+            roles.riskAdmin&&h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>del(s)},'delete')))))),
+    view&&h(SnapshotViewModal,{snapshotId:view,onClose:()=>setView(null),onOpenCategory})
+  );
+}
+
+function SnapshotViewModal({snapshotId,onClose,onOpenCategory}){
+  const [d,setD]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{api.get('/api/risk/snapshots/'+snapshotId).then(setD).catch(e=>setErr(e.message));},[snapshotId]);
+  if(err)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},h('div',{className:'alert alert-danger'},err),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')));
+  if(!d)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
+  const pl=d.payload||{rows:[],domains:[]};
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}},
+      h('div',null,h('div',{className:'modal-title'},d.label),
+        h('div',{className:'modal-sub'},'Frozen '+d.takenAt.slice(0,10)+' by '+(d.takenByName||'—')+'  ·  residual '+d.residualExposure+' / inherent '+d.inherentExposure+'  ·  '+d.openActions+' open actions')),
+      h('div',{style:{whiteSpace:'nowrap'}},
+        h('a',{className:'btn btn-outline btn-sm',href:'/api/risk/snapshots/'+snapshotId+'/pdf',target:'_blank'},'PDF'),
+        h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:onClose},'Close'))),
+    h('div',{className:'small muted',style:{margin:'8px 0'}},'This is the register exactly as it stood then. "open current" jumps to the live risk.'),
+    (pl.domains||[]).map(dom=>{
+      const rr=(pl.rows||[]).filter(r=>r.category.domain_id===dom.id);
+      if(!rr.length)return null;
+      return h('div',{key:dom.id,style:{marginTop:10}},
+        h('div',{className:'sec',style:{marginBottom:2}},dom.id+' — '+dom.name),
+        rr.map(r=>{
+          const a=r.assessment;
+          return h('div',{className:'line',key:r.category.id,style:{alignItems:'flex-start'}},
+            h('div',{style:{flex:1}},
+              h('div',null,h('span',{style:{fontWeight:600}},'#'+r.category.number+' '+r.category.title)),
+              a&&h('div',{className:'small'},'Inherent '+a.inherentProb+'×'+a.inherentImpact+'='+a.inherentScore+'  ·  Residual '+a.residualProb+'×'+a.residualImpact+'='+a.residualScore+'  ·  '+a.status),
+              h('div',{className:'small muted'},(r.mitigations||[]).length+' mitigations in place  ·  '+
+                r.actions.filter(x=>(x.openAsOf!==undefined?x.openAsOf:x.effectiveStatus!=='done')).length+' open actions'+
+                (a&&a.rationale?'  ·  rationale recorded':''))),
+            h('button',{className:'linkbtn',onClick:()=>{onClose();onOpenCategory(r.category.id);}},'open current →'));
+        }));
+    })
+  ));
+}
+
 function ProfileTab({overview,roles,onOpenCategory}){
   const [p,setP]=useState(null);const [basis,setBasis]=useState('residual');
   const [actions,setActions]=useState(null);
@@ -739,6 +819,7 @@ function ProfileTab({overview,roles,onOpenCategory}){
     h('div',{className:'card'},h('strong',null,'By domain'),h('div',{style:{maxWidth:640}},h(ChartCanvas,{type:'bar',data:domBar,options:{plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true}}},height:220})),
       h('table',{className:'tbl',style:{marginTop:8}},h('thead',null,h('tr',null,['Domain','Mean residual','Worst','Open actions'].map(x=>h('th',{key:x},x)))),
         h('tbody',null,p.domains.map(d=>h('tr',{key:d.id},h('td',null,d.id+' — '+d.name),h('td',null,d.meanResidual),h('td',null,d.worstResidual),h('td',null,d.openActions)))))),
+    h(SnapshotsCard,{progress:p.progress,roles,onOpenCategory}),
     h('div',{className:'card'},
       h('strong',null,'Changes since last review'),
       p.compare.from===p.compare.to
