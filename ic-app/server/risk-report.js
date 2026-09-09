@@ -132,7 +132,7 @@ async function buildRiskReportPdf(model) {
       doc.font('Helvetica-Bold').text(`#${r.category.number}  ${r.category.title}`);
       doc.font('Helvetica').fillColor('#374151').text(r.category.description);
       doc.fillColor('#111').text(`Inherent ${inh}   |   Residual ${resd}   |   ${a ? a.status : ''}`);
-      doc.fillColor('#6B7280').text(`Accountable: ${r.category.accountable || '—'}   |   Next review: ${a && a.nextReview ? a.nextReview : '—'}`);
+      doc.fillColor('#6B7280').text(`Accountable: ${r.category.accountable_name || r.category.accountable || '—'}   |   Next review: ${a && a.nextReview ? a.nextReview : '—'}`);
       if ((r.mitigations || []).length) {
         doc.fillColor('#2A7D7B').text('Key mitigations in place:');
         doc.fillColor('#374151');

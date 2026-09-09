@@ -180,7 +180,9 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       .map((d) => ({ id: d.id, name: d.name, sortOrder: d.sort_order }));
     const cats = db.prepare('SELECT * FROM risk_categories ORDER BY sort_order').all().map((c) => ({
       id: c.id, domainId: c.domain_id, number: c.number, title: c.title, description: c.description,
-      accountable: c.accountable, notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
+      accountableUserId: c.accountable_user_id, accountableName: userName(c.accountable_user_id),
+      accountable: userName(c.accountable_user_id) || c.accountable, // legacy field kept = resolved name
+      notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
       latestAssessment: assessmentRowToJson(latestAssessment(c.id)),
       actionCounts: actionCounts(c.id),
       events12mo: events12mo(c.id),
@@ -205,7 +207,9 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     res.json({
       category: {
         id: c.id, domainId: c.domain_id, number: c.number, title: c.title, description: c.description,
-        accountable: c.accountable, notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
+        accountableUserId: c.accountable_user_id, accountableName: userName(c.accountable_user_id),
+        accountable: userName(c.accountable_user_id) || c.accountable,
+        notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
       },
       assessments, mitigations, actions, events, lastLookup,
     });
@@ -246,44 +250,60 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     res.json({ id: d.id, name, sortOrder: d.sort_order });
   });
 
+  // "Accountable" is one family member — a users.id or null. Free text is not accepted.
+  function resolveAccountable(raw) {
+    if (raw === null || raw === '') return { ok: true, id: null };
+    if (!raw) return { ok: true, id: undefined }; // undefined = "not supplied, leave as-is"
+    const u = db.prepare('SELECT id FROM users WHERE id = ?').get(raw);
+    return u ? { ok: true, id: u.id } : { ok: false };
+  }
+
   app.post('/api/risk/categories', requireAuth, (req, res) => {
     if (!requireAdmin(req, res)) return;
     const b = req.body || {};
     const domain = db.prepare('SELECT id FROM risk_domains WHERE id = ?').get(b.domainId);
     if (!domain) return res.status(400).json({ error: 'Unknown domainId' });
     if (!b.title || !b.description) return res.status(400).json({ error: 'title and description are required' });
+    const acc = resolveAccountable(b.accountableUserId);
+    if (!acc.ok) return res.status(400).json({ error: 'accountableUserId must be a family member' });
     const id = 'risk-' + crypto.randomUUID().slice(0, 8);
     const maxNum = db.prepare('SELECT MAX(number) AS m FROM risk_categories').get().m || 0;
     const maxSort = db.prepare('SELECT MAX(sort_order) AS m FROM risk_categories').get().m || 0;
     db.prepare(
-      `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, notes, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
-    ).run(id, b.domainId, Number(b.number) || maxNum + 1, b.title.trim(), b.description.trim(), (b.accountable || '').trim(), (b.notes || '').trim(), maxSort + 1);
+      `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, accountable_user_id, notes, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, 1)`
+    ).run(id, b.domainId, Number(b.number) || maxNum + 1, b.title.trim(), b.description.trim(), acc.id || null, (b.notes || '').trim(), maxSort + 1);
     logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_category', entityId: id, details: { created: b.title } });
     res.status(201).json({ id });
   });
 
+  // Member-level: a risk's descriptive fields (title / description / accountable person)
+  // are edited from its drawer like everything else. Structural changes — domain, display
+  // number, active/retired state — are only applied when the caller is a Risk admin.
   app.put('/api/risk/categories/:id', requireAuth, (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireMember(req, res)) return;
     const c = db.prepare('SELECT * FROM risk_categories WHERE id = ?').get(req.params.id);
     if (!c) return res.status(404).json({ error: 'Risk category not found' });
     const b = req.body || {};
-    if (b.domainId && !db.prepare('SELECT id FROM risk_domains WHERE id = ?').get(b.domainId)) {
+    const isAdmin = myRoles(req.session.userId).riskAdmin;
+    if (isAdmin && b.domainId && !db.prepare('SELECT id FROM risk_domains WHERE id = ?').get(b.domainId)) {
       return res.status(400).json({ error: 'Unknown domainId' });
     }
+    const acc = resolveAccountable(b.accountableUserId);
+    if (!acc.ok) return res.status(400).json({ error: 'accountableUserId must be a family member' });
     db.prepare(
       `UPDATE risk_categories SET domain_id=@domainId, number=@number, title=@title, description=@description,
-         accountable=@accountable, notes=@notes, sort_order=@sortOrder, is_active=@isActive WHERE id=@id`
+         accountable_user_id=@accountableUserId, notes=@notes, sort_order=@sortOrder, is_active=@isActive WHERE id=@id`
     ).run({
       id: c.id,
-      domainId: b.domainId || c.domain_id,
-      number: b.number != null ? Number(b.number) : c.number,
+      domainId: isAdmin && b.domainId ? b.domainId : c.domain_id,
+      number: isAdmin && b.number != null ? Number(b.number) : c.number,
       title: b.title != null ? String(b.title).trim() : c.title,
       description: b.description != null ? String(b.description).trim() : c.description,
-      accountable: b.accountable != null ? String(b.accountable).trim() : c.accountable,
+      accountableUserId: acc.id === undefined ? c.accountable_user_id : acc.id,
       notes: b.notes != null ? String(b.notes).trim() : c.notes,
-      sortOrder: b.sortOrder != null ? Number(b.sortOrder) : c.sort_order,
-      isActive: b.isActive != null ? (b.isActive ? 1 : 0) : c.is_active,
+      sortOrder: isAdmin && b.sortOrder != null ? Number(b.sortOrder) : c.sort_order,
+      isActive: isAdmin && b.isActive != null ? (b.isActive ? 1 : 0) : c.is_active,
     });
     logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_category', entityId: c.id });
     res.json({ ok: true });
@@ -763,11 +783,12 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       const mitigations = db.prepare('SELECT * FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id)
         .filter((m) => (asOf ? ((m.added_at || m.created_at) <= asOf && (!m.removed_at || m.removed_at > asOf)) : !m.removed_at))
         .map((m) => ({ text: m.text, inPlace: !!m.in_place }));
+      c.accountable_name = userName(c.accountable_user_id) || c.accountable || '';
       return { category: c, assessment: a, actions, mitigations };
     }).filter((r) => {
       if (query.status && r.assessment && String(query.status).split(',').indexOf(r.assessment.status) === -1) return false;
       if (query.band && r.assessment && String(query.band).split(',').indexOf(r.assessment.residualBand) === -1) return false;
-      if (query.accountable && !((r.category.accountable || '').toLowerCase().includes(String(query.accountable).toLowerCase()))) return false;
+      if (query.accountable && !((r.category.accountable_name || '').toLowerCase().includes(String(query.accountable).toLowerCase()))) return false;
       return true;
     });
     const domains = db.prepare('SELECT * FROM risk_domains ORDER BY sort_order').all();

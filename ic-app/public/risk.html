@@ -175,7 +175,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
     if(fDomain&&c.domainId!==fDomain)return false;
     if(fStatus&&(!a||a.status!==fStatus))return false;
     if(fBand){const b=a?(basis==='residual'?a.residualBand:a.inherentBand):null;if(b!==fBand)return false;}
-    if(fAcc&&!(c.accountable||'').toLowerCase().includes(fAcc.toLowerCase()))return false;
+    if(fAcc&&!((c.accountableName||c.accountable||'').toLowerCase().includes(fAcc.toLowerCase())))return false;
     if(fFlags==='review'){const nr=a&&a.nextReview;if(!nr)return false;}
     if(fFlags==='immediate'&&c.actionCounts.immediate===0)return false;
     return true;
@@ -196,7 +196,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
       roles.riskAdmin&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAddingCat(true)},'+ Add risk'),
       h(ReportButtons,{filters:{domain:fDomain,status:fStatus,band:fBand,accountable:fAcc},members})
     ),
-    addingCat&&h(AddCategoryModal,{domains:overview.domains,onClose:()=>setAddingCat(false),onDone:(newId)=>{setAddingCat(false);onReload().then(()=>onOpenCategory(newId));}}),
+    addingCat&&h(AddCategoryModal,{domains:overview.domains,members,onClose:()=>setAddingCat(false),onDone:(newId)=>{setAddingCat(false);onReload().then(()=>onOpenCategory(newId));}}),
     overview.domains.map(d=>{
       const dcats=shown.filter(c=>c.domainId===d.id);
       if(!dcats.length)return null;
@@ -217,7 +217,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
                 h('div',{className:'rdesc'},c.description),
                 h('div',{className:'rmeta'},
                   a?statusPill(a.status):h('span',{className:'small muted'},'Not yet assessed'),
-                  h('span',{className:'k'},'· '+(c.accountable||'—')),
+                  h('span',{className:'k'},'· '+(c.accountableName||c.accountable||'—')),
                   a&&a.nextReview&&h('span',{className:'k'},'· review '+a.nextReview),
                   c.actionCounts.open>0&&h('span',{className:'k'},'· '+c.actionCounts.open+' open action'+(c.actionCounts.open>1?'s':'')),
                   c.actionCounts.immediate>0&&h('span',{style:{color:'var(--high-fg)',fontWeight:700,fontSize:10.5}},'· '+c.actionCounts.immediate+' Immediate'),
@@ -918,8 +918,8 @@ function DomainNames({overview,onReload}){
   );
 }
 
-function AddCategoryModal({domains,onClose,onDone}){
-  const [f,setF]=useState({domainId:domains[0].id,title:'',description:'',accountable:''});
+function AddCategoryModal({domains,members,onClose,onDone}){
+  const [f,setF]=useState({domainId:domains[0].id,title:'',description:'',accountableUserId:''});
   const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
   async function go(){
     if(!f.title.trim()||!f.description.trim()){setErr('Title and description are required.');return;}
@@ -935,7 +935,10 @@ function AddCategoryModal({domains,onClose,onDone}){
     h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name))),
     h('label',{className:'form-label'},'Title'),h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
     h('label',{className:'form-label'},'One-line description'),h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
-    h('label',{className:'form-label'},'Accountable'),h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('label',{className:'form-label'},'Accountable — one family member'),
+    h('select',{className:'form-select',value:f.accountableUserId,onChange:e=>setF({...f,accountableUserId:e.target.value})},
+      h('option',{value:''},'— not assigned —'),
+      (members||[]).map(m=>h('option',{key:m.id,value:m.id},m.name))),
     h('div',{style:{display:'flex',gap:6,marginTop:8}},
       h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:go},busy?'Adding…':'Add risk'),
       h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'))
