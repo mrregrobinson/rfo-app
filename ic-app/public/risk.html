@@ -287,7 +287,7 @@ function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
   const probScale=scale.filter(s=>s.kind==='probability');
   const impScale=scale.filter(s=>s.kind==='impact');
   return h('div',null,
-    roles.riskAdmin&&h(RiskDetailsEditor,{category:c,domains,refresh}),
+    roles.riskMember&&h(RiskDetailsEditor,{category:c,domains,members,roles,refresh}),
     h('div',{className:'sec'},'Current scoring'),
     latest
       ? h('div',{className:'card',style:{background:'var(--bg)',marginBottom:4}},
@@ -309,7 +309,7 @@ function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
     h(ActionsPanel,{data,members,roles,refresh}),
 
     h(NotesEditor,{category:c,roles,refresh}),
-    h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
+    h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountableName||h('span',{className:'muted'},'— not assigned (edit details above)')),
 
     h('div',{className:'sec',style:{cursor:'pointer',userSelect:'none'},onClick:()=>setShowEvents(!showEvents)},(showEvents?'▾ ':'▸ ')+'Events ('+data.events.length+')'),
     showEvents&&h(EventListForCategory,{data,roles,refresh,onChanged:refresh}),
@@ -319,14 +319,16 @@ function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
   );
 }
 
-// Admin-only: edit the risk's descriptive attributes (domain, number, title,
-// description, accountable) and retire/restore it — right here in the drawer, so a risk
-// is edited in ONE place, not split between here and the Manage tab.
-function RiskDetailsEditor({category,domains,refresh}){
+// Edit a risk's details right here in the drawer, so a risk is managed in ONE place.
+// Any Risk member can edit the descriptive fields (title, description, accountable
+// person); domain / number / retire-restore are structural and stay admin-only.
+function RiskDetailsEditor({category,domains,members,roles,refresh}){
+  const isAdmin=!!roles.riskAdmin;
   const [open,setOpen]=useState(false);
   const [f,setF]=useState(null);
   const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
-  function begin(){setF({domainId:category.domainId,number:category.number,title:category.title,description:category.description,accountable:category.accountable||''});setOpen(true);setErr('');}
+  const dom=domains.find(d=>d.id===category.domainId);
+  function begin(){setF({domainId:category.domainId,number:category.number,title:category.title,description:category.description,accountableUserId:category.accountableUserId||''});setOpen(true);setErr('');}
   async function save(){
     setBusy(true);setErr('');
     try{await api.put('/api/risk/categories/'+category.id,f);setOpen(false);refresh();}
@@ -339,19 +341,29 @@ function RiskDetailsEditor({category,domains,refresh}){
     finally{setBusy(false);}
   }
   if(!open)return h('div',{style:{marginBottom:6}},
-    h('button',{className:'linkbtn',onClick:begin},'✎ Edit risk details'),
-    category.isActive
+    h('button',{className:'linkbtn',onClick:begin},'✎ Edit details (title, description, accountable…)'),
+    isAdmin&&(category.isActive
       ? h('button',{className:'linkbtn',style:{marginLeft:12,color:'#991B1B'},disabled:busy,onClick:()=>setActive(false)},'Retire risk')
-      : h('button',{className:'linkbtn',style:{marginLeft:12,color:'var(--teal)'},disabled:busy,onClick:()=>setActive(true)},'Restore risk'));
+      : h('button',{className:'linkbtn',style:{marginLeft:12,color:'var(--teal)'},disabled:busy,onClick:()=>setActive(true)},'Restore risk')));
   return h('div',{className:'card',style:{background:'var(--bg)',marginBottom:8}},
     h('div',{className:'sec',style:{marginTop:0}},'Risk details'),
     err&&h('div',{className:'alert alert-danger'},err),
     h('div',{className:'grid2'},
-      h('div',null,h('label',{className:'form-label'},'Domain'),h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name)))),
-      h('div',null,h('label',{className:'form-label'},'Number'),h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})}))),
+      h('div',null,h('label',{className:'form-label'},'Domain'),
+        isAdmin
+          ? h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name)))
+          : h('div',{className:'small',style:{padding:'6px 0'}},dom?dom.id+' — '+dom.name:f.domainId)),
+      h('div',null,h('label',{className:'form-label'},'Number'),
+        isAdmin
+          ? h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})})
+          : h('div',{className:'small',style:{padding:'6px 0'}},'#'+f.number))),
     h('label',{className:'form-label'},'Title'),h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
     h('label',{className:'form-label'},'One-line description'),h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
-    h('label',{className:'form-label'},'Accountable'),h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('label',{className:'form-label'},'Accountable — one family member'),
+    h('select',{className:'form-select',value:f.accountableUserId,onChange:e=>setF({...f,accountableUserId:e.target.value})},
+      h('option',{value:''},'— not assigned —'),
+      (members||[]).map(m=>h('option',{key:m.id,value:m.id},m.name))),
+    h('div',{className:'small muted',style:{margin:'4px 0 10px'}},'The one person answerable for this risk — not everyone who assists. Note advisors (EY, MLTA, PQ) in the mitigations or notes.'),
     h('div',{style:{display:'flex',gap:6}},
       h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:save},busy?'Saving…':'Save details'),
       h('button',{className:'btn btn-outline btn-sm',onClick:()=>setOpen(false)},'Cancel')));
