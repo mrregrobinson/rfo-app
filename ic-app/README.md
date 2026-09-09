@@ -26,7 +26,10 @@ applications under it —
   risk-event log, a 4×4 heatmap and
   profile dashboard, a Family-Council PDF report, an optional Claude web-search base-rate
   lookup, and "Required Actions" that promote to real tasks in the Family Task List's
-  `02. Risk Management` category. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
+  `02. Risk Management` category. Everything about a risk — details, scoring, rationale,
+  mitigations, actions, notes — is edited from its drawer; each risk has exactly one
+  **accountable family member** (`accountable_user_id`, validated against `users`), with
+  advisors named in the mitigations or notes. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
 
 `/` is the RFO home page — sign in once, land there, and pick an app. The apps
 share the same accounts, sessions, and database (`data/ic.db`); there is no second
@@ -168,7 +171,12 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   migration 027; the initial content is seeded from `server/risk-seed-data.js` by
   `server/seed.js`'s `ensureSeeded()` (not a migration — the baseline assessment needs a
   user, and migrations run before users exist). Categories soft-retire (`is_active = 0`)
-  so their history survives.
+  so their history survives. `risk_categories.accountable_user_id` (migration 032) is the
+  one family member answerable for the risk — a validated FK to `users`, not free text;
+  the legacy free-text `accountable` column is kept only as seed provenance. Members can
+  edit a category's descriptive fields (title, description, accountable, notes) from the
+  drawer via `PUT /api/risk/categories/:id`; structural fields (domain, number, retire)
+  stay admin-only.
 - `risk_assessments` — immutable point-in-time scoring rows (inherent + residual P/I,
   status, rationale, next-review), chained by `supersedes_id`. The latest row per
   category is the current state; the chain powers the profile trend and the
