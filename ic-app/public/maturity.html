@@ -173,6 +173,89 @@ function ccChip(level,levels){
   const nm=(levels||[]).find(l=>l.level===Math.round(level));
   return h('span',{className:'chip chip-'+ccClass(level),title:nm?nm.description:''},'L'+level+(nm?' '+nm.name:''));
 }
+const CC_HEX={l1:'#9D174D',l2:'#B45309',l3:'#1E3A8A',l4:'#0F766E',l5:'#065F46',none:'#9CA3AF'};
+const svg=(tag,props,...kids)=>h(tag,props,...kids);
+
+// ---- Grouped lollipop: one row per service, maturity 1–5 axis. Family mean dot
+// (coloured by the consciousness level the service is run from), Claude-benchmark
+// diamond, and a faint band for the member min–max spread. Replaces the radar. ----
+function LollipopChart({groups,services,consciousnessLevels,onOpen}){
+  const W=680, LX=196, RX=W-18, RH=21, PAD_TOP=34, PAD_BOT=10;
+  const rows=[]; // {type:'group'|'svc', ...}
+  groups.forEach(g=>{
+    const svcs=services.filter(s=>s.groupId===g.id);
+    if(!svcs.length)return;
+    rows.push({type:'group',name:g.name});
+    svcs.forEach(s=>rows.push({type:'svc',s}));
+  });
+  const H=PAD_TOP+rows.length*RH+PAD_BOT;
+  const x=v=>LX+((Math.max(1,Math.min(5,v))-1)/4)*(RX-LX);
+  let y=PAD_TOP;
+  const els=[];
+  // gridlines + axis labels
+  for(let v=1;v<=5;v++){
+    els.push(svg('line',{key:'g'+v,x1:x(v),y1:PAD_TOP-6,x2:x(v),y2:H-PAD_BOT,stroke:'#EEF0F3',strokeWidth:1}));
+    els.push(svg('text',{key:'gl'+v,x:x(v),y:PAD_TOP-12,textAnchor:'middle',fontSize:9,fill:'#9CA3AF'},v));
+  }
+  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},'● family mean (colour = consciousness level)   ◆ Claude benchmark   ▭ member spread'));
+  rows.forEach((r,i)=>{
+    const cy=y+RH/2;
+    if(r.type==='group'){
+      els.push(svg('text',{key:'gr'+i,x:8,y:cy+3,fontSize:9.5,fontWeight:700,fill:'#2A7D7B',style:{textTransform:'uppercase',letterSpacing:'.4px'}},r.name));
+    }else{
+      const s=r.s, st=s.stats||{}, cc=st.consciousness||{};
+      els.push(svg('text',{key:'n'+i,x:8,y:cy+3,fontSize:10,fill:'#1B2A4A',style:{cursor:'pointer'},onClick:()=>onOpen&&onOpen(s.id)},('#'+s.number+' '+s.name).slice(0,34)));
+      els.push(svg('line',{key:'t'+i,x1:LX,y1:cy,x2:RX,y2:cy,stroke:'#EDEFF2',strokeWidth:5,strokeLinecap:'round'}));
+      if(st.mean==null){
+        els.push(svg('text',{key:'na'+i,x:LX+8,y:cy+3,fontSize:9,fill:'#9CA3AF'},'not assessed this round'));
+      }else{
+        if(st.min!=null&&st.max!=null&&st.max>st.min){
+          els.push(svg('rect',{key:'sp'+i,x:x(st.min),y:cy-3,width:Math.max(2,x(st.max)-x(st.min)),height:6,rx:3,fill:'rgba(27,42,74,.14)'}));
+        }
+        if(s.benchmark&&s.benchmark.benchmarkLevel!=null){
+          const bx=x(s.benchmark.benchmarkLevel);
+          els.push(svg('rect',{key:'bm'+i,x:bx-4.5,y:cy-4.5,width:9,height:9,transform:'rotate(45 '+bx+' '+cy+')',fill:'#fff',stroke:'#C9A84C',strokeWidth:1.6}));
+        }
+        els.push(svg('circle',{key:'m'+i,cx:x(st.mean),cy:cy,r:5,fill:CC_HEX[ccClass(cc.cog)],stroke:'#fff',strokeWidth:1.5,style:{cursor:'pointer'},onClick:()=>onOpen&&onOpen(s.id)}));
+        els.push(svg('text',{key:'mv'+i,x:Math.min(RX,x(st.mean)+9),y:cy-7,fontSize:8.5,fill:'#6B7280'},st.mean));
+      }
+    }
+    y+=RH;
+  });
+  return svg('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',maxWidth:W+'px',height:'auto',display:'block'}},els);
+}
+
+// ---- Slopegraph: previous round -> this round, one line per service assessed this
+// round, coloured by direction. Right-side labels are nudged apart to avoid overlap. ----
+function Slopegraph({rows,onOpen}){
+  const items=(rows||[]).filter(r=>r.familyMean!=null).map(r=>({...r}));
+  if(!items.length)return h('div',{className:'small muted'},'Nothing assessed this round yet.');
+  const W=560, XP=150, XN=360, LBLX=372, TOP=26, BOT=20, H=Math.max(220,items.length*13+TOP+BOT);
+  const y=v=>TOP+((5-Math.max(1,Math.min(5,v)))/4)*(H-TOP-BOT);
+  const els=[];
+  for(let v=1;v<=5;v++){
+    els.push(svg('line',{key:'g'+v,x1:XP,y1:y(v),x2:XN,y2:y(v),stroke:'#EEF0F3',strokeWidth:1}));
+    els.push(svg('text',{key:'gl'+v,x:XP-10,y:y(v)+3,textAnchor:'end',fontSize:9,fill:'#9CA3AF'},v));
+  }
+  els.push(svg('text',{key:'hp',x:XP,y:14,textAnchor:'middle',fontSize:9.5,fontWeight:700,fill:'#6B7280'},'Previous round'));
+  els.push(svg('text',{key:'hn',x:XN,y:14,textAnchor:'middle',fontSize:9.5,fontWeight:700,fill:'#6B7280'},'This round'));
+  // anti-collision label layout, sorted by this-round value
+  const sorted=items.slice().sort((a,b)=>b.familyMean-a.familyMean);
+  let last=-99; const gap=11;
+  sorted.forEach(it=>{ let ly=y(it.familyMean); if(ly<last+gap)ly=last+gap; it._ly=ly; last=ly; });
+  sorted.forEach((it,i)=>{
+    const col=it.prevMean==null?'#9CA3AF':(it.familyMean>it.prevMean?'#0F766E':it.familyMean<it.prevMean?'#B91C1C':'#9CA3AF');
+    if(it.prevMean!=null){
+      els.push(svg('line',{key:'l'+i,x1:XP,y1:y(it.prevMean),x2:XN,y2:y(it.familyMean),stroke:col,strokeWidth:1.5,opacity:.85}));
+      els.push(svg('circle',{key:'p'+i,cx:XP,cy:y(it.prevMean),r:2.6,fill:col}));
+    }
+    els.push(svg('circle',{key:'n'+i,cx:XN,cy:y(it.familyMean),r:3.2,fill:col,style:{cursor:'pointer'},onClick:()=>onOpen&&onOpen(it.serviceId)}));
+    els.push(svg('line',{key:'ll'+i,x1:XN+4,y1:y(it.familyMean),x2:LBLX-2,y2:it._ly,stroke:'#E5E7EB',strokeWidth:1}));
+    els.push(svg('text',{key:'lt'+i,x:LBLX,y:it._ly+3,fontSize:9,fill:'#374151',style:{cursor:'pointer'},onClick:()=>onOpen&&onOpen(it.serviceId)},
+      (it.prevMean!=null?(it.prevMean+'→'):'')+it.familyMean+'  '+it.name.slice(0,26)));
+  });
+  return svg('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',maxWidth:W+'px',height:'auto',display:'block'}},els);
+}
 function ServiceWorksheet({service,round,levelLabels,onReload}){
   const [detail,setDetail]=useState(null);
   const [ans,setAns]=useState({});
@@ -281,13 +364,6 @@ function ReportButtons({roundId,members}){
 function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
   const rounds=data.rounds||[];
   const services=data.services;
-  const radar={
-    labels:services.map(s=>s.name),
-    datasets:[
-      {label:'Family mean',data:services.map(s=>s.stats.mean),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',borderWidth:2},
-      {label:'Claude benchmark',data:services.map(s=>s.benchmark?s.benchmark.benchmarkLevel:null),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.10)',borderWidth:2,borderDash:[5,4]},
-    ],
-  };
   return h('div',null,
     h('div',{className:'filters'},
       h('span',{className:'small muted'},'Round'),
@@ -295,8 +371,8 @@ function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
       h('div',{style:{flex:1}}),
       h(ReportButtons,{roundId,members})),
     h('div',{className:'card'},
-      h('div',{className:'sec',style:{marginTop:0}},'Family office maturity radar'),
-      h(ChartCanvas,{type:'radar',height:340,data:radar,options:{scales:{r:{min:0,max:5,ticks:{stepSize:1}}},plugins:{legend:{position:'top'}}}})),
+      h('div',{className:'sec',style:{marginTop:0}},'Maturity by service — mean, benchmark and member spread'),
+      h(LollipopChart,{groups:data.groups,services,consciousnessLevels:data.consciousnessLevels,onOpen:onOpenService})),
     data.groups.map(g=>{
       const svcs=services.filter(s=>s.groupId===g.id);
       if(!svcs.length)return null;
@@ -498,26 +574,22 @@ function ProgressTab({roundId,consciousnessNote}){
       {label:'Claude benchmarked mean',data:series.map(s=>s.benchmarkMean),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.1)',borderDash:[5,4],tension:.3},
     ],
   };
-  const radar={
-    labels:p.radar.map(r=>r.name),
-    datasets:[
-      {label:'This round',data:p.radar.map(r=>r.familyMean),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',borderWidth:2},
-      p.prevRoundId&&{label:'Previous round',data:p.radar.map(r=>r.prevMean),borderColor:'#9CA3AF',backgroundColor:'rgba(156,163,175,.1)',borderWidth:1.5},
-      {label:'Benchmark',data:p.radar.map(r=>r.benchmark),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.08)',borderWidth:2,borderDash:[5,4]},
-    ].filter(Boolean),
-  };
   async function synth(){setBusy(true);try{const r=await api.post('/api/maturity/rounds/'+roundId+'/synthesis',{});if(r.configured===false)alert('Claude is not configured on the server.');else setSyn(r.synthesis);}catch(e){alert(e.message);}finally{setBusy(false);}}
+  const improved=p.radar.filter(r=>r.delta>0).length, declined=p.radar.filter(r=>r.delta<0).length;
   return h('div',null,
     h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Are we improving? — self-reported vs. Claude benchmark'),
-      series.length?h(ChartCanvas,{type:'line',height:240,data:trend,options:{scales:{y:{min:0,max:5}}}}):h('div',{className:'small muted'},'Needs at least one closed round with benchmarks.')),
-    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Radar — this round vs. previous vs. benchmark'),
-      h(ChartCanvas,{type:'radar',height:340,data:radar,options:{scales:{r:{min:0,max:5,ticks:{stepSize:1}}}}})),
-    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Movement since previous round'),
-      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Service'),h('th',null,'Prev'),h('th',null,'Now'),h('th',null,'Δ'),h('th',null,'Benchmark'))),
-        h('tbody',null,p.radar.slice().sort((a,b)=>(a.delta||0)-(b.delta||0)).map(r=>h('tr',{key:r.serviceId},
-          h('td',null,r.name),h('td',null,r.prevMean!=null?r.prevMean:'—'),h('td',null,r.familyMean!=null?r.familyMean:'—'),
-          h('td',null,r.delta==null?'—':h('b',{style:{color:r.delta>0?'#0F766E':r.delta<0?'#991B1B':'var(--muted)'}},(r.delta>0?'+':'')+r.delta)),
-          h('td',null,r.benchmark!=null?r.benchmark:'—')))))),
+      series.length>1?h(ChartCanvas,{type:'line',height:240,data:trend,options:{scales:{y:{min:0,max:5}}}}):h('div',{className:'small muted'},'A trend line appears once two or more rounds are closed with benchmarks.')),
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'Movement by service — previous round → this round'),
+      p.prevRoundId
+        ?h('div',null,
+          h('div',{className:'small muted',style:{marginBottom:6}},
+            h('span',{style:{color:'#0F766E',fontWeight:700}},'▲ '+improved+' improved'),'   ',
+            h('span',{style:{color:'#B91C1C',fontWeight:700}},'▼ '+declined+' declined'),
+            '   · benchmark shown as ◆ on the Scorecard'),
+          h(Slopegraph,{rows:p.radar,onOpen:null}))
+        :h('div',{className:'small muted'},'No earlier round to compare against yet — this becomes the baseline.')),
+    h(ConsciousnessSection,{cc:p.consciousness,note:consciousnessNote}),
     h(ConsciousnessSection,{cc:p.consciousness,note:consciousnessNote}),
     h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Round synthesis'),
       h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:synth},busy?'Generating…':'Generate synthesis'),

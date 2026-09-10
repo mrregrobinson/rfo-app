@@ -10,26 +10,30 @@ const { FONT_FAMILY, registerChartFonts } = require('./chart-fonts');
 
 const chartCanvas = new ChartJSNodeCanvas({
   width: 560,
-  height: 420,
+  height: 520,
   backgroundColour: 'white',
   chartCallback: (ChartJS) => { ChartJS.defaults.font.family = FONT_FAMILY; },
 });
 registerChartFonts(chartCanvas);
 
-async function radarPng(model) {
-  const services = model.services;
+// Grouped horizontal bar: one row per assessed service, maturity mean vs. Claude
+// benchmark on a 1–5 scale (replaces the radar — clearer for 16 services).
+async function barPng(model) {
+  const services = model.services.filter((s) => s.stats && s.stats.mean != null);
+  if (!services.length) return null;
   return chartCanvas.renderToBuffer({
-    type: 'radar',
+    type: 'bar',
     data: {
-      labels: services.map((s) => s.name),
+      labels: services.map((s) => `#${s.number} ${s.name}`),
       datasets: [
-        { label: 'Family mean', data: services.map((s) => s.stats.mean), borderColor: '#1B2A4A', backgroundColor: 'rgba(27,42,74,0.12)', borderWidth: 2 },
-        { label: 'Claude benchmark', data: services.map((s) => (s.benchmark ? s.benchmark.benchmarkLevel : null)), borderColor: '#C9A84C', backgroundColor: 'rgba(201,168,76,0.10)', borderWidth: 2, borderDash: [5, 4] },
+        { label: 'Family mean', data: services.map((s) => s.stats.mean), backgroundColor: 'rgba(27,42,74,0.85)', barPercentage: 0.6 },
+        { label: 'Claude benchmark', data: services.map((s) => (s.benchmark ? s.benchmark.benchmarkLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.6 },
       ],
     },
     options: {
-      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Family office maturity radar (0–5)' } },
-      scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } },
+      indexAxis: 'y',
+      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Maturity by service — family mean vs. Claude benchmark (1–5)' } },
+      scales: { x: { min: 0, max: 5, ticks: { stepSize: 1 } } },
     },
   });
 }
@@ -61,10 +65,10 @@ async function buildMaturityReportPdf(model) {
   doc.moveDown(0.5);
 
   try {
-    const img = await radarPng(model);
-    doc.image(img, { fit: [500, 360] });
+    const img = await barPng(model);
+    if (img) doc.image(img, { fit: [500, 460] });
   } catch (err) {
-    doc.fontSize(9).fillColor('#991B1B').text(`(radar could not be rendered: ${err.message})`);
+    doc.fontSize(9).fillColor('#991B1B').text(`(chart could not be rendered: ${err.message})`);
   }
   doc.moveDown(0.5);
 
