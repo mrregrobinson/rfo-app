@@ -287,10 +287,12 @@ function seedMaturity() {
 
   // Migration 033 backfills maturity_role from is_fo_admin, but on a fresh install that
   // migration runs before any user exists (same limitation as risk_role). Re-assert here,
-  // now that the users exist: FO admins (and the legacy is_admin flag) are Maturity
-  // admins; Ross and Lucas are members (self-assess only).
-  db.prepare("UPDATE users SET maturity_role = 'admin' WHERE is_fo_admin = 1 OR is_admin = 1").run();
+  // now that the users exist: the FO admins (Reg, Sheri-Dawn) are Maturity admins; Ross
+  // and Lucas are members (self-assess only). Deliberately NOT keying off the legacy
+  // is_admin flag — on some databases it is set wider than intended.
+  db.prepare("UPDATE users SET maturity_role = 'admin' WHERE is_fo_admin = 1").run();
   db.prepare("UPDATE users SET maturity_role = 'admin' WHERE id IN ('reg', 'sd')").run();
+  db.prepare("UPDATE users SET maturity_role = 'member' WHERE id IN ('ross', 'lucas')").run();
 
   const insGroup = db.prepare('INSERT INTO maturity_service_groups (id, name, sort_order) VALUES (?, ?, ?)');
   for (const g of maturitySeed.GROUPS) insGroup.run(g.id, g.name, g.sort_order);

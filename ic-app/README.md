@@ -28,6 +28,20 @@ applications under it —
   lookup, and "Required Actions" that promote to real tasks in the Family Task List's
   `02. Risk Management` category. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
 
+- **Maturity Assessment** (`/maturity`) — periodic assessment of family-office
+  maturity by service (5 categories, 16 services), each rated 1–5 from a short
+  per-service questionnaire every family member answers. Every service in every round
+  also gets a Claude web-search **benchmark** (1–5, "what would move us up") and the
+  round gets a written **synthesis**. A second lens — **Capital Consciousness**, the
+  1–7 Arc of Capital Consciousness (Mo Lidsky / Prime Quadrant) — has each member
+  self-place across six decision domains ("doing the right things" alongside the
+  scorecard's "doing things right"). Rounds run `draft → open → closed`; at the start
+  of a cycle Claude can propose refreshed wording for the editable level descriptors,
+  reviewed by an admin before the round opens. The Appendix B spreadsheet is seeded as
+  a closed, benchmark-free reference round; the first in-app cycle becomes the trend
+  anchor. "Notes / actions" promote to real Family Task List tasks (default category
+  "04. Maturity"). See `RFO_Maturity_App_BuildSpec_v1.md`/`.docx`.
+
 `/` is the RFO home page — sign in once, land there, and pick an app. The apps
 share the same accounts, sessions, and database (`data/ic.db`); there is no second
 login.
@@ -94,12 +108,15 @@ for the full rationale):
 - **Family Office Administrator** (`users.is_fo_admin`) — family-office-wide: add/delete
   members, reset a lost password/2FA. Reg and Sheri-Dawn hold this today.
 - **Per-application role** (`users.dd_role`, `users.tasks_role`, `users.meetings_role`,
-  `users.risk_role`, each `admin` / `member` / `viewer`) — independent per app. An FO
-  admin is always also an admin of every app. Set from each app's own "Roles" panel, or
-  directly via `PUT /api/admin/members/:userId/app-role` (`app` is `dd`, `tasks`,
-  `meetings`, or `risk`). `risk_role` defaults to `viewer` (the register is readable by
-  anyone with a role; assessments/events/actions need member+, taxonomy needs admin) —
-  unlike the other three, which default to `member`.
+  `users.risk_role`, `users.maturity_role`, each `admin` / `member` / `viewer`) —
+  independent per app. An FO admin is always also an admin of every app. Set from each
+  app's own "Roles" panel, or directly via `PUT /api/admin/members/:userId/app-role`
+  (`app` is `dd`, `tasks`, `meetings`, `risk`, or `maturity`). `risk_role` defaults to
+  `viewer` (the register is readable by anyone with a role; assessments/events/actions
+  need member+, taxonomy needs admin); the other four default to `member`. For
+  `maturity_role`, `member` self-assesses; `admin` also opens/closes rounds, edits the
+  level ladder and questions, and can enter a score for another member (Reg and
+  Sheri-Dawn; Ross and Lucas are members).
 
 ### One-off task import
 
@@ -183,6 +200,37 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   `external_probability_id`.
 - Risk report PDFs are built by `server/risk-report.js` (`pdfkit` + `chartjs-node-canvas`,
   same stack as the expenditure report) and emailed through the existing Graph mailer.
+- `maturity_service_groups` / `maturity_services` / `maturity_level_labels` /
+  `maturity_level_descriptors` — the Maturity Assessment service catalogue (5 categories,
+  16 services) and the editable 1–5 level ladder. Tables are created by migration 033;
+  content is seeded from `server/maturity-seed-data.js` by `ensureSeeded()` (not a
+  migration — the reference round's member scores need a user). Descriptors are edited in
+  place; each round freezes a copy of the ladder into `maturity_rounds.ladder_json` at
+  the `draft → open` transition. `maturity_descriptor_suggestions` holds Claude's
+  start-of-cycle proposed re-wording (a review queue; nothing applied without an admin
+  accept).
+- `maturity_questions` / `maturity_responses` / `maturity_service_scores` — the concise
+  per-service questionnaire, each member's answers per round, and the assigned 1–5 level
+  (weighted mean of answers rounded to the nearest 0.5, or a `direct` override). The
+  latest submitted score per (round, service, member) is what the scorecard averages.
+- `maturity_rounds` — an assessment cycle (`draft` → `open` → `closed`); one active at a
+  time. Exactly one closed round is the `is_anchor` baseline all trends compare to. The
+  seeded `round-2026-baseline` (Appendix B) is closed but deliberately carries no
+  benchmarks and is not the anchor — the first in-app cycle closed with benchmarks
+  becomes it. `maturity_round_snapshots` freezes the whole round as JSON on close.
+- `maturity_benchmarks` — per (round, service) Claude web-search benchmark
+  (`server/claude.js` `benchmarkMaturityService`); the round's written synthesis
+  (`synthesizeMaturityRound`) is stored on `maturity_rounds.synthesis_json`.
+- `maturity_cc_levels` / `maturity_cc_dimensions` / `maturity_cc_prompts` /
+  `maturity_cc_responses` — the 7-level Arc of Capital Consciousness, its six decision
+  domains, reflective prompts, and each member's self-placement per round. Reported for
+  centre of gravity and dispersion, not averaged into a single score.
+- `maturity_actions` — "Notes / actions" per service or synthesis finding, each with a
+  nullable `task_id` linking to a promoted Family Task List task (a soft reference, like
+  `risk_actions.task_id`); soft-deleted via `archived_at`.
+- Maturity report PDFs will be built by `server/maturity-report.js` (same `pdfkit` +
+  `chartjs-node-canvas` stack) — not yet implemented; the `/api/maturity/report/pdf`
+  route is a placeholder.
 
 ## Scheduled Task List digest
 

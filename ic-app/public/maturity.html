@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robinson Family Office — Maturity Assessment</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#1B2A4A;--teal:#2A7D7B;--gold:#C9A84C;--navy-l:#E8ECF3;--teal-l:#EAF4F4;--gold-l:#FDF6E3;--red-l:#FEE2E2;--amber-l:#FEF3C7;--green-l:#D1FAE5;--text:#1B2A4A;--muted:#6B7280;--border:#E5E7EB;--bg:#F9FAFB;--card:#fff;--r:10px;
+  --l1-fg:#9D174D;--l1-bg:#FCE7F0;--l2-fg:#92400E;--l2-bg:#FEF3C7;--l3-fg:#1E3A8A;--l3-bg:#E8ECF3;--l4-fg:#0F766E;--l4-bg:#EAF4F4;--l5-fg:#065F46;--l5-bg:#E8F8EF}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;gap:16px}
+.nav-brand{color:#fff;font-size:13px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.nav-brand a{color:#fff;text-decoration:none}
+.nav-brand span{color:var(--gold);font-size:11px}
+.nav-user{background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer}
+.page{padding:20px;max-width:1120px;margin:0 auto}
+.card{background:var(--card);border:0.5px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+.btn-gold{background:var(--gold);color:#fff}.btn-teal{background:var(--teal);color:#fff}.btn-navy{background:var(--navy);color:#fff}
+.btn-outline{background:#fff;color:var(--navy);border:0.5px solid var(--border)}
+.btn-danger{background:#fff;color:#991B1B;border:0.5px solid #F3D6D6}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;border-bottom:0.5px solid var(--border)}
+.tab{padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;user-select:none}
+.tab.active{color:var(--navy);border-bottom-color:var(--gold)}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:8px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.chip-l1{background:var(--l1-bg);color:var(--l1-fg)}.chip-l2{background:var(--l2-bg);color:var(--l2-fg)}
+.chip-l3{background:var(--l3-bg);color:var(--l3-fg)}.chip-l4{background:var(--l4-bg);color:var(--l4-fg)}
+.chip-l5{background:var(--l5-bg);color:var(--l5-fg)}.chip-none{background:var(--bg);color:var(--muted)}
+.pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:var(--navy-l);color:var(--navy)}
+.pill-draft{background:var(--gold-l);color:#92400E}.pill-open{background:var(--green-l);color:#065F46}.pill-closed{background:var(--navy-l);color:var(--navy)}
+.dgroup{margin-bottom:14px}
+.dhead{display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer}
+.ddot{width:9px;height:9px;border-radius:50%;background:var(--teal);flex-shrink:0}
+.dtitle{font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.4px}
+.rrow{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:start;padding:10px 8px;border-top:0.5px solid var(--border);cursor:pointer}
+.rrow:hover{background:var(--bg)}
+.rnum{font-size:11px;font-weight:700;color:var(--muted);padding-top:2px}
+.rtitle{font-size:13px;font-weight:600;color:var(--navy)}
+.rdesc{font-size:11.5px;color:var(--muted);margin-top:2px}
+.rmeta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.rmeta .k{font-size:10.5px;color:var(--muted)}
+.rright{display:flex;flex-direction:column;gap:4px;align-items:flex-end;white-space:nowrap}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.filters select,.filters input{border:0.5px solid var(--border);border-radius:7px;padding:6px 10px;font-size:12px;background:#fff}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px}
+.form-input,.form-select,.form-textarea{width:100%;border:0.5px solid var(--border);border-radius:7px;padding:8px 12px;font-size:13px;color:var(--text);background:#fff;font-family:inherit;margin-bottom:12px}
+.form-textarea{resize:vertical;min-height:60px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
+.modal{background:#fff;border-radius:12px;padding:22px;max-width:820px;width:100%;max-height:calc(100vh - 48px);overflow-y:auto}
+.modal-sm{max-width:460px}
+.modal-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.modal-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+.sec{font-size:11px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.3px;margin:18px 0 6px}
+.line{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:0.5px dashed var(--border);font-size:12px}
+.line:last-child{border-bottom:none}
+.muted{color:var(--muted)}.small{font-size:11px}
+.alert{padding:9px 13px;border-radius:8px;font-size:12px;margin-bottom:12px;border:0.5px solid}
+.alert-success{background:var(--green-l);border-color:#6EE7B7;color:#065F46}
+.alert-danger{background:var(--red-l);border-color:#FCA5A5;color:#991B1B}
+.alert-info{background:var(--navy-l);border-color:#C7D2FE;color:var(--navy)}
+.kcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kcard{background:var(--card);border:0.5px solid var(--border);border-radius:10px;padding:12px}
+.kcard .v{font-size:20px;font-weight:700;color:var(--navy)}
+.kcard .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px}
+table.tbl th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;padding:6px 8px;border-bottom:0.5px solid var(--border)}
+table.tbl td{padding:7px 8px;border-bottom:0.5px solid var(--border);vertical-align:top}
+.scoresel{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.scoresel button{min-width:30px;height:30px;padding:0 6px;border-radius:7px;border:0.5px solid var(--border);background:#fff;font-weight:700;font-size:12px;cursor:pointer;color:var(--navy)}
+.scoresel button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.linkbtn{background:none;border:none;color:var(--teal);font-weight:600;font-size:11px;cursor:pointer;padding:0}
+.pickrow{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:0.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:12px}
+.pickrow.on{border-color:var(--navy);background:var(--navy-l)}
+.pickrow .pn{font-weight:700;color:var(--muted);flex-shrink:0}
+.arc{display:flex;gap:3px;flex-wrap:wrap}
+.arc .step{flex:1;min-width:64px;text-align:center;border:0.5px solid var(--border);border-radius:7px;padding:5px 4px;cursor:pointer;font-size:10.5px;background:#fff}
+.arc .step.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.arc .step .n{font-weight:700;font-size:12px}
+.track{position:relative;height:34px;border-radius:8px;background:linear-gradient(90deg,var(--l1-bg),var(--gold-l),var(--l5-bg));margin:6px 0}
+.track .dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
+.track .cog{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--gold)}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}.rrow{grid-template-columns:22px 1fr}.rright{align-items:flex-start;margin-top:6px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef}=React;
+const h=React.createElement;
+const api={
+  async get(u){const r=await fetch(u,{credentials:'same-origin'});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  async send(m,u,b){const r=await fetch(u,{method:m,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});if(r.status===401){const e=new Error('UNAUTHENTICATED');e.code=401;throw e;}if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+  post(u,b){return api.send('POST',u,b)},put(u,b){return api.send('PUT',u,b)},
+  async del(u){const r=await fetch(u,{method:'DELETE',credentials:'same-origin'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
+};
+
+// mirrors server/maturity.js levelClass / levelRollup
+function levelClass(n){n=Number(n);if(!isFinite(n))return 'none';if(n<2)return 'l1';if(n<3)return 'l2';if(n<4)return 'l3';if(n<5)return 'l4';return 'l5';}
+function rollup(answers,questions){
+  const w=new Map(questions.map(q=>[q.id,Number(q.weight)||1]));
+  let s=0,tw=0;
+  for(const a of answers){if(!w.has(a.questionId))continue;const v=Number(a.value);if(!isFinite(v))continue;const ww=w.get(a.questionId);s+=v*ww;tw+=ww;}
+  if(!tw)return null;
+  return Math.max(1,Math.min(5,Math.round((s/tw)*2)/2));
+}
+function levelChip(level,extra){
+  if(level==null)return h('span',{className:'chip chip-none'},'—');
+  return h('span',{className:'chip chip-'+levelClass(level),title:extra||''},Number(level).toFixed(1).replace(/\.0$/,''));
+}
+const AGREE=['Strongly disagree','Disagree','Neutral','Agree','Strongly agree'];
+const QUARTERS=['','Q1 2026','Q2 2026','Q3 2026','Q4 2026','Q1 2027','Q2 2027','Q3 2027','Q4 2027'];
+const PRIORITIES=['Immediate','Active','Monitor'];
+
+function ChartCanvas({type,data,options,height,plugins}){
+  const ref=useRef(null);const chartRef=useRef(null);
+  const opts=Object.assign({responsive:true,maintainAspectRatio:false},options||{});
+  useEffect(()=>{
+    if(!ref.current)return;
+    if(chartRef.current&&chartRef.current.config.type===type){chartRef.current.data=data;chartRef.current.options=opts;chartRef.current.update();}
+    else{if(chartRef.current)chartRef.current.destroy();chartRef.current=new Chart(ref.current,{type,data,options:opts,plugins:plugins||[]});}
+  },[JSON.stringify(data),JSON.stringify(options),type]);
+  useEffect(()=>()=>{if(chartRef.current){chartRef.current.destroy();chartRef.current=null;}},[]);
+  return h('div',{style:{position:'relative',height:(height||260)+'px',width:'100%'}},h('canvas',{ref}));
+}
+
+// =====================================================================
+// Assessment tab
+// =====================================================================
+function AssessmentTab({data,me,roles,onReload}){
+  const round=data.round;
+  if(!round||round.status!=='open'){
+    return h('div',{className:'card'},
+      h('div',{className:'muted'},round&&round.status==='draft'
+        ?'The next round is being set up. It will open for assessment shortly.'
+        :'No assessment round is open. An administrator opens one from the Manage tab.'));
+  }
+  return h('div',null,
+    h(AssessmentProgress,{round}),
+    h('div',{className:'sec'},'Maturity scorecard — one short questionnaire per service'),
+    data.groups.map(g=>{
+      const svcs=data.services.filter(s=>s.groupId===g.id);
+      if(!svcs.length)return null;
+      return h('div',{className:'card dgroup',key:g.id},
+        h('div',{className:'dhead'},h('span',{className:'ddot'}),h('span',{className:'dtitle'},g.name)),
+        svcs.map(s=>h(ServiceWorksheet,{key:s.id,service:s,round,levelLabels:data.levelLabels,onReload})));
+    }),
+    h('div',{className:'sec'},'Capital consciousness — where are you on the arc?'),
+    h(CCWorksheet,{round,me,onReload})
+  );
+}
+function AssessmentProgress({round}){
+  const mine=(round.completion||[]).find(c=>c.me)||null;
+  return h('div',{className:'card'},
+    h('div',{style:{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:8}},
+      h('div',null,h('b',null,round.label),' ',h('span',{className:'pill pill-open'},'open')),
+      h('div',{className:'small muted'},'Answer every service, then place yourself on all six capital-consciousness dimensions, then Submit.')),
+    (round.completion||[]).length?h('table',{className:'tbl',style:{marginTop:8}},
+      h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Services'),h('th',null,'Capital consciousness'),h('th',null,''))),
+      h('tbody',null,round.completion.map(c=>h('tr',{key:c.userId},
+        h('td',null,c.name),
+        h('td',null,c.servicesDone+' / '+c.servicesTotal),
+        h('td',null,c.ccDone+' / '+c.ccTotal),
+        h('td',null,c.complete?h('span',{className:'chip chip-l5'},'complete'):h('span',{className:'small muted'},'in progress')))))
+    ):null);
+}
+function ServiceWorksheet({service,round,levelLabels,onReload}){
+  const [detail,setDetail]=useState(null);
+  const [ans,setAns]=useState({});
+  const [note,setNote]=useState('');
+  const [saved,setSaved]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [override,setOverride]=useState(null);
+  const [open,setOpen]=useState(false);
+  useEffect(()=>{if(open&&!detail)api.get('/api/maturity/services/'+service.id+'?round='+round.id).then(d=>{
+    setDetail(d);const a={};(d.myResponses||[]).forEach(r=>a[r.questionId]=r.value);setAns(a);
+    const mine=(d.scores||[]).find(x=>x.userName&&d.myResponses);
+  });},[open]);
+  const questions=detail?detail.questions:[];
+  const computed=detail?rollup(Object.entries(ans).map(([questionId,value])=>({questionId,value})),questions):null;
+  const myScore=detail?(detail.scores||[]).find(x=>x.userId===window.__me):null;
+  const submitted=myScore&&myScore.submitted;
+  async function save(next){
+    setBusy(true);
+    try{
+      await api.put('/api/maturity/responses',{roundId:round.id,serviceId:service.id,responses:Object.entries(next||ans).map(([questionId,value])=>({questionId,value}))});
+      setSaved(true);setTimeout(()=>setSaved(false),1200);
+    }catch(e){alert(e.message);}finally{setBusy(false);}
+  }
+  async function submit(){
+    setBusy(true);
+    try{
+      if(override!=null)await api.put('/api/maturity/scores',{roundId:round.id,serviceId:service.id,level:override,rationale:'Direct override',submitted:true});
+      else{await save();await api.post('/api/maturity/services/'+service.id+'/submit',{roundId:round.id});}
+      await onReload();
+      api.get('/api/maturity/services/'+service.id+'?round='+round.id).then(setDetail);
+    }catch(e){alert(e.message);}finally{setBusy(false);}
+  }
+  return h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 4px'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer'},onClick:()=>setOpen(!open)},
+      h('span',{style:{fontWeight:600}},'#'+service.number+' '+service.name),
+      submitted?h('span',{className:'chip chip-'+levelClass(myScore.level)},'you: '+Number(myScore.level).toFixed(1)):h('span',{className:'small muted'},'not submitted'),
+      h('span',{style:{marginLeft:'auto',color:'var(--teal)',fontSize:11}},open?'▾':'▸')),
+    open&&(!detail?h('div',{className:'small muted',style:{padding:8}},'Loading…'):h('div',{style:{padding:'8px 4px'}},
+      h('div',{className:'small muted',style:{marginBottom:8}},(service.descriptors.find(d=>d.level===3)||{}).text),
+      questions.map(q=>h('div',{key:q.id,style:{marginBottom:10}},
+        h('div',{style:{fontSize:12,marginBottom:4}},q.prompt),
+        q.responseKind==='level_pick'
+          ?service.descriptors.map(d=>h('div',{key:d.level,className:'pickrow'+(Number(ans[q.id])===d.level?' on':''),onClick:()=>{const n={...ans,[q.id]:d.level};setAns(n);save(n);}},
+              h('span',{className:'pn'},d.level),h('span',null,(levelLabels.find(l=>l.level===d.level)||{}).name+' — '+d.text)))
+          :h('div',{className:'scoresel'},AGREE.map((lbl,i)=>h('button',{key:i,className:Number(ans[q.id])===i+1?'on':'',title:lbl,onClick:()=>{const n={...ans,[q.id]:i+1};setAns(n);save(n);}},i+1)))
+      )),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,marginTop:6,flexWrap:'wrap'}},
+        h('span',{className:'small muted'},'Computed level:'),levelChip(computed),
+        h('button',{className:'linkbtn',onClick:()=>setOverride(override==null?(computed||3):null)},override==null?'adjust':'use computed'),
+        override!=null&&h('div',{className:'scoresel'},[1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>h('button',{key:v,className:override===v?'on':'',onClick:()=>setOverride(v)},v))),
+        saved&&h('span',{className:'small',style:{color:'var(--teal)'}},'saved'),
+        h('span',{style:{flex:1}}),
+        h('button',{className:'btn btn-teal btn-sm',disabled:busy||(override==null&&computed==null),onClick:submit},submitted?'Re-submit':'Submit this service'))
+    ))
+  );
+}
+function CCWorksheet({round,me,onReload}){
+  const [cc,setCc]=useState(null);
+  const [vals,setVals]=useState({});
+  const [refl,setRefl]=useState({});
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{api.get('/api/maturity/cc?round='+round.id).then(d=>{
+    setCc(d);const v={},r={};(d.myResponses||[]).forEach(x=>{v[x.dimensionId]=x.level;r[x.dimensionId]=x.reflection;});setVals(v);setRefl(r);
+  });},[]);
+  if(!cc)return h('div',{className:'card small muted'},'Loading…');
+  const allPlaced=cc.dimensions.every(d=>vals[d.dimensionId||d.id]);
+  async function saveOne(dimId,level,reflection){
+    const next={...vals,[dimId]:level};setVals(next);
+    try{await api.put('/api/maturity/cc-responses',{roundId:round.id,responses:[{dimensionId:dimId,level,reflection:reflection!==undefined?reflection:(refl[dimId]||'')}]});}catch(e){alert(e.message);}
+  }
+  async function submit(){
+    setBusy(true);
+    try{await api.post('/api/maturity/cc/submit',{roundId:round.id});await onReload();}catch(e){alert(e.message);}finally{setBusy(false);}
+  }
+  return h('div',{className:'card'},
+    cc.dimensions.map(d=>{
+      const prompts=cc.prompts.filter(p=>p.dimensionId===d.id);
+      return h('div',{key:d.id,style:{borderTop:'0.5px solid var(--border)',padding:'10px 0'}},
+        h('div',{style:{fontWeight:600,marginBottom:4}},d.name),
+        prompts.map(p=>h('div',{key:p.id,className:'small muted',style:{marginBottom:4}},p.prompt)),
+        h('div',{className:'arc'},cc.levels.map(l=>h('div',{key:l.level,className:'step'+(Number(vals[d.id])===l.level?' on':''),title:l.description,onClick:()=>saveOne(d.id,l.level)},
+          h('div',{className:'n'},l.level),l.name))),
+        h('input',{className:'form-input',style:{marginTop:6,marginBottom:0},placeholder:'Reflection (optional)',value:refl[d.id]||'',
+          onChange:e=>setRefl({...refl,[d.id]:e.target.value}),onBlur:e=>{if(vals[d.id])saveOne(d.id,vals[d.id],e.target.value);}}));
+    }),
+    h('div',{style:{marginTop:12,fontSize:10.5,color:'var(--muted)'}},cc.attribution),
+    h('div',{style:{marginTop:10,textAlign:'right'}},h('button',{className:'btn btn-teal btn-sm',disabled:busy||!allPlaced,onClick:submit},'Submit capital consciousness'))
+  );
+}
+
+// =====================================================================
+// Scorecard tab
+// =====================================================================
+function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
+  const rounds=data.rounds||[];
+  const services=data.services;
+  const radar={
+    labels:services.map(s=>s.name),
+    datasets:[
+      {label:'Family mean',data:services.map(s=>s.stats.mean),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',borderWidth:2},
+      {label:'Claude benchmark',data:services.map(s=>s.benchmark?s.benchmark.benchmarkLevel:null),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.10)',borderWidth:2,borderDash:[5,4]},
+    ],
+  };
+  return h('div',null,
+    h('div',{className:'filters'},
+      h('span',{className:'small muted'},'Round'),
+      h('select',{value:roundId||'',onChange:e=>onPickRound(e.target.value)},rounds.map(r=>h('option',{key:r.id,value:r.id},r.label+(r.isAnchor?' ★':'')+' ('+r.status+')'))),
+      h('div',{style:{flex:1}}),
+      h('a',{className:'btn btn-outline btn-sm',href:'/api/maturity/report/pdf?round='+(roundId||''),target:'_blank'},'Print / PDF')),
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'Family office maturity radar'),
+      h(ChartCanvas,{type:'radar',height:340,data:radar,options:{scales:{r:{min:0,max:5,ticks:{stepSize:1}}},plugins:{legend:{position:'top'}}}})),
+    data.groups.map(g=>{
+      const svcs=services.filter(s=>s.groupId===g.id);
+      if(!svcs.length)return null;
+      const means=svcs.map(s=>s.stats.mean).filter(m=>m!=null);
+      const gm=means.length?(means.reduce((a,b)=>a+b,0)/means.length):null;
+      return h('div',{className:'card dgroup',key:g.id},
+        h('div',{className:'dhead'},h('span',{className:'ddot'}),h('span',{className:'dtitle'},g.name),
+          h('span',{className:'small muted',style:{marginLeft:'auto'}},gm!=null?'category mean '+gm.toFixed(2):'not assessed')),
+        h('div',{style:{overflowX:'auto'}},h('table',{className:'tbl'},
+          h('thead',null,h('tr',null,h('th',null,'#'),h('th',null,'Service'),
+            members.map(m=>h('th',{key:m.id,title:m.name},m.name.split(' ')[0])),
+            h('th',null,'Min'),h('th',null,'Mean'),h('th',null,'Max'),h('th',null,'Spread'),h('th',null,'Benchmark'),h('th',null,'Gap'),h('th',null,''))),
+          h('tbody',null,svcs.map(s=>h('tr',{key:s.id,style:{cursor:'pointer'},onClick:()=>onOpenService(s.id)},
+            h('td',null,s.number),
+            h('td',null,s.name),
+            members.map(m=>h('td',{key:m.id},s.stats.byUser[m.id]!=null?levelChip(s.stats.byUser[m.id]):h('span',{className:'muted'},'—'))),
+            h('td',null,s.stats.min!=null?s.stats.min:'—'),
+            h('td',null,s.stats.mean!=null?h('b',null,s.stats.mean):'—'),
+            h('td',null,s.stats.max!=null?s.stats.max:'—'),
+            h('td',null,s.stats.spread!=null?s.stats.spread:'—'),
+            h('td',null,s.benchmark?levelChip(s.benchmark.benchmarkLevel):h('span',{className:'muted'},'—')),
+            h('td',null,s.gap==null?'—':h('span',{style:{fontWeight:700,color:s.gap>0.5?'#92400E':s.gap<-0.5?'#0F766E':'var(--muted)'}},(s.gap>0?'+':'')+s.gap)),
+            h('td',null,s.actionCounts.open>0?h('span',{className:'small muted'},s.actionCounts.open+' action'+(s.actionCounts.open>1?'s':'')):'')
+          ))))));
+    })
+  );
+}
+
+// =====================================================================
+// Service drawer
+// =====================================================================
+function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onChanged}){
+  const [d,setD]=useState(null);
+  const [busy,setBusy]=useState('');
+  const [editLvl,setEditLvl]=useState(null);
+  const [editText,setEditText]=useState('');
+  function load(){return api.get('/api/maturity/services/'+serviceId+'?round='+(roundId||'')+'&allQuestions=1').then(setD);}
+  useEffect(()=>{load();},[serviceId,roundId]);
+  if(!d)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
+  const s=d.service;
+  async function saveDesc(level){
+    try{await api.put('/api/maturity/services/'+s.id+'/descriptors/'+level,{text:editText});setEditLvl(null);await load();onChanged&&onChanged();}catch(e){alert(e.message);}
+  }
+  async function acceptSug(sg,text){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/accept',text!=null?{text}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}}
+  async function dismissSug(sg){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
+  async function runBenchmark(){setBusy('bench');try{const r=await api.post('/api/maturity/rounds/'+roundId+'/benchmark',{serviceId:s.id});if(r.configured===false)alert('Claude is not configured on the server — benchmark unavailable.');await load();onChanged&&onChanged();}catch(e){alert(e.message);}finally{setBusy('');}}
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+      h('div',null,h('div',{className:'modal-title'},'#'+s.number+' '+s.name),
+        h('div',{className:'modal-sub'},d.stats&&d.stats.mean!=null?('Family mean '+d.stats.mean):'Not assessed this round',
+          d.benchmark?('  ·  Benchmark '+d.benchmark.benchmarkLevel):'')),
+      h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')),
+
+    h('div',{className:'sec'},'The five maturity levels'),
+    d.descriptors.map(dd=>h('div',{key:dd.level,className:'line',style:{alignItems:'flex-start'}},
+      h('div',{style:{flex:1}},
+        h('b',null,dd.level+' · '+((levelLabels.find(l=>l.level===dd.level)||{}).name||'')),
+        editLvl===dd.level
+          ?h('div',null,h('textarea',{className:'form-textarea',value:editText,onChange:e=>setEditText(e.target.value)}),
+             h('button',{className:'btn btn-teal btn-sm',onClick:()=>saveDesc(dd.level)},'Save'),
+             h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>setEditLvl(null)},'Cancel'))
+          :h('div',{className:'small'},dd.text)),
+      roles.maturityAdmin&&editLvl!==dd.level&&h('button',{className:'linkbtn',onClick:()=>{setEditLvl(dd.level);setEditText(dd.text);}},'edit'))),
+
+    (d.suggestions&&d.suggestions.length)?h('div',null,
+      h('div',{className:'sec'},'Proposed wording (Claude) — review before the round opens'),
+      d.suggestions.filter(sg=>sg.status==='pending').map(sg=>h('div',{key:sg.id,className:'card',style:{background:'var(--gold-l)',padding:10}},
+        h('div',{className:'small'},h('b',null,'Level '+sg.level),' — ',sg.rationale),
+        h('div',{className:'grid2',style:{marginTop:6}},
+          h('div',null,h('div',{className:'small muted'},'Current'),h('div',{className:'small'},sg.currentText)),
+          h('div',null,h('div',{className:'small muted'},'Suggested'),h('div',{className:'small'},sg.suggestedText))),
+        roles.maturityAdmin&&h('div',{style:{marginTop:6}},
+          h('button',{className:'btn btn-teal btn-sm',onClick:()=>acceptSug(sg)},'Accept'),
+          h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>{const t=prompt('Edit and accept:',sg.suggestedText);if(t!=null)acceptSug(sg,t);}},'Edit & accept'),
+          h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>dismissSug(sg)},'Dismiss'))))
+    ):null,
+
+    h('div',{className:'sec'},'This round — member scores'),
+    (d.scores&&d.scores.length)?h('table',{className:'tbl'},
+      h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Level'),h('th',null,'Method'),h('th',null,'Rationale'),h('th',null,''))),
+      h('tbody',null,d.scores.map(x=>h('tr',{key:x.userId},
+        h('td',null,x.userName),h('td',null,levelChip(x.level)),h('td',null,x.method),h('td',null,h('span',{className:'small'},x.rationale||'—')),
+        h('td',null,x.submitted?h('span',{className:'chip chip-l5'},'submitted'):h('span',{className:'small muted'},'draft')))))
+    ):h('div',{className:'small muted'},'No scores recorded this round.'),
+
+    h('div',{className:'sec'},'Claude benchmark'),
+    d.benchmark?h('div',null,
+      h('div',null,levelChip(d.benchmark.benchmarkLevel),'  ',h('span',{className:'small muted'},'by '+d.benchmark.searchedByName+' · '+(d.benchmark.searchedAt||'').slice(0,10))),
+      h('div',{className:'small',style:{marginTop:6}},d.benchmark.rationale),
+      d.benchmark.whatWouldMoveUp&&d.benchmark.whatWouldMoveUp.length?h('div',{style:{marginTop:6}},
+        h('div',{className:'small muted'},'What would move us up'),
+        d.benchmark.whatWouldMoveUp.map((x,i)=>h('div',{key:i,className:'small'},'• '+x))):null,
+      d.benchmark.caveats&&h('div',{className:'small muted',style:{marginTop:6}},'Caveat: '+d.benchmark.caveats),
+      (d.benchmark.sources||[]).length?h('div',{className:'small',style:{marginTop:4}},'Sources: ',d.benchmark.sources.map((sr,i)=>h('a',{key:i,href:sr.url,target:'_blank',style:{marginRight:8}},sr.title||sr.url))):null
+    ):h('div',{className:'small muted'},'Not benchmarked this round.'),
+    roles.maturityMember&&roundId&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:6},disabled:busy==='bench',onClick:runBenchmark},busy==='bench'?'Running…':(d.benchmark?'Re-run benchmark':'Run benchmark')),
+
+    d.trend&&d.trend.length>1?h('div',null,h('div',{className:'sec'},'Trend'),
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Round'),h('th',null,'Family mean'),h('th',null,'Benchmark'))),
+        h('tbody',null,d.trend.map(t=>h('tr',{key:t.roundId},h('td',null,t.label),h('td',null,t.mean!=null?t.mean:'—'),h('td',null,t.benchmark!=null?t.benchmark:'—')))))):null,
+
+    h('div',{className:'sec'},'Notes / actions'),
+    h(ActionList,{actions:d.actions,serviceId:s.id,roundId,members,roles,onChanged:load})
+  ));
+}
+
+function ActionList({actions,serviceId,dimensionId,roundId,members,roles,onChanged}){
+  const [adding,setAdding]=useState(false);
+  const [f,setF]=useState({title:'',detail:'',priority:'Active',dueQuarter:'',ownerText:''});
+  async function add(){
+    if(!f.title.trim())return;
+    try{await api.post('/api/maturity/actions',{...f,serviceId,dimensionId,roundId});setAdding(false);setF({title:'',detail:'',priority:'Active',dueQuarter:'',ownerText:''});onChanged&&onChanged();}catch(e){alert(e.message);}
+  }
+  async function upd(a,patch){try{await api.put('/api/maturity/actions/'+a.id,patch);onChanged&&onChanged();}catch(e){alert(e.message);}}
+  async function promote(a){
+    const cat=prompt('Task category id (default "maturity"):','maturity');
+    try{await api.post('/api/maturity/actions/'+a.id+'/promote',{categoryId:cat||'maturity',assignedToAll:true});onChanged&&onChanged();}catch(e){alert(e.message);}
+  }
+  async function unlink(a){if(!confirm('Unlink from the Family Task List task?'))return;try{await api.post('/api/maturity/actions/'+a.id+'/unlink',{});onChanged&&onChanged();}catch(e){alert(e.message);}}
+  return h('div',null,
+    (actions||[]).map(a=>h('div',{key:a.id,className:'line',style:{alignItems:'flex-start'}},
+      h('div',{style:{flex:1}},
+        h('b',null,a.title),' ',h('span',{className:'chip chip-'+(a.priority==='Immediate'?'l1':a.priority==='Active'?'l2':'l4')},a.priority),
+        a.detail&&h('div',{className:'small muted'},a.detail),
+        h('div',{className:'small muted'},(a.dueQuarter||'')+(a.ownerText?(' · '+a.ownerText):''),
+          a.taskId?(a.linkedTaskDeleted?' · linked task deleted':' · synced to Task List ('+(a.task?a.task.status:'')+')'):'')),
+      h('div',{style:{display:'flex',gap:4,flexShrink:0}},
+        !a.taskId&&roles.maturityMember&&h('select',{value:a.status,onChange:e=>upd(a,{status:e.target.value})},['open','in_progress','done'].map(s=>h('option',{key:s,value:s},s))),
+        !a.taskId&&roles.tasksMember&&h('button',{className:'linkbtn',onClick:()=>promote(a)},'→ Task List'),
+        a.taskId&&roles.maturityMember&&h('button',{className:'linkbtn',onClick:()=>unlink(a)},'unlink'),
+        roles.maturityMember&&h('button',{className:'linkbtn',style:{color:'#991B1B'},onClick:()=>{if(confirm('Remove this action?'))api.del('/api/maturity/actions/'+a.id).then(onChanged);}},'×')))),
+    roles.maturityMember&&(adding
+      ?h('div',{style:{marginTop:8}},
+        h('input',{className:'form-input',placeholder:'Action title',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
+        h('div',{className:'grid2'},
+          h('select',{className:'form-select',value:f.priority,onChange:e=>setF({...f,priority:e.target.value})},PRIORITIES.map(p=>h('option',{key:p,value:p},p))),
+          h('select',{className:'form-select',value:f.dueQuarter,onChange:e=>setF({...f,dueQuarter:e.target.value})},QUARTERS.map(q=>h('option',{key:q,value:q},q||'no target quarter')))),
+        h('button',{className:'btn btn-teal btn-sm',onClick:add},'Add'),
+        h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>setAdding(false)},'Cancel'))
+      :h('button',{className:'linkbtn',style:{marginTop:6},onClick:()=>setAdding(true)},'+ Add action')));
+}
+
+// =====================================================================
+// Capital Consciousness tab
+// =====================================================================
+function CCTab({roundId}){
+  const [cc,setCc]=useState(null);
+  useEffect(()=>{api.get('/api/maturity/cc?round='+(roundId||'')).then(setCc);},[roundId]);
+  if(!cc)return h('div',{className:'card'},'Loading…');
+  return h('div',null,
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'The arc of capital consciousness'),
+      cc.levels.map(l=>h('div',{key:l.level,className:'line'},
+        h('div',{style:{flex:1}},h('b',null,l.level+' · '+l.name),h('span',{className:'muted'},' — '+l.tagline),
+          h('div',{className:'small muted'},l.description))))),
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'Family placement'),
+      (cc.profile||[]).map(p=>h('div',{key:p.dimensionId,style:{marginBottom:14}},
+        h('div',{style:{display:'flex',justifyContent:'space-between'}},
+          h('b',null,p.name),
+          h('span',{className:'small muted'},p.centreOfGravity!=null?('centre '+p.centreOfGravity+(p.prevCentreOfGravity!=null?(' (was '+p.prevCentreOfGravity+')'):'')):'no placements')),
+        h('div',{className:'track'},
+          p.centreOfGravity!=null&&h('div',{className:'cog',style:{left:((p.centreOfGravity-1)/6*100)+'%'}}),
+          (p.members||[]).filter(m=>m.submitted).map((m,i)=>h('div',{key:m.userId,className:'dot',style:{left:((m.level-1)/6*100)+'%',marginTop:(i%2?10:-10)+'px'},title:m.name+' — level '+m.level},(m.name||'?')[0]))),
+        p.straddlesThreshold&&h('div',{className:'small',style:{color:'#92400E'}},'Members sit on both sides of the Level-4 reactive → chosen threshold.'),
+        (p.members||[]).filter(m=>m.submitted&&m.reflection).map(m=>h('div',{key:m.userId,className:'small muted'},'“'+m.reflection+'” — '+m.name)))),
+      h('div',{style:{marginTop:8,fontSize:10.5,color:'var(--muted)'}},cc.attribution))
+  );
+}
+
+// =====================================================================
+// Progress tab
+// =====================================================================
+function ProgressTab({roundId}){
+  const [p,setP]=useState(null);
+  const [syn,setSyn]=useState(null);
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{api.get('/api/maturity/profile?round='+(roundId||'')).then(setP);},[roundId]);
+  if(!p)return h('div',{className:'card'},'Loading…');
+  const series=p.aggregateSeries||[];
+  const trend={
+    labels:series.map(s=>s.label),
+    datasets:[
+      {label:'Family self-reported mean',data:series.map(s=>s.familyMean),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.1)',tension:.3},
+      {label:'Claude benchmarked mean',data:series.map(s=>s.benchmarkMean),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.1)',borderDash:[5,4],tension:.3},
+    ],
+  };
+  const radar={
+    labels:p.radar.map(r=>r.name),
+    datasets:[
+      {label:'This round',data:p.radar.map(r=>r.familyMean),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.12)',borderWidth:2},
+      p.prevRoundId&&{label:'Previous round',data:p.radar.map(r=>r.prevMean),borderColor:'#9CA3AF',backgroundColor:'rgba(156,163,175,.1)',borderWidth:1.5},
+      {label:'Benchmark',data:p.radar.map(r=>r.benchmark),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.08)',borderWidth:2,borderDash:[5,4]},
+    ].filter(Boolean),
+  };
+  async function synth(){setBusy(true);try{const r=await api.post('/api/maturity/rounds/'+roundId+'/synthesis',{});if(r.configured===false)alert('Claude is not configured on the server.');else setSyn(r.synthesis);}catch(e){alert(e.message);}finally{setBusy(false);}}
+  return h('div',null,
+    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Are we improving? — self-reported vs. Claude benchmark'),
+      series.length?h(ChartCanvas,{type:'line',height:240,data:trend,options:{scales:{y:{min:0,max:5}}}}):h('div',{className:'small muted'},'Needs at least one closed round with benchmarks.')),
+    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Radar — this round vs. previous vs. benchmark'),
+      h(ChartCanvas,{type:'radar',height:340,data:radar,options:{scales:{r:{min:0,max:5,ticks:{stepSize:1}}}}})),
+    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Movement since previous round'),
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Service'),h('th',null,'Prev'),h('th',null,'Now'),h('th',null,'Δ'),h('th',null,'Benchmark'))),
+        h('tbody',null,p.radar.slice().sort((a,b)=>(a.delta||0)-(b.delta||0)).map(r=>h('tr',{key:r.serviceId},
+          h('td',null,r.name),h('td',null,r.prevMean!=null?r.prevMean:'—'),h('td',null,r.familyMean!=null?r.familyMean:'—'),
+          h('td',null,r.delta==null?'—':h('b',{style:{color:r.delta>0?'#0F766E':r.delta<0?'#991B1B':'var(--muted)'}},(r.delta>0?'+':'')+r.delta)),
+          h('td',null,r.benchmark!=null?r.benchmark:'—')))))),
+    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Round synthesis'),
+      h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:synth},busy?'Generating…':'Generate synthesis'),
+      syn&&h('div',{style:{marginTop:8}},
+        h('div',{className:'small'},h('b',null,'Doing things right. '),syn.doingThingsRight),
+        h('div',{className:'small',style:{marginTop:6}},h('b',null,'Doing the right things. '),syn.doingTheRightThings),
+        (syn.priorities||[]).length?h('div',{style:{marginTop:6}},h('div',{className:'small muted'},'Priorities'),(syn.priorities||[]).map((x,i)=>h('div',{key:i,className:'small'},'• '+x))):null))
+  );
+}
+
+// =====================================================================
+// Manage tab
+// =====================================================================
+function ManageTab({data,members,onReload}){
+  const active=(data.rounds||[]).find(r=>r.status==='draft'||r.status==='open');
+  const [label,setLabel]=useState('');
+  const [carryFrom,setCarryFrom]=useState('');
+  const [busy,setBusy]=useState('');
+  const [msg,setMsg]=useState('');
+  const closed=(data.rounds||[]).filter(r=>r.status==='closed');
+  async function startRound(){setBusy('start');setMsg('');try{await api.post('/api/maturity/rounds',{label,carryFrom:carryFrom||undefined});setLabel('');await onReload();}catch(e){setMsg(e.message);}finally{setBusy('');}}
+  async function act(path,label){setBusy(path);setMsg('');try{const r=await api.post('/api/maturity/rounds/'+active.id+'/'+path,{});if(r.configured===false)setMsg('Claude is not configured on the server.');else setMsg(label+' done.');await onReload();}catch(e){setMsg(e.message);}finally{setBusy('');}}
+  return h('div',null,
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'Assessment round'),
+      msg&&h('div',{className:'alert alert-info'},msg),
+      active?h('div',null,
+        h('div',null,h('b',null,active.label),' ',h('span',{className:'pill pill-'+active.status},active.status)),
+        h('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}},
+          active.status==='draft'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('suggest-descriptors','Descriptor suggestions')},busy==='suggest-descriptors'?'Asking Claude…':'Ask Claude to refresh level wording (all 16)'),
+          active.status==='draft'&&h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:()=>act('open','Open round')},'Open the round for assessment'),
+          active.status==='open'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('benchmark','Benchmark')},busy==='benchmark'?'Benchmarking…':'Run Claude benchmark (all 16)'),
+          active.status==='open'&&h('button',{className:'btn btn-navy btn-sm',disabled:busy,onClick:()=>{if(confirm('Close this round? It becomes read-only and, if it has benchmarks, the comparison anchor.'))act('close','Close round');}},'Close the round')),
+        active.status==='draft'&&h('div',{className:'small muted',style:{marginTop:6}},'Review the proposed wording per service from the Scorecard tab → open a service. Anything left pending is dropped when the round opens.')
+      ):h('div',null,
+        h('div',{className:'grid2'},
+          h('input',{className:'form-input',placeholder:'Round label, e.g. 2026 H2',value:label,onChange:e=>setLabel(e.target.value)}),
+          h('select',{className:'form-select',value:carryFrom,onChange:e=>setCarryFrom(e.target.value)},
+            h('option',{value:''},'Start blank'),
+            closed.map(r=>h('option',{key:r.id,value:r.id},'Carry answers from '+r.label)))),
+        h('button',{className:'btn btn-teal btn-sm',disabled:busy||!label.trim(),onClick:startRound},'Start a draft round'))),
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'Closed rounds'),
+      closed.length?closed.map(r=>h('div',{key:r.id,className:'line'},
+        h('div',null,h('b',null,r.label),r.isAnchor&&h('span',{className:'chip chip-l3',style:{marginLeft:6}},'anchor'),
+          h('div',{className:'small muted'},(r.closedAt||'').slice(0,10))),
+        h('a',{className:'linkbtn',href:'/api/maturity/report/pdf?round='+r.id,target:'_blank'},'PDF'))):h('div',{className:'small muted'},'None yet.')),
+    h('div',{className:'card'},
+      h('div',{className:'sec',style:{marginTop:0}},'Roles'),
+      members.map(m=>h('div',{key:m.id,style:{display:'flex',alignItems:'center',gap:10,padding:'6px 0',borderBottom:'0.5px solid var(--border)'}},
+        h('span',{style:{flex:1}},m.name),
+        h('select',{value:m.maturityRole||'member',onChange:async e=>{try{await api.put('/api/admin/members/'+m.id+'/app-role',{app:'maturity',role:e.target.value});onReload();}catch(err){alert(err.message);}}},
+          ['admin','member','viewer'].map(r=>h('option',{key:r,value:r},r[0].toUpperCase()+r.slice(1)))))))
+  );
+}
+
+// =====================================================================
+// Shell
+// =====================================================================
+function MaturityApp({me,roles}){
+  const [data,setData]=useState(null);
+  const [err,setErr]=useState('');
+  const [tab,setTab]=useState('scorecard');
+  const [roundId,setRoundId]=useState('');
+  const [openSvc,setOpenSvc]=useState(null);
+  function load(rid){
+    const q=rid||roundId;
+    return api.get('/api/maturity/overview'+(q?('?round='+q):''))
+      .then(d=>{setData(d);if(!roundId&&d.round)setRoundId(d.round.id);})
+      .catch(e=>{if(e.code===401)location.href='/due-diligence?returnTo='+encodeURIComponent(location.pathname);else setErr(e.message);});
+  }
+  useEffect(()=>{window.__me=me.id;load();},[]);
+  useEffect(()=>{if(roundId)load(roundId);},[roundId]);
+  if(err)return h('div',{className:'page'},h('div',{className:'alert alert-danger'},err));
+  if(!data)return h('div',{className:'page'},'Loading…');
+  const TABS=[['assessment','Assessment'],['scorecard','Scorecard'],['cc','Capital Consciousness'],['progress','Progress']];
+  if(roles.maturityAdmin)TABS.push(['manage','Manage']);
+  return h('div',{className:'page'},
+    h('div',{style:{marginBottom:12}},
+      h('div',{style:{fontSize:18,fontWeight:700,color:'var(--navy)'}},'Maturity Assessment'),
+      h('div',{className:'small muted'},'Robinson Family Office — is the family office getting more effective over time?'+(roles.maturityMember?'':' · read-only'))),
+    h('div',{className:'tabs'},TABS.map(([k,l])=>h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
+    tab==='assessment'&&h(AssessmentTab,{data,me,roles,onReload:()=>load(roundId)}),
+    tab==='scorecard'&&h(ScorecardTab,{data,members:data.members,roles,roundId,onPickRound:setRoundId,onOpenService:setOpenSvc}),
+    tab==='cc'&&h(CCTab,{roundId}),
+    tab==='progress'&&h(ProgressTab,{roundId}),
+    tab==='manage'&&roles.maturityAdmin&&h(ManageTab,{data,members:data.members,onReload:()=>load(roundId)}),
+    openSvc&&h(ServiceDrawer,{serviceId:openSvc,roundId,members:data.members,roles,levelLabels:data.levelLabels,onClose:()=>setOpenSvc(null),onChanged:()=>load(roundId)})
+  );
+}
+
+function Shell(){
+  const [me,setMe]=useState(null);const [checking,setChecking]=useState(true);const [menu,setMenu]=useState(false);
+  useEffect(()=>{api.get('/api/me').then(setMe).catch(()=>{location.href='/due-diligence?returnTo='+encodeURIComponent(location.pathname);}).finally(()=>setChecking(false));},[]);
+  async function logout(){await api.post('/api/logout');location.href='/due-diligence';}
+  if(checking||!me)return h('div',{style:{padding:40,textAlign:'center',color:'var(--muted)'}},'Loading…');
+  const roles={maturityAdmin:me.maturityAdmin,maturityMember:me.maturityAdmin||me.maturityRole==='member',tasksMember:me.tasksAdmin||me.tasksRole==='member'};
+  return h('div',null,
+    h('nav',{className:'nav'},
+      h('div',{className:'nav-brand'},h('a',{href:'/'},'Robinson Family Office'),h('span',null,'Maturity Assessment'),
+        h('a',{href:'/risk',style:{color:'rgba(255,255,255,.75)',fontSize:11,marginLeft:14,textDecoration:'none'}},'Risk Management →')),
+      h('div',{className:'nav-user',onClick:()=>setMenu(!menu)},me.name.split(' ')[0])),
+    menu&&h('div',{style:{position:'fixed',top:56,right:16,background:'#fff',border:'0.5px solid var(--border)',borderRadius:10,padding:8,zIndex:400,minWidth:180,boxShadow:'0 4px 20px rgba(0,0,0,.12)'}},
+      h('div',{style:{padding:'8px 10px',fontSize:13,fontWeight:600,color:'var(--navy)'}},me.name),
+      h('div',{style:{padding:'0 10px 8px',fontSize:11,color:'var(--muted)'}},roles.maturityAdmin?'Maturity Admin':roles.maturityMember?'Maturity Member':'Read-only'),
+      me.isAdmin&&h('a',{href:'/admin',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'Manage Members'),
+      h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out')),
+    h(MaturityApp,{me,roles})
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(Shell));
+</script>
+</body>
+</html>

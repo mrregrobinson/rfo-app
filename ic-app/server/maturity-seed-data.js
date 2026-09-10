@@ -211,7 +211,7 @@ function questionsForService(svc) {
       help_text: '', response_kind: 'scale_1_5', weight: 1,
     },
     {
-      prompt: `${svc.name} is embedded in our systems and governance — it is disciplined, monitored, and coordinated with the areas it touches.`,
+      prompt: `Our handling of ${svc.name} is embedded in day-to-day systems and routines — disciplined, monitored, and coordinated with the areas it touches.`,
       help_text: '', response_kind: 'scale_1_5', weight: 1,
     },
     {

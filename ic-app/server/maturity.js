@@ -17,8 +17,13 @@
 const crypto = require('node:crypto');
 const { requireAuth } = require('./auth');
 const claude = require('./claude');
+const mailer = require('./mailer');
 const { logApiUsage } = require('./usage');
+const { contentRow, paragraph, emailShell } = require('./email-template');
+const { buildMaturityReportPdf } = require('./maturity-report');
 const { ACC_ATTRIBUTION, CHANGE_DIMENSIONS, FAMILY_CONTEXT } = require('./maturity-seed-data');
+
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 
 // Default Family Task List category for promoted actions — the existing "04. Maturity"
 // category under the Strategy pillar (migration 013). Any task_categories id may be
@@ -251,9 +256,22 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   // READ
   // ===================================================================================
 
+  function roundCompletion(roundId, meId) {
+    const activeServices = servicesList(false);
+    const ccTotal = ccDimensions().length;
+    return familyMemberIds().map((uid) => {
+      const done = db.prepare('SELECT COUNT(*) AS n FROM maturity_service_scores WHERE round_id = ? AND user_id = ? AND submitted = 1').get(roundId, uid).n;
+      const ccDone = db.prepare('SELECT COUNT(*) AS n FROM maturity_cc_responses WHERE round_id = ? AND user_id = ? AND submitted = 1').get(roundId, uid).n;
+      return { userId: uid, me: uid === meId, name: userName(uid), servicesDone: done, servicesTotal: activeServices.length, ccDone, ccTotal, complete: done >= activeServices.length && ccDone >= ccTotal };
+    });
+  }
+
   app.get('/api/maturity/overview', requireAuth, (req, res) => {
     const roundId = resolveRoundId(req.query);
     const round = roundId ? roundRowToJson(getRound(roundId)) : null;
+    if (round && (round.status === 'open' || round.status === 'draft')) {
+      round.completion = roundCompletion(roundId, req.session.userId);
+    }
     const groups = db.prepare('SELECT * FROM maturity_service_groups ORDER BY sort_order').all()
       .map((g) => ({ id: g.id, name: g.name, sortOrder: g.sort_order }));
     const includeRetired = req.query.retired === '1';
@@ -271,10 +289,11 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       };
     });
     const rounds = db.prepare('SELECT * FROM maturity_rounds ORDER BY COALESCE(closed_at, opened_at, created_at) DESC').all().map(roundRowToJson);
+    const memberRows = db.prepare("SELECT id, name, is_fo_admin, maturity_role FROM users WHERE is_active = 1 ORDER BY rowid").all();
     res.json({
       round, rounds, groups, services,
       levelLabels: levelLabels(),
-      members: familyMemberIds().map((id) => ({ id, name: userName(id) })),
+      members: memberRows.map((m) => ({ id: m.id, name: m.name, maturityRole: m.maturity_role, maturityAdmin: !!m.is_fo_admin || m.maturity_role === 'admin' })),
       anchorRoundId: anchorRound()?.id || null,
       generatedAt: new Date().toISOString(),
     });
@@ -426,12 +445,9 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
        ON CONFLICT(round_id, service_id, user_id, question_id)
        DO UPDATE SET value = excluded.value, note = excluded.note, updated_at = excluded.updated_at`
     );
-    const tx = db.transaction(() => {
-      for (const a of answers) {
-        up.run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, a.questionId, clampLevel(a.value) ?? 3, (a.note || '').trim(), now);
-      }
-    });
-    tx();
+    for (const a of answers) {
+      up.run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, a.questionId, clampLevel(a.value) ?? 3, (a.note || '').trim(), now);
+    }
     const stored = db.prepare('SELECT question_id AS questionId, value FROM maturity_responses WHERE round_id = ? AND service_id = ? AND user_id = ?')
       .all(b.roundId, b.serviceId, req.session.userId);
     const computed = levelRollup(stored, questions);
@@ -508,13 +524,10 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
        ON CONFLICT(round_id, user_id, dimension_id)
        DO UPDATE SET level = excluded.level, reflection = excluded.reflection, updated_at = excluded.updated_at`
     );
-    const tx = db.transaction(() => {
-      for (const r of items) {
-        const lvl = Math.max(1, Math.min(7, Math.round(Number(r.level) || 0)));
-        up.run(crypto.randomUUID(), b.roundId, req.session.userId, r.dimensionId, lvl, (r.reflection || '').trim(), now);
-      }
-    });
-    tx();
+    for (const r of items) {
+      const lvl = Math.max(1, Math.min(7, Math.round(Number(r.level) || 0)));
+      up.run(crypto.randomUUID(), b.roundId, req.session.userId, r.dimensionId, lvl, (r.reflection || '').trim(), now);
+    }
     res.json({ ok: true, stored: items.length });
   });
 
@@ -652,10 +665,57 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       generatedAt: new Date().toISOString(),
     };
   }
-  // exposed for the (later) report module
   app.get('/api/maturity/round-model/:id', requireAuth, (req, res) => {
     if (!getRound(req.params.id)) return res.status(404).json({ error: 'Round not found' });
     res.json(buildRoundModel(req.params.id));
+  });
+
+  // ---- reporting (all roles) ----
+  function reportRoundId(q) {
+    return (q && q.round) || anchorRound()?.id ||
+      db.prepare("SELECT id FROM maturity_rounds WHERE status = 'closed' ORDER BY closed_at DESC LIMIT 1").get()?.id ||
+      activeRound()?.id || null;
+  }
+  app.get('/api/maturity/report/pdf', requireAuth, async (req, res) => {
+    const rid = reportRoundId(req.query);
+    if (!rid) return res.status(404).json({ error: 'No round to report on yet.' });
+    try {
+      const pdf = await buildMaturityReportPdf(buildRoundModel(rid));
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', 'inline; filename="RFO-Maturity-Assessment.pdf"');
+      res.send(pdf);
+    } catch (err) {
+      console.error('maturity report pdf failed:', err.message);
+      res.status(500).json({ error: err.message || 'Failed to build report' });
+    }
+  });
+  app.post('/api/maturity/report/email', requireAuth, async (req, res) => {
+    const b = req.body || {};
+    const to = Array.isArray(b.to) ? b.to.filter(Boolean) : (b.to ? [b.to] : []);
+    if (!to.length) return res.status(400).json({ error: 'At least one recipient is required' });
+    const rid = reportRoundId(b);
+    if (!rid) return res.status(404).json({ error: 'No round to report on yet.' });
+    try {
+      const pdf = await buildMaturityReportPdf(buildRoundModel(rid));
+      await mailer.sendMail({
+        to,
+        subject: b.subject || 'RFO Maturity Assessment',
+        html: emailShell({
+          eyebrow: 'Robinson Family Office',
+          title: 'Maturity Assessment',
+          bodyRowsHtml: contentRow(paragraph('The latest Maturity Assessment scorecard is attached as a PDF.')),
+          ctaText: 'Open Maturity Assessment',
+          ctaUrl: `${APP_BASE_URL}/maturity`,
+        }),
+        attachments: [{ name: 'RFO-Maturity-Assessment.pdf', contentType: 'application/pdf', contentBase64: pdf.toString('base64') }],
+      });
+      logAudit({ userId: req.session.userId, action: 'maturity.report_emailed', entityType: 'maturity_report', entityId: rid, details: { to } });
+      res.json({ ok: true });
+    } catch (err) {
+      if (err instanceof mailer.MailNotConfiguredError) return res.status(503).json({ error: 'Email is not configured on the server.' });
+      console.error('maturity report email failed:', err.message);
+      res.status(500).json({ error: err.message || 'Failed to send report' });
+    }
   });
 
   // ===================================================================================
