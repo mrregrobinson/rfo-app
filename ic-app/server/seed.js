@@ -229,12 +229,12 @@ function seedRiskRegister() {
   for (const s of riskSeed.SCALE) insScale.run(s.kind, s.score, s.label, s.detail);
 
   const insCat = db.prepare(
-    `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, notes, sort_order, is_active)
-     VALUES (@id, @domainId, @number, @title, @description, @accountable, @notes, @sortOrder, 1)`
+    `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, accountable_user_id, notes, sort_order, is_active)
+     VALUES (@id, @domainId, @number, @title, @description, @accountable, @accountableUserId, @notes, @sortOrder, 1)`
   );
   const insMit = db.prepare(
-    `INSERT INTO risk_mitigations (id, category_id, text, in_place, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, 1, ?, ?, ?)`
+    `INSERT INTO risk_mitigations (id, category_id, text, in_place, sort_order, added_at, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?, ?, ?)`
   );
   const insAct = db.prepare(
     `INSERT INTO risk_actions (id, category_id, title, detail, priority, owner_text, due_quarter, status, task_id, created_by, created_at, updated_at)
@@ -248,10 +248,11 @@ function seedRiskRegister() {
   riskSeed.CATEGORIES.forEach((c, ci) => {
     insCat.run({
       id: c.id, domainId: c.domainId, number: c.number, title: c.title,
-      description: c.description, accountable: c.accountable, notes: c.note, sortOrder: ci + 1,
+      description: c.description, accountable: c.accountable, accountableUserId: c.accountableUserId || null,
+      notes: c.note, sortOrder: ci + 1,
     });
     c.mitigations.forEach((text, mi) => {
-      insMit.run(crypto.randomUUID(), c.id, text, mi + 1, riskSeed.EFFECTIVE_DATE, riskSeed.EFFECTIVE_DATE);
+      insMit.run(crypto.randomUUID(), c.id, text, mi + 1, riskSeed.EFFECTIVE_DATE, riskSeed.EFFECTIVE_DATE, riskSeed.EFFECTIVE_DATE);
     });
     c.actions.forEach((a) => {
       insAct.run(crypto.randomUUID(), c.id, a.title, a.priority, a.ownerText || '', a.due || null, a.status || 'open', assessor, riskSeed.EFFECTIVE_DATE, riskSeed.EFFECTIVE_DATE);

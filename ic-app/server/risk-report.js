@@ -86,13 +86,16 @@ function fmtCAD(n) {
 }
 
 async function buildRiskReportPdf(model) {
-  const { domains, rows, events, residualExposure, inherentExposure, generatedAt, filters } = model;
+  const { domains, rows, events, residualExposure, inherentExposure, generatedAt, filters, asOf, asOfLabel } = model;
   const doc = new PDFDocument({ margin: 44, size: 'LETTER' });
   const chunks = [];
   doc.on('data', (c) => chunks.push(c));
   const done = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
 
   doc.fontSize(18).fillColor('#1B2A4A').text('Robinson Family Office — Enterprise Risk Register');
+  if (asOfLabel || asOf) {
+    doc.fontSize(11).fillColor('#9D174D').text(asOfLabel || `Historical view — as of ${String(asOf).slice(0, 10)}`);
+  }
   doc.fontSize(10).fillColor('#6B7280').text(`Generated ${new Date(generatedAt).toLocaleString('en-CA')}`);
   const fbits = [];
   if (filters.domain) fbits.push(`domains ${filters.domain}`);
@@ -129,7 +132,7 @@ async function buildRiskReportPdf(model) {
       doc.font('Helvetica-Bold').text(`#${r.category.number}  ${r.category.title}`);
       doc.font('Helvetica').fillColor('#374151').text(r.category.description);
       doc.fillColor('#111').text(`Inherent ${inh}   |   Residual ${resd}   |   ${a ? a.status : ''}`);
-      doc.fillColor('#6B7280').text(`Accountable: ${r.category.accountable || '—'}   |   Next review: ${a && a.nextReview ? a.nextReview : '—'}`);
+      doc.fillColor('#6B7280').text(`Accountable: ${r.category.accountable_name || r.category.accountable || '—'}   |   Next review: ${a && a.nextReview ? a.nextReview : '—'}`);
       if ((r.mitigations || []).length) {
         doc.fillColor('#2A7D7B').text('Key mitigations in place:');
         doc.fillColor('#374151');
@@ -148,8 +151,11 @@ async function buildRiskReportPdf(model) {
   doc.addPage();
   doc.fontSize(13).fillColor('#1B2A4A').text('Open actions by priority', { underline: true });
   doc.moveDown(0.3);
+  // In a historical (as-of) view an action counts as open when it wasn't yet completed
+  // at that date (openAsOf, set by buildReportModel); otherwise use current status.
+  const isOpen = (a) => (a.openAsOf !== undefined ? a.openAsOf : a.effectiveStatus !== 'done');
   const allActions = [];
-  for (const r of rows) for (const a of r.actions) if (a.effectiveStatus !== 'done') allActions.push({ ...a, categoryNumber: r.category.number, categoryTitle: r.category.title });
+  for (const r of rows) for (const a of r.actions) if (isOpen(a)) allActions.push({ ...a, categoryNumber: r.category.number, categoryTitle: r.category.title });
   for (const bucket of ['Immediate', 'Active', 'Monitor']) {
     const list = allActions.filter((a) => a.priority === bucket);
     doc.fontSize(11).fillColor(bucket === 'Immediate' ? '#9D174D' : bucket === 'Active' ? '#B45309' : '#1E9E5A').text(`${bucket} (${list.length})`);

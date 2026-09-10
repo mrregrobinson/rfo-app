@@ -175,7 +175,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
     if(fDomain&&c.domainId!==fDomain)return false;
     if(fStatus&&(!a||a.status!==fStatus))return false;
     if(fBand){const b=a?(basis==='residual'?a.residualBand:a.inherentBand):null;if(b!==fBand)return false;}
-    if(fAcc&&!(c.accountable||'').toLowerCase().includes(fAcc.toLowerCase()))return false;
+    if(fAcc&&!((c.accountableName||c.accountable||'').toLowerCase().includes(fAcc.toLowerCase())))return false;
     if(fFlags==='review'){const nr=a&&a.nextReview;if(!nr)return false;}
     if(fFlags==='immediate'&&c.actionCounts.immediate===0)return false;
     return true;
@@ -196,7 +196,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
       roles.riskAdmin&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>setAddingCat(true)},'+ Add risk'),
       h(ReportButtons,{filters:{domain:fDomain,status:fStatus,band:fBand,accountable:fAcc},members})
     ),
-    addingCat&&h(AddCategoryModal,{domains:overview.domains,onClose:()=>setAddingCat(false),onDone:(newId)=>{setAddingCat(false);onReload().then(()=>onOpenCategory(newId));}}),
+    addingCat&&h(AddCategoryModal,{domains:overview.domains,members,onClose:()=>setAddingCat(false),onDone:(newId)=>{setAddingCat(false);onReload().then(()=>onOpenCategory(newId));}}),
     overview.domains.map(d=>{
       const dcats=shown.filter(c=>c.domainId===d.id);
       if(!dcats.length)return null;
@@ -217,7 +217,7 @@ function RegisterTab({overview,members,me,roles,onReload,onOpenCategory}){
                 h('div',{className:'rdesc'},c.description),
                 h('div',{className:'rmeta'},
                   a?statusPill(a.status):h('span',{className:'small muted'},'Not yet assessed'),
-                  h('span',{className:'k'},'· '+(c.accountable||'—')),
+                  h('span',{className:'k'},'· '+(c.accountableName||c.accountable||'—')),
                   a&&a.nextReview&&h('span',{className:'k'},'· review '+a.nextReview),
                   c.actionCounts.open>0&&h('span',{className:'k'},'· '+c.actionCounts.open+' open action'+(c.actionCounts.open>1?'s':'')),
                   c.actionCounts.immediate>0&&h('span',{style:{color:'var(--high-fg)',fontWeight:700,fontSize:10.5}},'· '+c.actionCounts.immediate+' Immediate'),
@@ -287,7 +287,7 @@ function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
   const probScale=scale.filter(s=>s.kind==='probability');
   const impScale=scale.filter(s=>s.kind==='impact');
   return h('div',null,
-    roles.riskAdmin&&h(RiskDetailsEditor,{category:c,domains,refresh}),
+    roles.riskMember&&h(RiskDetailsEditor,{category:c,domains,members,roles,refresh}),
     h('div',{className:'sec'},'Current scoring'),
     latest
       ? h('div',{className:'card',style:{background:'var(--bg)',marginBottom:4}},
@@ -309,7 +309,7 @@ function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
     h(ActionsPanel,{data,members,roles,refresh}),
 
     h(NotesEditor,{category:c,roles,refresh}),
-    h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountable||'—'),
+    h('div',{className:'sec'},'Accountable'),h('div',{className:'small'},c.accountableName||h('span',{className:'muted'},'— not assigned (edit details above)')),
 
     h('div',{className:'sec',style:{cursor:'pointer',userSelect:'none'},onClick:()=>setShowEvents(!showEvents)},(showEvents?'▾ ':'▸ ')+'Events ('+data.events.length+')'),
     showEvents&&h(EventListForCategory,{data,roles,refresh,onChanged:refresh}),
@@ -319,14 +319,16 @@ function RiskPanel({data,members,latest,scale,domains,roles,refresh}){
   );
 }
 
-// Admin-only: edit the risk's descriptive attributes (domain, number, title,
-// description, accountable) and retire/restore it — right here in the drawer, so a risk
-// is edited in ONE place, not split between here and the Manage tab.
-function RiskDetailsEditor({category,domains,refresh}){
+// Edit a risk's details right here in the drawer, so a risk is managed in ONE place.
+// Any Risk member can edit the descriptive fields (title, description, accountable
+// person); domain / number / retire-restore are structural and stay admin-only.
+function RiskDetailsEditor({category,domains,members,roles,refresh}){
+  const isAdmin=!!roles.riskAdmin;
   const [open,setOpen]=useState(false);
   const [f,setF]=useState(null);
   const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
-  function begin(){setF({domainId:category.domainId,number:category.number,title:category.title,description:category.description,accountable:category.accountable||''});setOpen(true);setErr('');}
+  const dom=domains.find(d=>d.id===category.domainId);
+  function begin(){setF({domainId:category.domainId,number:category.number,title:category.title,description:category.description,accountableUserId:category.accountableUserId||''});setOpen(true);setErr('');}
   async function save(){
     setBusy(true);setErr('');
     try{await api.put('/api/risk/categories/'+category.id,f);setOpen(false);refresh();}
@@ -339,19 +341,29 @@ function RiskDetailsEditor({category,domains,refresh}){
     finally{setBusy(false);}
   }
   if(!open)return h('div',{style:{marginBottom:6}},
-    h('button',{className:'linkbtn',onClick:begin},'✎ Edit risk details'),
-    category.isActive
+    h('button',{className:'linkbtn',onClick:begin},'✎ Edit details (title, description, accountable…)'),
+    isAdmin&&(category.isActive
       ? h('button',{className:'linkbtn',style:{marginLeft:12,color:'#991B1B'},disabled:busy,onClick:()=>setActive(false)},'Retire risk')
-      : h('button',{className:'linkbtn',style:{marginLeft:12,color:'var(--teal)'},disabled:busy,onClick:()=>setActive(true)},'Restore risk'));
+      : h('button',{className:'linkbtn',style:{marginLeft:12,color:'var(--teal)'},disabled:busy,onClick:()=>setActive(true)},'Restore risk')));
   return h('div',{className:'card',style:{background:'var(--bg)',marginBottom:8}},
     h('div',{className:'sec',style:{marginTop:0}},'Risk details'),
     err&&h('div',{className:'alert alert-danger'},err),
     h('div',{className:'grid2'},
-      h('div',null,h('label',{className:'form-label'},'Domain'),h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name)))),
-      h('div',null,h('label',{className:'form-label'},'Number'),h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})}))),
+      h('div',null,h('label',{className:'form-label'},'Domain'),
+        isAdmin
+          ? h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name)))
+          : h('div',{className:'small',style:{padding:'6px 0'}},dom?dom.id+' — '+dom.name:f.domainId)),
+      h('div',null,h('label',{className:'form-label'},'Number'),
+        isAdmin
+          ? h('input',{className:'form-input',type:'number',value:f.number,onChange:e=>setF({...f,number:Number(e.target.value)})})
+          : h('div',{className:'small',style:{padding:'6px 0'}},'#'+f.number))),
     h('label',{className:'form-label'},'Title'),h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
     h('label',{className:'form-label'},'One-line description'),h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
-    h('label',{className:'form-label'},'Accountable'),h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('label',{className:'form-label'},'Accountable — one family member'),
+    h('select',{className:'form-select',value:f.accountableUserId,onChange:e=>setF({...f,accountableUserId:e.target.value})},
+      h('option',{value:''},'— not assigned —'),
+      (members||[]).map(m=>h('option',{key:m.id,value:m.id},m.name))),
+    h('div',{className:'small muted',style:{margin:'4px 0 10px'}},'The one person answerable for this risk — not everyone who assists. Note advisors (EY, MLTA, PQ) in the mitigations or notes.'),
     h('div',{style:{display:'flex',gap:6}},
       h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:save},busy?'Saving…':'Save details'),
       h('button',{className:'btn btn-outline btn-sm',onClick:()=>setOpen(false)},'Cancel')));
@@ -444,7 +456,8 @@ function ActionRow({a,roles,onStatus,onDelete,onToggleSync}){
             roles.riskMember
               ? h('select',{style:{fontSize:11,padding:'2px 6px',borderRadius:6,border:'0.5px solid var(--border)'},value:a.status==='incomplete'?'open':a.status,onChange:e=>onStatus(a,e.target.value)},
                   [['open','Open'],['in_progress','In progress'],['done','Done']].map(([v,l])=>h('option',{key:v,value:v},l)))
-              : h('span',{className:'small muted'},a.effectiveStatus))
+              : h('span',{className:'small muted'},a.effectiveStatus),
+            a.effectiveStatus==='done'&&a.completedAt&&h('span',{className:'small muted',style:{marginLeft:6}},'✓ '+a.completedAt.slice(0,10)))
     ),
     h('div',{style:{whiteSpace:'nowrap',textAlign:'right'}},
       h('label',{className:'small',title:canSync?'Sync this action to the Family Task List':'Needs Family Task List member access',style:{display:'inline-flex',alignItems:'center',gap:4,opacity:canSync?1:.5}},
@@ -684,6 +697,85 @@ function EventsTab({overview,roles}){
 // =======================================================================
 // Profile tab
 // =======================================================================
+function defaultReviewLabel(){
+  const d=new Date();return 'Q'+(Math.floor(d.getMonth()/3)+1)+' '+d.getFullYear()+' review';
+}
+
+// Review snapshots (frozen historical copies of the whole register) + a progress line.
+function SnapshotsCard({progress,roles,onOpenCategory}){
+  const [snaps,setSnaps]=useState(null);
+  const [view,setView]=useState(null);
+  const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  function load(){api.get('/api/risk/snapshots').then(setSnaps).catch(e=>setErr(e.message));}
+  useEffect(load,[]);
+  async function take(){
+    const label=prompt('Name this snapshot',defaultReviewLabel());
+    if(!label)return;
+    setBusy(true);setErr('');
+    try{await api.post('/api/risk/snapshots',{label});load();}catch(e){setErr(e.message);}finally{setBusy(false);}
+  }
+  async function del(s){if(!confirm('Delete snapshot "'+s.label+'"? This removes the frozen historical copy.'))return;await api.del('/api/risk/snapshots/'+s.id);load();}
+  const pr=progress||{};
+  const sinceNote=pr.sinceSource==='lastSnapshot'?' (since the last snapshot)':pr.sinceSource==='default90d'?' (last 90 days)':'';
+  return h('div',{className:'card'},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('strong',null,'Review snapshots & progress'),
+      roles.riskMember&&h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:take},busy?'Saving…':'Take a snapshot')),
+    h('div',{className:'small muted',style:{marginTop:2,marginBottom:8}},'A snapshot freezes the whole register — scores, mitigations, actions, events — so a past review can be pulled up exactly as it stood.'),
+    err&&h('div',{className:'alert alert-danger'},err),
+    pr.since&&h('div',{className:'small',style:{marginBottom:10}},
+      h('strong',null,'Progress'+sinceNote+' — from '+pr.since.slice(0,10)+': '),
+      pr.actionsClosed+' actions closed · '+pr.actionsOpened+' opened · '+(pr.actionsArchived||0)+' removed · '+
+      pr.mitigationsAdded+' mitigations added · '+(pr.assessmentsRecorded||0)+' re-assessments · '+pr.eventsLogged+' events logged'),
+    !snaps?h('div',{className:'small muted'},'Loading…'):
+      !snaps.length?h('div',{className:'small muted'},'No snapshots yet — take one at each review so you can compare and reprint later.'):
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,['Taken','Label','Residual','Inherent','Open actions',''].map(x=>h('th',{key:x},x)))),
+        h('tbody',null,snaps.map(s=>h('tr',{key:s.id},
+          h('td',null,s.takenAt.slice(0,10)),
+          h('td',null,s.label,s.notes&&h('div',{className:'small muted'},s.notes),h('div',{className:'small muted'},'by '+(s.takenByName||'—'))),
+          h('td',null,s.residualExposure),h('td',null,s.inherentExposure),h('td',null,s.openActions),
+          h('td',{style:{whiteSpace:'nowrap'}},
+            h('button',{className:'linkbtn',onClick:()=>setView(s.id)},'view'),
+            h('a',{className:'linkbtn',style:{marginLeft:8},href:'/api/risk/snapshots/'+s.id+'/pdf',target:'_blank'},'PDF'),
+            roles.riskAdmin&&h('button',{className:'linkbtn',style:{marginLeft:8,color:'#991B1B'},onClick:()=>del(s)},'delete')))))),
+    view&&h(SnapshotViewModal,{snapshotId:view,onClose:()=>setView(null),onOpenCategory})
+  );
+}
+
+function SnapshotViewModal({snapshotId,onClose,onOpenCategory}){
+  const [d,setD]=useState(null);const [err,setErr]=useState('');
+  useEffect(()=>{api.get('/api/risk/snapshots/'+snapshotId).then(setD).catch(e=>setErr(e.message));},[snapshotId]);
+  if(err)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},h('div',{className:'alert alert-danger'},err),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')));
+  if(!d)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
+  const pl=d.payload||{rows:[],domains:[]};
+  return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}},
+      h('div',null,h('div',{className:'modal-title'},d.label),
+        h('div',{className:'modal-sub'},'Frozen '+d.takenAt.slice(0,10)+' by '+(d.takenByName||'—')+'  ·  residual '+d.residualExposure+' / inherent '+d.inherentExposure+'  ·  '+d.openActions+' open actions')),
+      h('div',{style:{whiteSpace:'nowrap'}},
+        h('a',{className:'btn btn-outline btn-sm',href:'/api/risk/snapshots/'+snapshotId+'/pdf',target:'_blank'},'PDF'),
+        h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:onClose},'Close'))),
+    h('div',{className:'small muted',style:{margin:'8px 0'}},'This is the register exactly as it stood then. "open current" jumps to the live risk.'),
+    (pl.domains||[]).map(dom=>{
+      const rr=(pl.rows||[]).filter(r=>r.category.domain_id===dom.id);
+      if(!rr.length)return null;
+      return h('div',{key:dom.id,style:{marginTop:10}},
+        h('div',{className:'sec',style:{marginBottom:2}},dom.id+' — '+dom.name),
+        rr.map(r=>{
+          const a=r.assessment;
+          return h('div',{className:'line',key:r.category.id,style:{alignItems:'flex-start'}},
+            h('div',{style:{flex:1}},
+              h('div',null,h('span',{style:{fontWeight:600}},'#'+r.category.number+' '+r.category.title)),
+              a&&h('div',{className:'small'},'Inherent '+a.inherentProb+'×'+a.inherentImpact+'='+a.inherentScore+'  ·  Residual '+a.residualProb+'×'+a.residualImpact+'='+a.residualScore+'  ·  '+a.status),
+              h('div',{className:'small muted'},(r.mitigations||[]).length+' mitigations in place  ·  '+
+                r.actions.filter(x=>(x.openAsOf!==undefined?x.openAsOf:x.effectiveStatus!=='done')).length+' open actions'+
+                (a&&a.rationale?'  ·  rationale recorded':''))),
+            h('button',{className:'linkbtn',onClick:()=>{onClose();onOpenCategory(r.category.id);}},'open current →'));
+        }));
+    })
+  ));
+}
+
 function ProfileTab({overview,roles,onOpenCategory}){
   const [p,setP]=useState(null);const [basis,setBasis]=useState('residual');
   const [actions,setActions]=useState(null);
@@ -739,6 +831,7 @@ function ProfileTab({overview,roles,onOpenCategory}){
     h('div',{className:'card'},h('strong',null,'By domain'),h('div',{style:{maxWidth:640}},h(ChartCanvas,{type:'bar',data:domBar,options:{plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true}}},height:220})),
       h('table',{className:'tbl',style:{marginTop:8}},h('thead',null,h('tr',null,['Domain','Mean residual','Worst','Open actions'].map(x=>h('th',{key:x},x)))),
         h('tbody',null,p.domains.map(d=>h('tr',{key:d.id},h('td',null,d.id+' — '+d.name),h('td',null,d.meanResidual),h('td',null,d.worstResidual),h('td',null,d.openActions)))))),
+    h(SnapshotsCard,{progress:p.progress,roles,onOpenCategory}),
     h('div',{className:'card'},
       h('strong',null,'Changes since last review'),
       p.compare.from===p.compare.to
@@ -837,8 +930,8 @@ function DomainNames({overview,onReload}){
   );
 }
 
-function AddCategoryModal({domains,onClose,onDone}){
-  const [f,setF]=useState({domainId:domains[0].id,title:'',description:'',accountable:''});
+function AddCategoryModal({domains,members,onClose,onDone}){
+  const [f,setF]=useState({domainId:domains[0].id,title:'',description:'',accountableUserId:''});
   const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
   async function go(){
     if(!f.title.trim()||!f.description.trim()){setErr('Title and description are required.');return;}
@@ -854,7 +947,10 @@ function AddCategoryModal({domains,onClose,onDone}){
     h('select',{className:'form-select',value:f.domainId,onChange:e=>setF({...f,domainId:e.target.value})},domains.map(d=>h('option',{key:d.id,value:d.id},d.id+' — '+d.name))),
     h('label',{className:'form-label'},'Title'),h('input',{className:'form-input',value:f.title,onChange:e=>setF({...f,title:e.target.value})}),
     h('label',{className:'form-label'},'One-line description'),h('input',{className:'form-input',value:f.description,onChange:e=>setF({...f,description:e.target.value})}),
-    h('label',{className:'form-label'},'Accountable'),h('input',{className:'form-input',value:f.accountable,onChange:e=>setF({...f,accountable:e.target.value})}),
+    h('label',{className:'form-label'},'Accountable — one family member'),
+    h('select',{className:'form-select',value:f.accountableUserId,onChange:e=>setF({...f,accountableUserId:e.target.value})},
+      h('option',{value:''},'— not assigned —'),
+      (members||[]).map(m=>h('option',{key:m.id,value:m.id},m.name))),
     h('div',{style:{display:'flex',gap:6,marginTop:8}},
       h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:go},busy?'Adding…':'Add risk'),
       h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Cancel'))

@@ -81,7 +81,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     };
   }
   function mitigationRowToJson(r) {
-    return { id: r.id, categoryId: r.category_id, text: r.text, inPlace: !!r.in_place, sortOrder: r.sort_order, updatedAt: r.updated_at };
+    return { id: r.id, categoryId: r.category_id, text: r.text, inPlace: !!r.in_place, sortOrder: r.sort_order, addedAt: r.added_at, removedAt: r.removed_at, updatedAt: r.updated_at };
   }
   function taskInfo(taskId) {
     if (!taskId) return null;
@@ -107,6 +107,9 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       priority: r.priority, ownerText: r.owner_text, dueQuarter: r.due_quarter,
       status: r.status, effectiveStatus, taskId: r.task_id, task,
       linkedTaskDeleted: !!(r.task_id && task && task.deleted),
+      // completedAt prefers the linked task's real completion date when synced.
+      completedAt: (r.task_id && task && !task.deleted) ? task.completedAt : r.completed_at,
+      archivedAt: r.archived_at,
       createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
     };
   }
@@ -150,7 +153,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     ).get(categoryId);
   }
   function actionCounts(categoryId) {
-    const rows = db.prepare('SELECT * FROM risk_actions WHERE category_id = ?').all(categoryId).map(actionRowToJson);
+    const rows = db.prepare('SELECT * FROM risk_actions WHERE category_id = ? AND archived_at IS NULL').all(categoryId).map(actionRowToJson);
     const open = rows.filter((a) => a.effectiveStatus !== 'done');
     return {
       total: rows.length,
@@ -177,13 +180,15 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       .map((d) => ({ id: d.id, name: d.name, sortOrder: d.sort_order }));
     const cats = db.prepare('SELECT * FROM risk_categories ORDER BY sort_order').all().map((c) => ({
       id: c.id, domainId: c.domain_id, number: c.number, title: c.title, description: c.description,
-      accountable: c.accountable, notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
+      accountableUserId: c.accountable_user_id, accountableName: userName(c.accountable_user_id),
+      accountable: userName(c.accountable_user_id) || c.accountable, // legacy field kept = resolved name
+      notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
       latestAssessment: assessmentRowToJson(latestAssessment(c.id)),
       actionCounts: actionCounts(c.id),
       events12mo: events12mo(c.id),
       // Included so the Register grid can show "Key mitigations in place" inline (the
       // spreadsheet's column), without a round-trip per row.
-      mitigations: db.prepare('SELECT id, text, in_place FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id)
+      mitigations: db.prepare('SELECT id, text, in_place FROM risk_mitigations WHERE category_id = ? AND removed_at IS NULL ORDER BY sort_order, rowid').all(c.id)
         .map((m) => ({ id: m.id, text: m.text, inPlace: !!m.in_place })),
     }));
     const scale = db.prepare('SELECT * FROM risk_scale ORDER BY kind, score').all()
@@ -195,14 +200,16 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     const c = db.prepare('SELECT * FROM risk_categories WHERE id = ?').get(req.params.id);
     if (!c) return res.status(404).json({ error: 'Risk category not found' });
     const assessments = db.prepare('SELECT * FROM risk_assessments WHERE category_id = ? ORDER BY assessed_at ASC, rowid ASC').all(c.id).map(assessmentRowToJson);
-    const mitigations = db.prepare('SELECT * FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id).map(mitigationRowToJson);
-    const actions = db.prepare('SELECT * FROM risk_actions WHERE category_id = ? ORDER BY created_at').all(c.id).map(actionRowToJson);
+    const mitigations = db.prepare('SELECT * FROM risk_mitigations WHERE category_id = ? AND removed_at IS NULL ORDER BY sort_order, rowid').all(c.id).map(mitigationRowToJson);
+    const actions = db.prepare('SELECT * FROM risk_actions WHERE category_id = ? AND archived_at IS NULL ORDER BY created_at').all(c.id).map(actionRowToJson);
     const events = db.prepare('SELECT * FROM risk_events WHERE category_id = ? ORDER BY occurred_on DESC, rowid DESC').all(c.id).map(eventRowToJson);
     const lastLookup = lookupRowToJson(db.prepare('SELECT * FROM risk_probability_lookups WHERE category_id = ? ORDER BY searched_at DESC LIMIT 1').get(c.id));
     res.json({
       category: {
         id: c.id, domainId: c.domain_id, number: c.number, title: c.title, description: c.description,
-        accountable: c.accountable, notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
+        accountableUserId: c.accountable_user_id, accountableName: userName(c.accountable_user_id),
+        accountable: userName(c.accountable_user_id) || c.accountable,
+        notes: c.notes, sortOrder: c.sort_order, isActive: !!c.is_active,
       },
       assessments, mitigations, actions, events, lastLookup,
     });
@@ -243,44 +250,60 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     res.json({ id: d.id, name, sortOrder: d.sort_order });
   });
 
+  // "Accountable" is one family member — a users.id or null. Free text is not accepted.
+  function resolveAccountable(raw) {
+    if (raw === null || raw === '') return { ok: true, id: null };
+    if (!raw) return { ok: true, id: undefined }; // undefined = "not supplied, leave as-is"
+    const u = db.prepare('SELECT id FROM users WHERE id = ?').get(raw);
+    return u ? { ok: true, id: u.id } : { ok: false };
+  }
+
   app.post('/api/risk/categories', requireAuth, (req, res) => {
     if (!requireAdmin(req, res)) return;
     const b = req.body || {};
     const domain = db.prepare('SELECT id FROM risk_domains WHERE id = ?').get(b.domainId);
     if (!domain) return res.status(400).json({ error: 'Unknown domainId' });
     if (!b.title || !b.description) return res.status(400).json({ error: 'title and description are required' });
+    const acc = resolveAccountable(b.accountableUserId);
+    if (!acc.ok) return res.status(400).json({ error: 'accountableUserId must be a family member' });
     const id = 'risk-' + crypto.randomUUID().slice(0, 8);
     const maxNum = db.prepare('SELECT MAX(number) AS m FROM risk_categories').get().m || 0;
     const maxSort = db.prepare('SELECT MAX(sort_order) AS m FROM risk_categories').get().m || 0;
     db.prepare(
-      `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, notes, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
-    ).run(id, b.domainId, Number(b.number) || maxNum + 1, b.title.trim(), b.description.trim(), (b.accountable || '').trim(), (b.notes || '').trim(), maxSort + 1);
+      `INSERT INTO risk_categories (id, domain_id, number, title, description, accountable, accountable_user_id, notes, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, 1)`
+    ).run(id, b.domainId, Number(b.number) || maxNum + 1, b.title.trim(), b.description.trim(), acc.id || null, (b.notes || '').trim(), maxSort + 1);
     logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_category', entityId: id, details: { created: b.title } });
     res.status(201).json({ id });
   });
 
+  // Member-level: a risk's descriptive fields (title / description / accountable person)
+  // are edited from its drawer like everything else. Structural changes — domain, display
+  // number, active/retired state — are only applied when the caller is a Risk admin.
   app.put('/api/risk/categories/:id', requireAuth, (req, res) => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireMember(req, res)) return;
     const c = db.prepare('SELECT * FROM risk_categories WHERE id = ?').get(req.params.id);
     if (!c) return res.status(404).json({ error: 'Risk category not found' });
     const b = req.body || {};
-    if (b.domainId && !db.prepare('SELECT id FROM risk_domains WHERE id = ?').get(b.domainId)) {
+    const isAdmin = myRoles(req.session.userId).riskAdmin;
+    if (isAdmin && b.domainId && !db.prepare('SELECT id FROM risk_domains WHERE id = ?').get(b.domainId)) {
       return res.status(400).json({ error: 'Unknown domainId' });
     }
+    const acc = resolveAccountable(b.accountableUserId);
+    if (!acc.ok) return res.status(400).json({ error: 'accountableUserId must be a family member' });
     db.prepare(
       `UPDATE risk_categories SET domain_id=@domainId, number=@number, title=@title, description=@description,
-         accountable=@accountable, notes=@notes, sort_order=@sortOrder, is_active=@isActive WHERE id=@id`
+         accountable_user_id=@accountableUserId, notes=@notes, sort_order=@sortOrder, is_active=@isActive WHERE id=@id`
     ).run({
       id: c.id,
-      domainId: b.domainId || c.domain_id,
-      number: b.number != null ? Number(b.number) : c.number,
+      domainId: isAdmin && b.domainId ? b.domainId : c.domain_id,
+      number: isAdmin && b.number != null ? Number(b.number) : c.number,
       title: b.title != null ? String(b.title).trim() : c.title,
       description: b.description != null ? String(b.description).trim() : c.description,
-      accountable: b.accountable != null ? String(b.accountable).trim() : c.accountable,
+      accountableUserId: acc.id === undefined ? c.accountable_user_id : acc.id,
       notes: b.notes != null ? String(b.notes).trim() : c.notes,
-      sortOrder: b.sortOrder != null ? Number(b.sortOrder) : c.sort_order,
-      isActive: b.isActive != null ? (b.isActive ? 1 : 0) : c.is_active,
+      sortOrder: isAdmin && b.sortOrder != null ? Number(b.sortOrder) : c.sort_order,
+      isActive: isAdmin && b.isActive != null ? (b.isActive ? 1 : 0) : c.is_active,
     });
     logAudit({ userId: req.session.userId, action: 'risk.taxonomy_changed', entityType: 'risk_category', entityId: c.id });
     res.json({ ok: true });
@@ -383,8 +406,8 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     const maxSort = db.prepare('SELECT MAX(sort_order) AS m FROM risk_mitigations WHERE category_id = ?').get(c.id).m || 0;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    db.prepare('INSERT INTO risk_mitigations (id, category_id, text, in_place, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, c.id, text, req.body?.inPlace === false ? 0 : 1, maxSort + 1, now, now);
+    db.prepare('INSERT INTO risk_mitigations (id, category_id, text, in_place, sort_order, added_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, c.id, text, req.body?.inPlace === false ? 0 : 1, maxSort + 1, now, now, now);
     res.status(201).json(mitigationRowToJson(db.prepare('SELECT * FROM risk_mitigations WHERE id = ?').get(id)));
   });
 
@@ -404,14 +427,16 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
 
   app.delete('/api/risk/mitigations/:id', requireAuth, (req, res) => {
     if (!requireMember(req, res)) return;
-    db.prepare('DELETE FROM risk_mitigations WHERE id = ?').run(req.params.id);
+    // Soft-remove so a past-dated report can still list the controls in place then.
+    db.prepare('UPDATE risk_mitigations SET removed_at = ?, updated_at = ? WHERE id = ? AND removed_at IS NULL')
+      .run(new Date().toISOString(), new Date().toISOString(), req.params.id);
     res.json({ ok: true });
   });
 
   // ---- actions ----
 
   app.get('/api/risk/actions', requireAuth, (req, res) => {
-    const rows = db.prepare('SELECT * FROM risk_actions ORDER BY created_at').all().map((r) => {
+    const rows = db.prepare('SELECT * FROM risk_actions WHERE archived_at IS NULL ORDER BY created_at').all().map((r) => {
       const cat = db.prepare('SELECT number, title, domain_id FROM risk_categories WHERE id = ?').get(r.category_id);
       return { ...actionRowToJson(r), categoryNumber: cat?.number, categoryTitle: cat?.title, domainId: cat?.domain_id };
     });
@@ -427,11 +452,12 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     const priority = PRIORITIES.includes(b.priority) ? b.priority : 'Active';
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    const status = ['open', 'in_progress', 'done', 'incomplete'].includes(b.status) ? b.status : 'open';
     db.prepare(
-      `INSERT INTO risk_actions (id, category_id, title, detail, priority, owner_text, due_quarter, status, task_id, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+      `INSERT INTO risk_actions (id, category_id, title, detail, priority, owner_text, due_quarter, status, completed_at, task_id, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`
     ).run(id, b.categoryId, b.title.trim(), (b.detail || '').trim(), priority, (b.ownerText || '').trim(), (b.dueQuarter || '').trim() || null,
-      ['open', 'in_progress', 'done', 'incomplete'].includes(b.status) ? b.status : 'open', req.session.userId, now, now);
+      status, status === 'done' ? now : null, req.session.userId, now, now);
     logAudit({ userId: req.session.userId, action: 'risk.action_created', entityType: 'risk_category', entityId: b.categoryId, details: { title: b.title } });
     res.status(201).json(actionRowToJson(db.prepare('SELECT * FROM risk_actions WHERE id = ?').get(id)));
   });
@@ -441,9 +467,16 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     const a = db.prepare('SELECT * FROM risk_actions WHERE id = ?').get(req.params.id);
     if (!a) return res.status(404).json({ error: 'Action not found' });
     const b = req.body || {};
+    const nextStatus = ['open', 'in_progress', 'done', 'incomplete'].includes(b.status) ? b.status : a.status;
+    // Stamp/clear the completion date as the status crosses the "done" line, so progress
+    // reporting can count "actions closed since <date>". Task-synced actions read their
+    // date from the linked task instead (see actionRowToJson).
+    let completedAt = a.completed_at;
+    if (nextStatus === 'done' && a.status !== 'done') completedAt = new Date().toISOString();
+    else if (nextStatus !== 'done') completedAt = null;
     db.prepare(
       `UPDATE risk_actions SET title=@title, detail=@detail, priority=@priority, owner_text=@ownerText,
-         due_quarter=@dueQuarter, status=@status, updated_at=@updatedAt WHERE id=@id`
+         due_quarter=@dueQuarter, status=@status, completed_at=@completedAt, updated_at=@updatedAt WHERE id=@id`
     ).run({
       id: a.id,
       title: b.title != null ? String(b.title).trim() : a.title,
@@ -451,7 +484,8 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       priority: PRIORITIES.includes(b.priority) ? b.priority : a.priority,
       ownerText: b.ownerText != null ? String(b.ownerText).trim() : a.owner_text,
       dueQuarter: b.dueQuarter !== undefined ? (String(b.dueQuarter).trim() || null) : a.due_quarter,
-      status: ['open', 'in_progress', 'done', 'incomplete'].includes(b.status) ? b.status : a.status,
+      status: nextStatus,
+      completedAt,
       updatedAt: new Date().toISOString(),
     });
     res.json(actionRowToJson(db.prepare('SELECT * FROM risk_actions WHERE id = ?').get(a.id)));
@@ -459,9 +493,13 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
 
   app.delete('/api/risk/actions/:id', requireAuth, (req, res) => {
     if (!requireMember(req, res)) return;
-    // The linked Family Task List task (if any) is left in place — someone may be acting
-    // on it already (same rule as meeting_action_items deletion).
-    db.prepare('DELETE FROM risk_actions WHERE id = ?').run(req.params.id);
+    const a = db.prepare('SELECT id FROM risk_actions WHERE id = ?').get(req.params.id);
+    if (!a) return res.status(404).json({ error: 'Action not found' });
+    // Soft-archive rather than hard-delete: a report or snapshot run for a past date can
+    // still see this action existed then. The linked Family Task List task (if any) is
+    // left in place — someone may be acting on it already.
+    db.prepare('UPDATE risk_actions SET archived_at = ?, updated_at = ? WHERE id = ?').run(new Date().toISOString(), new Date().toISOString(), a.id);
+    logAudit({ userId: req.session.userId, action: 'risk.action_archived', entityType: 'risk_action', entityId: a.id });
     res.json({ ok: true });
   });
 
@@ -693,47 +731,76 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     const cutoff = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const evRows = db.prepare('SELECT financial_impact_cad FROM risk_events WHERE occurred_on >= ?').all(cutoff);
 
+    // Progress since a point in time — defaults to the most recent snapshot, else 90 days
+    // ago. Uses the history columns from migration 031.
+    const lastSnap = db.prepare('SELECT taken_at FROM risk_review_snapshots ORDER BY taken_at DESC LIMIT 1').get();
+    const since = req.query.since || lastSnap?.taken_at || new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+    const allActionsJson = db.prepare('SELECT * FROM risk_actions').all().map(actionRowToJson);
+    const progress = {
+      since,
+      sinceSource: req.query.since ? 'query' : lastSnap ? 'lastSnapshot' : 'default90d',
+      actionsClosed: allActionsJson.filter((a) => a.completedAt && a.completedAt >= since).length,
+      actionsOpened: allActionsJson.filter((a) => a.createdAt >= since && !a.archivedAt).length,
+      actionsArchived: allActionsJson.filter((a) => a.archivedAt && a.archivedAt >= since).length,
+      mitigationsAdded: db.prepare('SELECT COUNT(*) AS n FROM risk_mitigations WHERE COALESCE(added_at, created_at) >= ?').get(since).n,
+      mitigationsRemoved: db.prepare('SELECT COUNT(*) AS n FROM risk_mitigations WHERE removed_at >= ?').get(since).n,
+      eventsLogged: db.prepare('SELECT COUNT(*) AS n FROM risk_events WHERE created_at >= ?').get(since).n,
+      assessmentsRecorded: db.prepare('SELECT COUNT(*) AS n FROM risk_assessments WHERE assessed_at >= ? AND supersedes_id IS NOT NULL').get(since).n,
+    };
+
     res.json({
       points, bands,
       residualExposure: residualSum, inherentExposure: inherentSum,
       categoriesAssessed: points.length, categoriesTotal: cats.length,
       incompleteCount, immediateOpen,
       events12mo: { count: evRows.length, financialImpactCad: evRows.reduce((s, r) => s + (r.financial_impact_cad || 0), 0) },
-      domains, series,
+      domains, series, progress,
       compare: { from, to, changes, mostImproved, mostDeteriorated },
     });
   });
 
   // ---- report (§8) ----
 
+  // Assembles the whole register as one object — the current state, or (with query.asOf)
+  // reconstructed for a past date from the history columns. Also the exact shape stored
+  // as a review snapshot's payload.
   function buildReportModel(query) {
+    // asOf accepts a plain date (treated as end of that day, UTC) or a full ISO string.
+    const asOf = query.asOf ? (String(query.asOf).length <= 10 ? String(query.asOf) + 'T23:59:59.999Z' : String(query.asOf)) : null;
     const activeOnly = query.includeRetired ? '' : ' AND is_active = 1';
     let cats = db.prepare(`SELECT * FROM risk_categories WHERE 1=1${activeOnly} ORDER BY sort_order`).all();
     if (query.domain) cats = cats.filter((c) => String(query.domain).split(',').includes(c.domain_id));
     const rows = cats.map((c) => {
-      const a = assessmentRowToJson(latestAssessment(c.id));
-      return {
-        category: c,
-        assessment: a,
-        actions: db.prepare('SELECT * FROM risk_actions WHERE category_id = ?').all(c.id).map(actionRowToJson),
-        mitigations: db.prepare('SELECT text, in_place FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id)
-          .map((m) => ({ text: m.text, inPlace: !!m.in_place })),
-      };
+      const a = assessmentRowToJson(latestAssessment(c.id, asOf || undefined));
+      const actions = db.prepare('SELECT * FROM risk_actions WHERE category_id = ?').all(c.id)
+        .filter((r) => (asOf ? (r.created_at <= asOf && (!r.archived_at || r.archived_at > asOf)) : !r.archived_at))
+        .map((r) => {
+          const json = actionRowToJson(r);
+          // As-of open/closed reconstructed from completed_at (status-at-date isn't tracked).
+          if (asOf) json.openAsOf = !(json.completedAt && json.completedAt <= asOf);
+          return json;
+        });
+      const mitigations = db.prepare('SELECT * FROM risk_mitigations WHERE category_id = ? ORDER BY sort_order, rowid').all(c.id)
+        .filter((m) => (asOf ? ((m.added_at || m.created_at) <= asOf && (!m.removed_at || m.removed_at > asOf)) : !m.removed_at))
+        .map((m) => ({ text: m.text, inPlace: !!m.in_place }));
+      c.accountable_name = userName(c.accountable_user_id) || c.accountable || '';
+      return { category: c, assessment: a, actions, mitigations };
     }).filter((r) => {
       if (query.status && r.assessment && String(query.status).split(',').indexOf(r.assessment.status) === -1) return false;
       if (query.band && r.assessment && String(query.band).split(',').indexOf(r.assessment.residualBand) === -1) return false;
-      if (query.accountable && !((r.category.accountable || '').toLowerCase().includes(String(query.accountable).toLowerCase()))) return false;
+      if (query.accountable && !((r.category.accountable_name || '').toLowerCase().includes(String(query.accountable).toLowerCase()))) return false;
       return true;
     });
     const domains = db.prepare('SELECT * FROM risk_domains ORDER BY sort_order').all();
-    const cutoff = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-    const events = db.prepare('SELECT * FROM risk_events WHERE occurred_on >= ? ORDER BY occurred_on DESC').all(cutoff).map((r) => {
+    const windowEnd = asOf ? asOf.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const windowStart = new Date(new Date(windowEnd).getTime() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const events = db.prepare('SELECT * FROM risk_events WHERE occurred_on >= ? AND occurred_on <= ? ORDER BY occurred_on DESC').all(windowStart, windowEnd).map((r) => {
       const cat = db.prepare('SELECT number, title FROM risk_categories WHERE id = ?').get(r.category_id);
       return { ...eventRowToJson(r), categoryNumber: cat?.number, categoryTitle: cat?.title };
     });
     const residualExposure = rows.reduce((s, r) => s + (r.assessment ? r.assessment.residualScore : 0), 0);
     const inherentExposure = rows.reduce((s, r) => s + (r.assessment ? r.assessment.inherentScore : 0), 0);
-    return { domains, rows, events, residualExposure, inherentExposure, generatedAt: new Date().toISOString(), filters: query };
+    return { domains, rows, events, residualExposure, inherentExposure, generatedAt: new Date().toISOString(), asOf: asOf || null, filters: query };
   }
 
   app.get('/api/risk/report/pdf', requireAuth, async (req, res) => {
@@ -773,6 +840,71 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       console.error('risk report email failed:', err.message);
       res.status(500).json({ error: err.message || 'Failed to send report' });
     }
+  });
+
+  // ---- review snapshots (§11) — a frozen copy of the whole register at a review point ----
+
+  function snapshotSummaryJson(r) {
+    return {
+      id: r.id, label: r.label, notes: r.notes, takenAt: r.taken_at,
+      takenBy: r.taken_by, takenByName: userName(r.taken_by),
+      residualExposure: r.residual_exposure, inherentExposure: r.inherent_exposure,
+      openActions: r.open_actions, categoryCount: r.category_count,
+    };
+  }
+
+  app.get('/api/risk/snapshots', requireAuth, (req, res) => {
+    const rows = db.prepare(
+      'SELECT id, label, notes, taken_at, taken_by, residual_exposure, inherent_exposure, open_actions, category_count FROM risk_review_snapshots ORDER BY taken_at DESC'
+    ).all();
+    res.json(rows.map(snapshotSummaryJson));
+  });
+
+  app.get('/api/risk/snapshots/:id', requireAuth, (req, res) => {
+    const r = db.prepare('SELECT * FROM risk_review_snapshots WHERE id = ?').get(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Snapshot not found' });
+    let payload = null;
+    try { payload = JSON.parse(r.payload); } catch { /* corrupt payload — return meta only */ }
+    res.json({ ...snapshotSummaryJson(r), payload });
+  });
+
+  app.post('/api/risk/snapshots', requireAuth, (req, res) => {
+    if (!requireMember(req, res)) return;
+    const label = (req.body?.label || '').trim();
+    if (!label) return res.status(400).json({ error: 'label is required' });
+    const model = buildReportModel({}); // full current register, no filters
+    const openActions = model.rows.reduce((s, row) => s + row.actions.filter((a) => a.effectiveStatus !== 'done').length, 0);
+    const id = crypto.randomUUID();
+    db.prepare(
+      `INSERT INTO risk_review_snapshots (id, label, notes, taken_at, taken_by, residual_exposure, inherent_exposure, open_actions, category_count, payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, label, (req.body?.notes || '').trim(), new Date().toISOString(), req.session.userId,
+      model.residualExposure, model.inherentExposure, openActions, model.rows.length, JSON.stringify(model));
+    logAudit({ userId: req.session.userId, action: 'risk.snapshot_taken', entityType: 'risk_review_snapshot', entityId: id, details: { label } });
+    res.status(201).json(snapshotSummaryJson(db.prepare('SELECT * FROM risk_review_snapshots WHERE id = ?').get(id)));
+  });
+
+  app.get('/api/risk/snapshots/:id/pdf', requireAuth, async (req, res) => {
+    const r = db.prepare('SELECT * FROM risk_review_snapshots WHERE id = ?').get(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Snapshot not found' });
+    try {
+      const model = JSON.parse(r.payload);
+      model.asOfLabel = `${r.label} — snapshot taken ${r.taken_at.slice(0, 10)}`;
+      const pdf = await buildRiskReportPdf(model);
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', `inline; filename="RFO-Risk-Register-${r.taken_at.slice(0, 10)}.pdf"`);
+      res.send(pdf);
+    } catch (err) {
+      console.error('risk snapshot pdf failed:', err.message);
+      res.status(500).json({ error: err.message || 'Failed to build snapshot report' });
+    }
+  });
+
+  app.delete('/api/risk/snapshots/:id', requireAuth, (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    db.prepare('DELETE FROM risk_review_snapshots WHERE id = ?').run(req.params.id);
+    logAudit({ userId: req.session.userId, action: 'risk.snapshot_deleted', entityType: 'risk_review_snapshot', entityId: req.params.id });
+    res.json({ ok: true });
   });
 
   // ---- review reminder settings (admin) — phase-2 scheduler consumes these ----

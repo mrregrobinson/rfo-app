@@ -26,7 +26,10 @@ applications under it —
   risk-event log, a 4×4 heatmap and
   profile dashboard, a Family-Council PDF report, an optional Claude web-search base-rate
   lookup, and "Required Actions" that promote to real tasks in the Family Task List's
-  `02. Risk Management` category. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
+  `02. Risk Management` category. Everything about a risk — details, scoring, rationale,
+  mitigations, actions, notes — is edited from its drawer; each risk has exactly one
+  **accountable family member** (`accountable_user_id`, validated against `users`), with
+  advisors named in the mitigations or notes. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
 
 - **Maturity Assessment** (`/maturity`) — periodic assessment of family-office
   maturity by service (5 categories, 16 services). Every family member answers one
@@ -185,7 +188,12 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   migration 027; the initial content is seeded from `server/risk-seed-data.js` by
   `server/seed.js`'s `ensureSeeded()` (not a migration — the baseline assessment needs a
   user, and migrations run before users exist). Categories soft-retire (`is_active = 0`)
-  so their history survives.
+  so their history survives. `risk_categories.accountable_user_id` (migration 032) is the
+  one family member answerable for the risk — a validated FK to `users`, not free text;
+  the legacy free-text `accountable` column is kept only as seed provenance. Members can
+  edit a category's descriptive fields (title, description, accountable, notes) from the
+  drawer via `PUT /api/risk/categories/:id`; structural fields (domain, number, retire)
+  stay admin-only.
 - `risk_assessments` — immutable point-in-time scoring rows (inherent + residual P/I,
   status, rationale, next-review), chained by `supersedes_id`. The latest row per
   category is the current state; the chain powers the profile trend and the
@@ -194,7 +202,13 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   the "Required Actions" (each with a nullable `task_id` linking to a promoted Family
   Task List task — a soft reference, not an FK, so deleting the task just leaves the
   action to fall back to its own status), and the operational log of things that actually
-  happened against a category.
+  happened against a category. `risk_actions` carries `completed_at` + `archived_at` and
+  `risk_mitigations` carries `added_at` + `removed_at` (migration 031) — deletes are
+  soft, so a past-dated report can still reconstruct the register's state then.
+- `risk_review_snapshots` — a frozen JSON copy of the whole register taken at a review
+  point (`POST /api/risk/snapshots`), so a past review can be pulled up or re-printed
+  verbatim (`GET /api/risk/snapshots/:id[/pdf]`). `GET /api/risk/report/pdf?asOf=<date>`
+  reconstructs a report for an arbitrary past date from the history columns.
 - `risk_probability_lookups` — cached Claude web-search base-rate estimates
   (`server/claude.js` `researchRiskProbability`), referenced from an assessment via
   `external_probability_id`.

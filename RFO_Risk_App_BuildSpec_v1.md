@@ -111,7 +111,7 @@ migrations in `server/migrations/` following the existing
 `module.exports = function (db) { db.exec(...) }` pattern. Suggested split:
 
 - `027_risk_schema.js` — the `users.risk_role` column + backfill, plus all `risk_*` tables.
-- **Seed** the domains, categories, scoring scale, and the current (v5) assessment +
+- **Seed** the domains, categories, scoring scale, and the baseline assessment +
   mitigations + actions for all 14 categories from a `server/risk-seed-data.js` module
   (mirrors `server/task-import-data.js`) — but run it from `server/seed.js`'s
   `ensureSeeded()`, **not** a migration. Migrations run at `db.js` require time, before
@@ -135,7 +135,8 @@ risk_categories
   number        INTEGER NOT NULL        -- 1..14, the register's display number
   title         TEXT NOT NULL           -- 'Investment & Capital Risk'
   description   TEXT NOT NULL           -- the one-line "Risk Description" from the sheet
-  accountable   TEXT NOT NULL DEFAULT ''-- free text: 'Reg Robinson / Prime Quadrant'
+  accountable          TEXT NOT NULL DEFAULT ''  -- legacy free text from the spreadsheet, kept as provenance only; not shown or edited
+  accountable_user_id  TEXT REFERENCES users(id) -- the ONE family member answerable for this risk (added in migration 032). Exactly one, or null. Advisors/assistants are named in the mitigations or notes, not here.
   notes         TEXT NOT NULL DEFAULT ''-- general standing commentary on the risk; seeded from the docx's "Dalio Framework Note" paragraph, but not framework-bound — any longer-lived context or watch-item
   sort_order    INTEGER NOT NULL
   is_active     INTEGER NOT NULL DEFAULT 1  -- soft-delete; retired categories stay for history
@@ -285,7 +286,7 @@ risk_probability_lookups
 
 Log token usage via `logApiUsage` exactly as `server/claude.js` callers already do.
 
-### 5.7 Seed data (v5) and reconciliation notes
+### 5.7 Seed data and reconciliation notes
 
 Seed from the two source files, transcribed into `server/risk-seed-data.js` and applied
 by `ensureSeeded()`. **The `RFO_Risk_Register_Notes_v5.docx` domain structure is
@@ -366,7 +367,7 @@ drawer.
   treatment regardless of score.
 - Toggle: **Residual (default) / Inherent** — swaps which score every chip and the
   heatmap show.
-- Filters: domain, status, residual band, accountable (substring), "review due this
+- Filters: domain, status, residual band, accountable (by family member), "review due this
   quarter or overdue", "has open Immediate action". Filters also constrain the PDF export
   (§8), same as the Expenditure app's filter→report contract.
 - Each row's meta line carries a **"N mitigations ▸"** disclosure that expands the
@@ -375,8 +376,8 @@ drawer.
   array per category for this.
 - Filter row also has a **"Show retired"** checkbox (retired risks render dimmed with a
   "(retired)" tag; open one to restore it) and, for admins, a **"+ Add risk"** button →
-  a small modal (domain, title, description, accountable) that creates the category and
-  opens its drawer.
+  a small modal (domain, title, description, and an Accountable `<select>` of family
+  members) that creates the category and opens its drawer.
 - Click a row → the **Risk detail** drawer (§6.2).
 
 ### 6.2 Risk detail drawer — the single place a risk is managed
@@ -386,19 +387,31 @@ member/admin. Header (sticky) shows number, title, description, the **Inherent �
 score chips, Status pill and next-review.
 
 **No sub-tabs.** The body is one scrolling panel with every attribute of the risk managed
-together, in this order: **Risk details editor** (admin only) → Current scoring → Scoring
+together, in this order: **Risk details editor** → Current scoring → Scoring
 rationale → Key mitigations in place → **Required actions** (with the per-action
 Family-Task-List sync toggle, §6.5) → Notes → Accountable → a collapsible **Events**
 section → a collapsible **Assessment history** section. The `.modal` gets
 `max-height: calc(100vh - 48px); overflow-y: auto` so the panel scrolls internally.
 
-- **Risk details editor** (admin, collapsed behind an "✎ Edit risk details" link): domain,
-  number, title, one-line description, accountable — inline, saved via
-  `PUT /api/risk/categories/:id` — plus a **Retire risk / Restore risk** toggle
-  (`PUT … {isActive}`). This is the *only* place an individual risk's descriptive
+- **Risk details editor** (member/admin, collapsed behind an "✎ Edit details" link):
+  title, one-line description, and **Accountable — one family member** (a `<select>` of
+  family members, "— not assigned —" as the empty option) — all editable by any
+  member. Domain and number are shown as read-only text to members and become inputs
+  only for admins. Saved via `PUT /api/risk/categories/:id` (member-level for the
+  descriptive fields; structural fields — `domainId`/`number`/`isActive`/`sortOrder` —
+  are applied only when the caller is a risk admin). Admins also get a
+  **Retire risk / Restore risk** toggle. This is the *only* place an individual risk's
   attributes are edited; the Manage tab no longer carries a per-category edit form
   (§6.6). Everything about a risk — its details, scoring, rationale, mitigations, actions,
   notes, events — is edited here, in one screen.
+  - **Accountable is one person, by design.** The field holds a single
+    `accountable_user_id` FK to `users`, not free text — accountability, not a
+    contributor list. `PUT`/`POST` reject any `accountableUserId` that is not a real
+    user with `400 "accountableUserId must be a family member"`; `''` clears it.
+    Advisors and assistants (EY, MLTA, Prime Quadrant, …) are named in the mitigations
+    or notes, never here. Migration `032_risk_accountable_user.js` adds the column and
+    back-fills it by first-name/full-name match against the legacy `accountable` free
+    text, which is retained only as provenance.
 
 - **Current scoring** panel: Inherent (`P×I`, before mitigations) → Residual (after
   mitigations) chips side by side with the arrow between them, status, and "assessed
@@ -426,8 +439,10 @@ section → a collapsible **Assessment history** section. The `.modal` gets
   toggle, inline (§6.5). Managing actions sits right here with the other risk attributes,
   not on a separate screen.
 - **Notes**: general standing commentary (`risk_categories.notes`), member-editable
-  inline, seeded from v5's "Dalio Framework Note".
-- **Accountable**.
+  inline, seeded from the register notes' "Dalio Framework Note" paragraph.
+- **Accountable**: the one family member from `accountable_user_id`, shown by name
+  ("— not assigned (edit details above)" when null). Changed via the Risk details
+  editor, not here.
 - Collapsible **Events ( N )** — the category's `risk_events`, newest first, with "Log
   event", "create action from event" and "reassess this risk" (§6.3).
 - Collapsible **Assessment history ( N )** — a residual/inherent sparkline plus a table
@@ -602,6 +617,43 @@ casually (each call costs a few cents and some seconds).
   roles. "Print" in the UI = open the PDF route in a new tab; "Email as PDF" = a small
   recipient form → the email route. Same two actions the Expenditure reports expose.
 
+## 8b. Historical data & review snapshots
+
+Assessments were already append-only (`risk_assessments`, `supersedes_id` chain) — the
+score/status trail. Migration `031_risk_history.js` closes the remaining gaps so
+progress reporting and verbatim historical reports work:
+
+- **`risk_actions`** gains `completed_at` (stamped/cleared as status crosses "done";
+  task-synced actions read the linked task's date) and `archived_at`. `DELETE
+  /api/risk/actions/:id` now **soft-archives** — the row survives so a past-dated report
+  still sees the action existed. All action reads filter `archived_at IS NULL`.
+- **`risk_mitigations`** gains `added_at` and `removed_at`. `DELETE` soft-removes; reads
+  filter `removed_at IS NULL`.
+- **`risk_review_snapshots(id, label, notes, taken_at, taken_by, residual_exposure,
+  inherent_exposure, open_actions, category_count, payload)`** — `payload` is the full
+  register serialized by `buildReportModel({})` at the moment of the snapshot.
+  - `POST /api/risk/snapshots` (member+) freezes one; `GET /api/risk/snapshots` lists;
+    `GET /api/risk/snapshots/:id` returns the payload; `GET /api/risk/snapshots/:id/pdf`
+    renders the historical PDF straight from the frozen payload (`buildRiskReportPdf`
+    with an `asOfLabel`). `DELETE` is admin-only.
+  - UI: a "Review snapshots & progress" card on the Profile tab — a "Take a snapshot"
+    button, the list with view / PDF, and a progress line ("N actions closed, M opened,
+    K mitigations added since <last snapshot | 90 days>"). "View" opens a read-only
+    modal rendering the frozen register, each row linking to the live risk.
+- **`buildReportModel(query)`** accepts `query.asOf` (plain date = end of that day, or
+  full ISO): assessments via `latestAssessment(id, asOf)`, mitigations by
+  `added_at`/`removed_at`, actions by `created_at`/`archived_at` with a per-action
+  `openAsOf` derived from `completed_at`. `GET /api/risk/report/pdf?asOf=YYYY-MM-DD`
+  produces a retrospective report even without a snapshot; the PDF header shows the
+  as-of date in the alert colour.
+- **`GET /api/risk/profile`** returns a `progress` block (`?since=` overrides the
+  default of the last snapshot's `taken_at`, else 90 days): `actionsClosed`,
+  `actionsOpened`, `actionsArchived`, `mitigationsAdded`, `mitigationsRemoved`,
+  `eventsLogged`, `assessmentsRecorded`.
+
+Not doing full bitemporal history on the taxonomy (category/domain/scale renames) —
+snapshots capture the labels as they were, which covers the reporting need.
+
 ## 9. Scheduled Review Reminders (optional — phase 2)
 
 Mirror `server/digest.js` / `server/meetings-scheduler.js`: an hourly sweep started from
@@ -625,14 +677,18 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
   `CREATE TABLE IF NOT EXISTS`. **Schema only — no seed here** (see §5, §10.2).
 - Later small migrations as issues surface: `029` drops the `risk_actions → tasks(id)`
   FK so deleting a promoted task can leave the link dangling; `030` renames
-  `risk_categories.dalio_note → notes`.
+  `risk_categories.dalio_note → notes`; `031_risk_history.js` adds the history columns
+  (`risk_actions.completed_at`/`archived_at`, `risk_mitigations.added_at`/`removed_at`)
+  and the `risk_review_snapshots` table (§8b); `032_risk_accountable_user.js` adds
+  `risk_categories.accountable_user_id` and back-fills it from the legacy free-text
+  `accountable` by name match.
 
 ### 10.2 Server changes
 
-- **`server/risk-seed-data.js`** (new) — the reconciled v5 content (domains, 14 categories
-  with descriptions + notes, scale labels, per-category mitigation bullets and
-  action items with priority/status, baseline P/I/status/next-review), plus the IPS
-  context constant. Transcription target for the two source docs; keep
+- **`server/risk-seed-data.js`** (new) — the reconciled initial seed content (domains,
+  14 categories with descriptions + notes, an `accountableUserId` per category, scale
+  labels, per-category mitigation bullets and action items with priority/status,
+  baseline P/I/status/next-review), plus the IPS context constant. Transcription target for the two source docs; keep
   `-- SOURCE DISCREPANCY:` comments where the sheet and notes differ.
 - **`server/seed.js`** — add a `seedRiskRegister()` block to `ensureSeeded()` (after the
   user and Household Expenditures seeds), idempotent on `risk_categories` row count,
@@ -646,16 +702,22 @@ categories; open **Immediate** actions past their `due_quarter`; and risk events
     payload; the last is for the row's inline "Key mitigations in place" disclosure).
   - `GET /api/risk/categories/:id` — full detail: all assessments, mitigations, actions
     (with linked-task join), events.
-  - `POST/PUT/DELETE /api/risk/categories`, `POST /api/risk/domains` (add) +
-    `PUT /api/risk/domains/:id` (rename), and `PUT /api/risk/scale` — admin only
-    (Manage tab).
+  - `POST /api/risk/categories` — admin (creates a risk; validates `accountableUserId`
+    against `users`). `POST /api/risk/domains` (add) + `PUT /api/risk/domains/:id`
+    (rename), and `PUT /api/risk/scale` — admin only (Manage tab).
+  - `PUT /api/risk/categories/:id` — **member/admin**. Members may edit the descriptive
+    fields (`title`, `description`, `accountableUserId`, `notes`); the structural fields
+    (`domainId`, `number`, `isActive`, `sortOrder`) are applied only when the caller is
+    a risk admin. `accountableUserId` must be a real user id or `''` (clear), else
+    `400 "accountableUserId must be a family member"`.
+  - `DELETE /api/risk/categories/:id` — admin.
   - `POST /api/risk/categories/:id/assessments` — member/admin; writes a new assessment,
     sets `supersedes_id`.
   - `PUT /api/risk/assessments/:id/rationale` — member/admin; edits `rationale`/`note` of
     the *current* assessment in place (409 if it isn't the latest for its category).
   - `POST/PUT/DELETE /api/risk/categories/:id/mitigations` — member/admin.
   - `PUT /api/risk/categories/:id/notes` — member/admin; the general Notes field only
-    (the rest of `PUT /api/risk/categories/:id` stays admin-only).
+    (a convenience alias for the `notes` field of `PUT /api/risk/categories/:id`).
   - `GET /api/risk/actions`, `POST/PUT/DELETE /api/risk/actions[/:id]` — member/admin;
     `POST /api/risk/actions/:id/promote` creates the `tasks` row (calls the same
     insert logic `server/tasks.js` uses — factor a shared helper or duplicate the small
