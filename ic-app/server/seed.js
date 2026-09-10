@@ -3,6 +3,7 @@ const db = require('./db');
 const { hashSecret } = require('./auth');
 const { DEFAULT_EXCLUSION_RULES } = require('./expenditure-defaults');
 const riskSeed = require('./risk-seed-data');
+const maturitySeed = require('./maturity-seed-data');
 
 const IC_MEMBERS = [
   { id: 'reg', name: 'Reg Robinson', role: 'Required', initials: 'RR', color: '#1B2A4A', isAdmin: true },
@@ -198,6 +199,7 @@ function ensureSeeded() {
   }
 
   seedRiskRegister();
+  seedMaturity();
 }
 
 // Enterprise Risk Register — initial content (RFO_Risk_App_BuildSpec_v1 §5.7). Seeded
@@ -261,6 +263,95 @@ function seedRiskRegister() {
   });
 
   console.log(`Seeded Enterprise Risk Register: ${riskSeed.DOMAINS.length} domains, ${riskSeed.CATEGORIES.length} risk categories, scale, mitigations, actions and baseline assessments.`);
+}
+
+// Maturity Assessment — initial content (RFO_Maturity_App_BuildSpec_v1 §5.7). Seeded here
+// (after the users above exist) rather than in migration 033: the reference round's
+// member scores need a real user to attribute to, and migrations run before ensureSeeded()
+// creates anyone. Idempotent: no-ops once maturity_services has rows.
+function seedMaturity() {
+  const existing = db.prepare('SELECT COUNT(*) AS n FROM maturity_services').get().n;
+  if (existing > 0) return;
+
+  const actor =
+    db.prepare('SELECT id FROM users WHERE id = ?').get(maturitySeed.SEED_ACTOR_ID)?.id ||
+    db.prepare('SELECT id FROM users WHERE is_fo_admin = 1 ORDER BY id LIMIT 1').get()?.id ||
+    db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get()?.id;
+  if (!actor) {
+    console.warn('seedMaturity: no users yet — skipping (will retry next boot).');
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const eff = maturitySeed.REFERENCE_ROUND.effectiveDate;
+
+  // Migration 033 backfills maturity_role from is_fo_admin, but on a fresh install that
+  // migration runs before any user exists (same limitation as risk_role). Re-assert here,
+  // now that the users exist: FO admins (and the legacy is_admin flag) are Maturity
+  // admins; Ross and Lucas are members (self-assess only).
+  db.prepare("UPDATE users SET maturity_role = 'admin' WHERE is_fo_admin = 1 OR is_admin = 1").run();
+  db.prepare("UPDATE users SET maturity_role = 'admin' WHERE id IN ('reg', 'sd')").run();
+
+  const insGroup = db.prepare('INSERT INTO maturity_service_groups (id, name, sort_order) VALUES (?, ?, ?)');
+  for (const g of maturitySeed.GROUPS) insGroup.run(g.id, g.name, g.sort_order);
+
+  const insLabel = db.prepare('INSERT INTO maturity_level_labels (level, name, blurb) VALUES (?, ?, ?)');
+  for (const l of maturitySeed.LEVEL_LABELS) insLabel.run(l.level, l.name, l.blurb);
+
+  const insSvc = db.prepare(
+    'INSERT INTO maturity_services (id, group_id, number, name, description, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)'
+  );
+  const insDesc = db.prepare(
+    'INSERT INTO maturity_level_descriptors (id, service_id, level, text, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const insQ = db.prepare(
+    'INSERT INTO maturity_questions (id, service_id, prompt, help_text, response_kind, weight, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+  );
+  maturitySeed.SERVICES.forEach((s, si) => {
+    insSvc.run(s.id, s.groupId, s.number, s.name, s.description || '', si + 1);
+    s.levels.forEach((text, li) => {
+      insDesc.run(crypto.randomUUID(), s.id, li + 1, text, eff, actor);
+    });
+    maturitySeed.questionsForService(s).forEach((q, qi) => {
+      insQ.run(crypto.randomUUID(), s.id, q.prompt, q.help_text || '', q.response_kind, q.weight || 1, qi + 1);
+    });
+  });
+
+  const insCcLevel = db.prepare('INSERT INTO maturity_cc_levels (level, name, tagline, description) VALUES (?, ?, ?, ?)');
+  for (const l of maturitySeed.CC_LEVELS) insCcLevel.run(l.level, l.name, l.tagline, l.description);
+
+  const insCcDim = db.prepare('INSERT INTO maturity_cc_dimensions (id, name, sort_order, service_ids) VALUES (?, ?, ?, ?)');
+  for (const d of maturitySeed.CC_DIMENSIONS) insCcDim.run(d.id, d.name, d.sort_order, JSON.stringify(d.service_ids || []));
+
+  const insCcPrompt = db.prepare('INSERT INTO maturity_cc_prompts (id, dimension_id, prompt, sort_order) VALUES (?, ?, ?, ?)');
+  for (const p of maturitySeed.CC_PROMPTS) insCcPrompt.run(crypto.randomUUID(), p.dimension_id, p.prompt, p.sort_order || 1);
+
+  // The reference round — closed, no benchmarks, is_anchor = 0.
+  const ref = maturitySeed.REFERENCE_ROUND;
+  db.prepare(
+    `INSERT INTO maturity_rounds (id, label, status, period_start, period_end, opened_at, opened_by, closed_at, closed_by, notes, ladder_json, carried_from, is_anchor, synthesis_json, created_at)
+     VALUES (?, ?, 'closed', NULL, ?, ?, ?, ?, ?, ?, '{}', NULL, 0, NULL, ?)`
+  ).run(
+    ref.id, ref.label, eff, eff, actor, eff, actor,
+    'Seeded from Appendix B - Maturity Scorecard.xlsx. Reference only — not the trend anchor; the first in-app cycle becomes the anchor.',
+    now
+  );
+
+  const insScore = db.prepare(
+    `INSERT INTO maturity_service_scores (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at)
+     VALUES (?, ?, ?, ?, ?, NULL, 'direct', '', 1, ?)`
+  );
+  for (const [serviceId, byUser] of Object.entries(ref.scores)) {
+    for (const [userId, level] of Object.entries(byUser)) {
+      insScore.run(crypto.randomUUID(), ref.id, serviceId, userId, level, eff);
+    }
+  }
+
+  console.log(
+    `Seeded Maturity Assessment: ${maturitySeed.GROUPS.length} categories, ${maturitySeed.SERVICES.length} services, ` +
+    `${maturitySeed.SERVICES.length * 5} level descriptors, ${maturitySeed.CC_LEVELS.length}-level Capital Consciousness ladder, ` +
+    `and the "${ref.label}" reference round (${Object.keys(ref.scores).length} services scored, ${ref.notAssessed.length} not assessed).`
+  );
 }
 
 module.exports = { ensureSeeded, issueSetupCode, IC_MEMBERS };

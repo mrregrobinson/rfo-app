@@ -388,4 +388,83 @@ probabilityLow/probabilityHigh are annual probabilities as decimals (0-1); use n
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, ClaudeNotConfiguredError };
+// ---- Maturity Assessment (RFO_Maturity_App_BuildSpec_v1 §7) ----
+// All three use the same web_search tool, extractJson handling and not-configured
+// contract as research() / researchRiskProbability() above.
+
+// Assesses how a comparable family office would operate one service and returns its own
+// 1–5 maturity rating (on the family's own scale) plus concrete "what would move up"
+// actions. Decision support for an assessment round — the family still scores itself.
+async function benchmarkMaturityService({ serviceName, description, levelLabels, levelDescriptors, familyContext, selfAssessedLevel }) {
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const systemPrompt = `You are helping a Canadian single-family office assess the maturity of one of its operating services against how comparable family offices operate. Search the web for family-office operating benchmarks and industry surveys (bank and Big Four family-office practices, Campden/Family Office Exchange, UBS/Citi/BNY family-office reports) and credible practitioner writing. Be explicit about how well external norms fit a family office of THIS size and complexity — a ~CAD $30M single-family office should not be held to a multi-billion-dollar family office's standard. Today is ${today}.`;
+  const ladder = (levelDescriptors || []).map((t, i) => `${i + 1} (${(levelLabels && levelLabels[i]) || ''}): ${t}`).join('\n');
+  const userPrompt = `Service: ${serviceName}.${description ? ' ' + description : ''}
+The family defines five maturity levels for this service as:
+${ladder}
+Family context: ${familyContext}
+The family's own current self-assessment is ${selfAssessedLevel == null ? 'not yet recorded' : selfAssessedLevel} (for your reference only — assess independently).
+
+Return ONLY valid JSON, no markdown fences:
+{"benchmarkLevel":3.5,"rationale":"2-4 plain-English sentences a non-expert can follow","whatWouldMoveUp":["concrete action","concrete action","concrete action"],"sources":[{"title":"...","url":"..."}],"caveats":"one sentence on what this external comparison does NOT capture for this family"}
+
+benchmarkLevel is 1-5 on the family's scale above, halves allowed. Include the 2-4 most load-bearing sources.`;
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 3500,
+    system: systemPrompt,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
+// The round's written synthesis: a read on "doing things right" (operational maturity)
+// AND "doing the right things" (Capital Consciousness / the Arc of Capital Consciousness),
+// the highest-value priorities, and a short peer comparison.
+async function synthesizeMaturityRound({ services, ccProfile, familyContext }) {
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const systemPrompt = `You are advising a Canadian single-family office after a periodic maturity assessment. Two lenses were used. (1) An Operational Maturity Scorecard rates 16 services 1-5 — this measures whether the family office is "doing things right". (2) A Capital Consciousness review places each family member on the 7-level Arc of Capital Consciousness (Mo Lidsky / Prime Quadrant: 1 Instinctive/survival, 2 Competitive/accumulation, 3 Protective/shield, 4 Integrative/system, 5 Reflective/mirror, 6 Generative/force, 7 Transcendent/freedom; the circle of responsibility widens and attachment loosens across the arc, crossing at Level 4) — this measures whether they are "doing the right things". Use web search only for peer-comparison colour, not for the family's own numbers. Today is ${today}.`;
+  const userPrompt = `Family context: ${familyContext}
+
+Operational maturity (per service): ${JSON.stringify(services)}
+Capital Consciousness profile (per dimension): ${JSON.stringify(ccProfile)}
+
+Return ONLY valid JSON, no markdown fences:
+{"doingThingsRight":"3-5 sentences on operational maturity, the trend, and the widest gaps","doingTheRightThings":"3-5 sentences reading the Capital Consciousness profile — centre of gravity, dispersion between members, movement, and what the framework would say","mapOfErrors":[{"domain":"Investment Decisions","read":"one sentence where operational maturity and consciousness diverge"}],"priorities":["the 3-5 highest-value things to work on before the next round"],"peerComparison":"2-3 sentences","sources":[{"title":"...","url":"..."}]}`;
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 4000,
+    system: systemPrompt,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
+// Proposes refreshed language for one service's five level descriptors at the start of a
+// cycle. Output is a review queue for a Maturity admin — nothing is applied automatically.
+async function suggestLevelDescriptors({ serviceName, description, levelLabels, currentDescriptors, familyContext }) {
+  const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const systemPrompt = `You are helping a Canadian single-family office keep its maturity model current. For ONE operating service you are given the five level descriptors it uses today (1 Ad Hoc ... 5 Leading Practice). Search the web for how family-office maturity models, operating benchmarks and practitioner writing describe each of these levels for this service now, and propose tighter, clearer, more current wording. Keep each descriptor to 1-3 sentences, keep the family's own level names, keep the progression monotonic (each level a clear step up), and stay realistic for a family office of THIS size. Preserve anything already good — only change what genuinely improves clarity or currency. Today is ${today}.`;
+  const ladder = (currentDescriptors || []).map((t, i) => `${i + 1} (${(levelLabels && levelLabels[i]) || ''}): ${t}`).join('\n');
+  const userPrompt = `Service: ${serviceName}.${description ? ' ' + description : ''}
+Current descriptors:
+${ladder}
+Family context: ${familyContext}
+
+Return ONLY valid JSON, no markdown fences:
+{"levels":[{"level":1,"suggestedText":"...","rationale":"one or two sentences on what changed and why","changed":true},{"level":2,"suggestedText":"...","rationale":"...","changed":false}],"sources":[{"title":"...","url":"..."}]}
+
+Include all five levels in order. Set changed:false and echo the current text when it should be kept as-is.`;
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 4000,
+    system: systemPrompt,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  return { result: extractJson(data), usage: data.usage };
+}
+
+module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, benchmarkMaturityService, synthesizeMaturityRound, suggestLevelDescriptors, ClaudeNotConfiguredError };
