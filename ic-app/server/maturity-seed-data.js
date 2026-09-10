@@ -261,14 +261,14 @@ const CC_PROMPTS = [
 // The paper's four dimensions of change — how movement between levels actually happens.
 const CHANGE_DIMENSIONS = ['Physical', 'Intellectual', 'Emotional', 'Soulful'];
 
+// A short standing note shown under the Capital Consciousness view. Not an external
+// attribution — the seven-level model is treated as the family's own reflective tool.
 const ACC_ATTRIBUTION =
-  'The Capital Consciousness lens adapts the Arc of Capital Consciousness (ACC) from ' +
-  'Mo Lidsky, PhD — "From Survival to Freedom: Navigating the Arc of Capital Consciousness", ' +
-  'published by Prime Quadrant. Seven levels describe a family\'s relationship with capital, ' +
-  'from survival to freedom; as awareness deepens the circle of responsibility widens and ' +
-  'emotional attachment to capital loosens, the two crossing at Level 4. The levels are not ' +
-  'a hierarchy of worth. Used here with attribution as a reflective tool — the white paper ' +
-  'itself is not reproduced in the app.';
+  'Seven levels describe how the family relates to its capital, from survival to freedom. ' +
+  'As awareness deepens the circle of responsibility widens (self → family → community → ' +
+  'society) while emotional attachment to capital loosens; the two shifts cross around ' +
+  'Level 4. The levels are not a hierarchy of worth — the aim is simply to notice which ' +
+  'level a given decision is being made from, and what the next one would make possible.';
 
 // ---- the reference round: the current Appendix B assessment, seeded as a CLOSED,
 // benchmark-free, NON-anchor round (§5.4, §5.7). The first cycle the family runs in-app
