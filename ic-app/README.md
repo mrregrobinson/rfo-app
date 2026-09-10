@@ -29,18 +29,18 @@ applications under it —
   `02. Risk Management` category. See `RFO_Risk_App_BuildSpec_v1.md`/`.docx`.
 
 - **Maturity Assessment** (`/maturity`) — periodic assessment of family-office
-  maturity by service (5 categories, 16 services), each rated 1–5 from a short
-  per-service questionnaire every family member answers. Every service in every round
-  also gets a Claude web-search **benchmark** (1–5, "what would move us up") and the
-  round gets a written **synthesis**. A second lens — **Capital Consciousness**, the
-  1–7 Arc of Capital Consciousness (Mo Lidsky / Prime Quadrant) — has each member
-  self-place across six decision domains ("doing the right things" alongside the
-  scorecard's "doing things right"). Rounds run `draft → open → closed`; at the start
-  of a cycle Claude can propose refreshed wording for the editable level descriptors,
-  reviewed by an admin before the round opens. The Appendix B spreadsheet is seeded as
-  a closed, benchmark-free reference round; the first in-app cycle becomes the trend
-  anchor. "Notes / actions" promote to real Family Task List tasks (default category
-  "04. Maturity"). See `RFO_Maturity_App_BuildSpec_v1.md`/`.docx`.
+  maturity by service (5 categories, 16 services). Every family member answers one
+  worksheet per service on **two axes**: a 1–5 **maturity** level (how well it is run —
+  "doing things right", from a short questionnaire) and a 1–7 **consciousness** level
+  (from what level of awareness it is run — "doing the right things", one question on the
+  same worksheet). Every service in every round also gets a Claude web-search
+  **benchmark** (1–5, "what would move us up") and the round gets a written
+  **synthesis**. Rounds run `draft → open → closed`; at the start of a cycle Claude can
+  propose refreshed wording for the editable level descriptors, reviewed by an admin
+  before the round opens. The Appendix B spreadsheet is seeded as a closed,
+  benchmark-free reference round; the first in-app cycle becomes the trend anchor.
+  "Notes / actions" promote to real Family Task List tasks (default category "04.
+  Maturity"). See `RFO_Maturity_App_BuildSpec_v1.md`/`.docx`.
 
 `/` is the RFO home page — sign in once, land there, and pick an app. The apps
 share the same accounts, sessions, and database (`data/ic.db`); there is no second
@@ -210,9 +210,13 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   start-of-cycle proposed re-wording (a review queue; nothing applied without an admin
   accept).
 - `maturity_questions` / `maturity_responses` / `maturity_service_scores` — the concise
-  per-service questionnaire, each member's answers per round, and the assigned 1–5 level
-  (weighted mean of answers rounded to the nearest 0.5, or a `direct` override). The
-  latest submitted score per (round, service, member) is what the scorecard averages.
+  per-service questionnaire, each member's answers per round, and the assigned scores.
+  Every `maturity_service_scores` row carries **two axes**: a 1–5 `level` (maturity — how
+  well the service is run; weighted mean of the answers rounded to the nearest 0.5, or a
+  `direct` override) and a 1–7 `consciousness_level` + `consciousness_note` (from what
+  level of awareness it is run — one question on the same worksheet; migration 034). A
+  service can only be submitted once both are answered. The latest submitted row per
+  (round, service, member) is what the scorecard averages / rolls up.
 - `maturity_rounds` — an assessment cycle (`draft` → `open` → `closed`); one active at a
   time. Exactly one closed round is the `is_anchor` baseline all trends compare to. The
   seeded `round-2026-baseline` (Appendix B) is closed but deliberately carries no
@@ -221,16 +225,18 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 - `maturity_benchmarks` — per (round, service) Claude web-search benchmark
   (`server/claude.js` `benchmarkMaturityService`); the round's written synthesis
   (`synthesizeMaturityRound`) is stored on `maturity_rounds.synthesis_json`.
-- `maturity_cc_levels` / `maturity_cc_dimensions` / `maturity_cc_prompts` /
-  `maturity_cc_responses` — the 7-level Arc of Capital Consciousness, its six decision
-  domains, reflective prompts, and each member's self-placement per round. Reported for
-  centre of gravity and dispersion, not averaged into a single score.
+- `maturity_cc_levels` — the 7-level consciousness scale (1 survival → 7 freedom), used
+  by the per-service consciousness question above. The family's centre of gravity and
+  dispersion are computed live from the per-service answers (not averaged into one
+  score). Migration 034 folded this in and dropped the earlier separate instrument
+  (`maturity_cc_dimensions` / `_prompts` / `_responses`).
 - `maturity_actions` — "Notes / actions" per service or synthesis finding, each with a
   nullable `task_id` linking to a promoted Family Task List task (a soft reference, like
   `risk_actions.task_id`); soft-deleted via `archived_at`.
-- Maturity report PDFs will be built by `server/maturity-report.js` (same `pdfkit` +
-  `chartjs-node-canvas` stack) — not yet implemented; the `/api/maturity/report/pdf`
-  route is a placeholder.
+- Maturity report PDFs are built by `server/maturity-report.js` (`pdfkit` +
+  `chartjs-node-canvas`, same stack as the risk/expenditure reports); `GET
+  /api/maturity/report/pdf` streams it and `POST /api/maturity/report/email` sends it
+  through the Graph mailer.
 
 ## Scheduled Task List digest
 

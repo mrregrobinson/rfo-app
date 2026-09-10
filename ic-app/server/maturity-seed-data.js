@@ -221,7 +221,10 @@ function questionsForService(svc) {
   ];
 }
 
-// ---- Capital Consciousness ladder (Mo Lidsky, Arc of Capital Consciousness; §5.8) ----
+// ---- the consciousness axis (Option C) ----
+// Every service is assessed on two axes: a 1–5 maturity level (how well it is run) and a
+// 1–7 consciousness level below (from what level of awareness it is run). One extra
+// question per service, answered in the same worksheet — there is no separate instrument.
 const CC_LEVELS = [
   { level: 1, name: 'Instinctive', tagline: 'Capital as survival',
     description: 'Capital is primal — about safety, control and not losing. Fear is the primary driver and a powerful editor that filters out anything that does not feel immediately protective. Decisions are fast, reactive, and heavily weighted to loss avoidance.' },
@@ -239,36 +242,25 @@ const CC_LEVELS = [
     description: 'Wealth is still managed with full rigour, but it no longer occupies the centre of gravity or defines identity. The grip loosens; optimisation continues without attachment to it.' },
 ];
 
-const CC_DIMENSIONS = [
-  { id: 'overall', name: 'Overall', sort_order: 1, service_ids: ['svc-01', 'svc-04', 'svc-05'] },
-  { id: 'investment', name: 'Investment Decisions', sort_order: 2, service_ids: ['svc-07', 'svc-08'] },
-  { id: 'tax-structure', name: 'Tax & Structure', sort_order: 3, service_ids: ['svc-11'] },
-  { id: 'estate-succession', name: 'Estate & Succession', sort_order: 4, service_ids: ['svc-10'] },
-  { id: 'philanthropy-impact', name: 'Philanthropy & Impact', sort_order: 5, service_ids: ['svc-09'] },
-  { id: 'advisory', name: 'Advisory Relationships', sort_order: 6, service_ids: ['svc-02', 'svc-15'] },
-];
+// The single consciousness question asked on every service's worksheet. The seven answer
+// options are CC_LEVELS above.
+const CONSCIOUSNESS_QUESTION = {
+  prompt: 'From what level of awareness is this service mostly being run today?',
+  help: 'Pick the level that best describes the mindset behind how decisions in this area actually get made — not where you wish it were.',
+  reflectionPrompt: 'Briefly, what makes you say that? (optional)',
+};
 
-const CC_PROMPTS = [
-  { dimension_id: 'overall', prompt: 'Imagine you have five to ten years to live in perfect health — what, if anything, would you change about how the family\'s capital is used?', sort_order: 1 },
-  { dimension_id: 'overall', prompt: 'When a big capital decision gets made, from what is it usually decided — fear, competition, care, system, values, or purpose?', sort_order: 2 },
-  { dimension_id: 'investment', prompt: 'Do investment choices follow merit and process, or loyalty and relationships? Where does the portfolio contradict what the family says it values?', sort_order: 1 },
-  { dimension_id: 'tax-structure', prompt: 'Is tax the dominant lens, or one input among several? Are structures ever re-examined for values alignment, not just efficiency?', sort_order: 1 },
-  { dimension_id: 'estate-succession', prompt: 'Have the people been prepared as carefully as the documents? Who decides what when the current generation is no longer here — and do they know it?', sort_order: 1 },
-  { dimension_id: 'philanthropy-impact', prompt: 'Is giving driven by conviction and a theory of change, or by requests, recognition, and the warm glow of giving?', sort_order: 1 },
-  { dimension_id: 'advisory', prompt: 'Are advisors treated as vendors to negotiate against, or as thought partners on the whole picture — including meaning and purpose? Is anyone accountable for the whole?', sort_order: 1 },
-];
-
-// The paper's four dimensions of change — how movement between levels actually happens.
+// The four dimensions of change — how movement between levels actually happens.
 const CHANGE_DIMENSIONS = ['Physical', 'Intellectual', 'Emotional', 'Soulful'];
 
-// A short standing note shown under the Capital Consciousness view. Not an external
-// attribution — the seven-level model is treated as the family's own reflective tool.
-const ACC_ATTRIBUTION =
+// A short standing note shown alongside the consciousness axis. The seven-level model is
+// treated as the family's own reflective tool.
+const CONSCIOUSNESS_NOTE =
   'Seven levels describe how the family relates to its capital, from survival to freedom. ' +
   'As awareness deepens the circle of responsibility widens (self → family → community → ' +
   'society) while emotional attachment to capital loosens; the two shifts cross around ' +
   'Level 4. The levels are not a hierarchy of worth — the aim is simply to notice which ' +
-  'level a given decision is being made from, and what the next one would make possible.';
+  'level a given service is being run from, and what the next one would make possible.';
 
 // ---- the reference round: the current Appendix B assessment, seeded as a CLOSED,
 // benchmark-free, NON-anchor round (§5.4, §5.7). The first cycle the family runs in-app
@@ -312,10 +304,9 @@ module.exports = {
   SERVICES,
   questionsForService,
   CC_LEVELS,
-  CC_DIMENSIONS,
-  CC_PROMPTS,
+  CONSCIOUSNESS_QUESTION,
   CHANGE_DIMENSIONS,
-  ACC_ATTRIBUTION,
+  CONSCIOUSNESS_NOTE,
   REFERENCE_ROUND,
   FAMILY_CONTEXT,
   SEED_ACTOR_ID: 'reg',

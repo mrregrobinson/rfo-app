@@ -143,46 +143,52 @@ function AssessmentTab({data,me,roles,onReload}){
   }
   return h('div',null,
     h(AssessmentProgress,{round}),
-    h('div',{className:'sec'},'Maturity scorecard — one short questionnaire per service'),
+    h('div',{className:'sec'},'One worksheet per service — how well it is run (1–5) and from what level it is run (1–7)'),
     data.groups.map(g=>{
       const svcs=data.services.filter(s=>s.groupId===g.id);
       if(!svcs.length)return null;
       return h('div',{className:'card dgroup',key:g.id},
         h('div',{className:'dhead'},h('span',{className:'ddot'}),h('span',{className:'dtitle'},g.name)),
         svcs.map(s=>h(ServiceWorksheet,{key:s.id,service:s,round,levelLabels:data.levelLabels,onReload})));
-    }),
-    h('div',{className:'sec'},'Capital consciousness — where are you on the arc?'),
-    h(CCWorksheet,{round,me,onReload})
+    })
   );
 }
 function AssessmentProgress({round}){
-  const mine=(round.completion||[]).find(c=>c.me)||null;
   return h('div',{className:'card'},
     h('div',{style:{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:8}},
       h('div',null,h('b',null,round.label),' ',h('span',{className:'pill pill-open'},'open')),
-      h('div',{className:'small muted'},'Answer every service, then place yourself on all six capital-consciousness dimensions, then Submit.')),
+      h('div',{className:'small muted'},'For each service: answer the maturity questions, pick the level of awareness it is run from, then Submit.')),
     (round.completion||[]).length?h('table',{className:'tbl',style:{marginTop:8}},
-      h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Services'),h('th',null,'Capital consciousness'),h('th',null,''))),
+      h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Services submitted'),h('th',null,''))),
       h('tbody',null,round.completion.map(c=>h('tr',{key:c.userId},
-        h('td',null,c.name),
+        h('td',null,c.name+(c.me?' (you)':'')),
         h('td',null,c.servicesDone+' / '+c.servicesTotal),
-        h('td',null,c.ccDone+' / '+c.ccTotal),
         h('td',null,c.complete?h('span',{className:'chip chip-l5'},'complete'):h('span',{className:'small muted'},'in progress')))))
     ):null);
+}
+// colours for the 1–7 consciousness axis (reused in the scorecard + drawer + progress)
+function ccClass(n){n=Number(n);if(!isFinite(n))return 'none';if(n<=2)return 'l1';if(n===3)return 'l2';if(n===4)return 'l3';if(n<=5)return 'l4';return 'l5';}
+function ccChip(level,levels){
+  if(level==null)return h('span',{className:'chip chip-none'},'—');
+  const nm=(levels||[]).find(l=>l.level===Math.round(level));
+  return h('span',{className:'chip chip-'+ccClass(level),title:nm?nm.description:''},'L'+level+(nm?' '+nm.name:''));
 }
 function ServiceWorksheet({service,round,levelLabels,onReload}){
   const [detail,setDetail]=useState(null);
   const [ans,setAns]=useState({});
-  const [note,setNote]=useState('');
   const [saved,setSaved]=useState(false);
   const [busy,setBusy]=useState(false);
   const [override,setOverride]=useState(null);
   const [open,setOpen]=useState(false);
+  const [cc,setCc]=useState(null);        // my consciousness level for this service
+  const [ccNote,setCcNote]=useState('');
   useEffect(()=>{if(open&&!detail)api.get('/api/maturity/services/'+service.id+'?round='+round.id).then(d=>{
     setDetail(d);const a={};(d.myResponses||[]).forEach(r=>a[r.questionId]=r.value);setAns(a);
-    const mine=(d.scores||[]).find(x=>x.userName&&d.myResponses);
+    setCc(d.myConsciousness&&d.myConsciousness.level||null);setCcNote(d.myConsciousness&&d.myConsciousness.note||'');
   });},[open]);
   const questions=detail?detail.questions:[];
+  const ccLevels=detail?detail.consciousnessLevels:[];
+  const ccQ=detail?detail.consciousnessQuestion:null;
   const computed=detail?rollup(Object.entries(ans).map(([questionId,value])=>({questionId,value})),questions):null;
   const myScore=detail?(detail.scores||[]).find(x=>x.userId===window.__me):null;
   const submitted=myScore&&myScore.submitted;
@@ -193,22 +199,32 @@ function ServiceWorksheet({service,round,levelLabels,onReload}){
       setSaved(true);setTimeout(()=>setSaved(false),1200);
     }catch(e){alert(e.message);}finally{setBusy(false);}
   }
+  async function saveCc(level,note){
+    setCc(level);
+    try{await api.put('/api/maturity/consciousness',{roundId:round.id,serviceId:service.id,level,note:note!==undefined?note:ccNote});}catch(e){alert(e.message);}
+  }
   async function submit(){
     setBusy(true);
     try{
-      if(override!=null)await api.put('/api/maturity/scores',{roundId:round.id,serviceId:service.id,level:override,rationale:'Direct override',submitted:true});
-      else{await save();await api.post('/api/maturity/services/'+service.id+'/submit',{roundId:round.id});}
+      if(override!=null)await api.put('/api/maturity/scores',{roundId:round.id,serviceId:service.id,level:override,rationale:'Direct override',submitted:false});
+      else await save();
+      await saveCc(cc,ccNote);
+      await api.post('/api/maturity/services/'+service.id+'/submit',{roundId:round.id});
       await onReload();
       api.get('/api/maturity/services/'+service.id+'?round='+round.id).then(setDetail);
     }catch(e){alert(e.message);}finally{setBusy(false);}
   }
+  const ready=(override!=null||computed!=null)&&cc!=null;
   return h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 4px'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer'},onClick:()=>setOpen(!open)},
       h('span',{style:{fontWeight:600}},'#'+service.number+' '+service.name),
-      submitted?h('span',{className:'chip chip-'+levelClass(myScore.level)},'you: '+Number(myScore.level).toFixed(1)):h('span',{className:'small muted'},'not submitted'),
+      submitted
+        ?h('span',null,h('span',{className:'chip chip-'+levelClass(myScore.level)},'M '+Number(myScore.level).toFixed(1)),' ',ccChip(myScore.consciousnessLevel,ccLevels))
+        :h('span',{className:'small muted'},'not submitted'),
       h('span',{style:{marginLeft:'auto',color:'var(--teal)',fontSize:11}},open?'▾':'▸')),
     open&&(!detail?h('div',{className:'small muted',style:{padding:8}},'Loading…'):h('div',{style:{padding:'8px 4px'}},
       h('div',{className:'small muted',style:{marginBottom:8}},(service.descriptors.find(d=>d.level===3)||{}).text),
+      h('div',{className:'small',style:{fontWeight:700,color:'var(--teal)',margin:'4px 0'}},'How well is it run? (maturity, 1–5)'),
       questions.map(q=>h('div',{key:q.id,style:{marginBottom:10}},
         h('div',{style:{fontSize:12,marginBottom:4}},q.prompt),
         q.responseKind==='level_pick'
@@ -216,47 +232,24 @@ function ServiceWorksheet({service,round,levelLabels,onReload}){
               h('span',{className:'pn'},d.level),h('span',null,(levelLabels.find(l=>l.level===d.level)||{}).name+' — '+d.text)))
           :h('div',{className:'scoresel'},AGREE.map((lbl,i)=>h('button',{key:i,className:Number(ans[q.id])===i+1?'on':'',title:lbl,onClick:()=>{const n={...ans,[q.id]:i+1};setAns(n);save(n);}},i+1)))
       )),
-      h('div',{style:{display:'flex',alignItems:'center',gap:10,marginTop:6,flexWrap:'wrap'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,margin:'6px 0 14px',flexWrap:'wrap'}},
         h('span',{className:'small muted'},'Computed level:'),levelChip(computed),
         h('button',{className:'linkbtn',onClick:()=>setOverride(override==null?(computed||3):null)},override==null?'adjust':'use computed'),
         override!=null&&h('div',{className:'scoresel'},[1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>h('button',{key:v,className:override===v?'on':'',onClick:()=>setOverride(v)},v))),
-        saved&&h('span',{className:'small',style:{color:'var(--teal)'}},'saved'),
-        h('span',{style:{flex:1}}),
-        h('button',{className:'btn btn-teal btn-sm',disabled:busy||(override==null&&computed==null),onClick:submit},submitted?'Re-submit':'Submit this service'))
-    ))
-  );
-}
-function CCWorksheet({round,me,onReload}){
-  const [cc,setCc]=useState(null);
-  const [vals,setVals]=useState({});
-  const [refl,setRefl]=useState({});
-  const [busy,setBusy]=useState(false);
-  useEffect(()=>{api.get('/api/maturity/cc?round='+round.id).then(d=>{
-    setCc(d);const v={},r={};(d.myResponses||[]).forEach(x=>{v[x.dimensionId]=x.level;r[x.dimensionId]=x.reflection;});setVals(v);setRefl(r);
-  });},[]);
-  if(!cc)return h('div',{className:'card small muted'},'Loading…');
-  const allPlaced=cc.dimensions.every(d=>vals[d.dimensionId||d.id]);
-  async function saveOne(dimId,level,reflection){
-    const next={...vals,[dimId]:level};setVals(next);
-    try{await api.put('/api/maturity/cc-responses',{roundId:round.id,responses:[{dimensionId:dimId,level,reflection:reflection!==undefined?reflection:(refl[dimId]||'')}]});}catch(e){alert(e.message);}
-  }
-  async function submit(){
-    setBusy(true);
-    try{await api.post('/api/maturity/cc/submit',{roundId:round.id});await onReload();}catch(e){alert(e.message);}finally{setBusy(false);}
-  }
-  return h('div',{className:'card'},
-    cc.dimensions.map(d=>{
-      const prompts=cc.prompts.filter(p=>p.dimensionId===d.id);
-      return h('div',{key:d.id,style:{borderTop:'0.5px solid var(--border)',padding:'10px 0'}},
-        h('div',{style:{fontWeight:600,marginBottom:4}},d.name),
-        prompts.map(p=>h('div',{key:p.id,className:'small muted',style:{marginBottom:4}},p.prompt)),
-        h('div',{className:'arc'},cc.levels.map(l=>h('div',{key:l.level,className:'step'+(Number(vals[d.id])===l.level?' on':''),title:l.description,onClick:()=>saveOne(d.id,l.level)},
+        saved&&h('span',{className:'small',style:{color:'var(--teal)'}},'saved')),
+      h('div',{style:{borderTop:'0.5px dashed var(--border)',paddingTop:10}},
+        h('div',{className:'small',style:{fontWeight:700,color:'var(--teal)',marginBottom:4}},'From what level is it run? (consciousness, 1–7)'),
+        ccQ&&h('div',{style:{fontSize:12,marginBottom:4}},ccQ.prompt),
+        ccQ&&h('div',{className:'small muted',style:{marginBottom:6}},ccQ.help),
+        h('div',{className:'arc'},(ccLevels||[]).map(l=>h('div',{key:l.level,className:'step'+(Number(cc)===l.level?' on':''),title:l.description,onClick:()=>saveCc(l.level)},
           h('div',{className:'n'},l.level),l.name))),
-        h('input',{className:'form-input',style:{marginTop:6,marginBottom:0},placeholder:'Reflection (optional)',value:refl[d.id]||'',
-          onChange:e=>setRefl({...refl,[d.id]:e.target.value}),onBlur:e=>{if(vals[d.id])saveOne(d.id,vals[d.id],e.target.value);}}));
-    }),
-    h('div',{style:{marginTop:12,fontSize:10.5,color:'var(--muted)'}},cc.attribution),
-    h('div',{style:{marginTop:10,textAlign:'right'}},h('button',{className:'btn btn-teal btn-sm',disabled:busy||!allPlaced,onClick:submit},'Submit capital consciousness'))
+        h('input',{className:'form-input',style:{marginTop:6,marginBottom:0},placeholder:(ccQ&&ccQ.reflectionPrompt)||'Why?',value:ccNote,
+          onChange:e=>setCcNote(e.target.value),onBlur:e=>{if(cc!=null)saveCc(cc,e.target.value);}})),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,marginTop:12,flexWrap:'wrap'}},
+        h('span',{style:{flex:1}}),
+        !ready&&h('span',{className:'small muted'},'Answer both axes to submit'),
+        h('button',{className:'btn btn-teal btn-sm',disabled:busy||!ready,onClick:submit},submitted?'Re-submit':'Submit this service'))
+    ))
   );
 }
 
@@ -315,19 +308,18 @@ function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
         h('div',{style:{overflowX:'auto'}},h('table',{className:'tbl'},
           h('thead',null,h('tr',null,h('th',null,'#'),h('th',null,'Service'),
             members.map(m=>h('th',{key:m.id,title:m.name},m.name.split(' ')[0])),
-            h('th',null,'Min'),h('th',null,'Mean'),h('th',null,'Max'),h('th',null,'Spread'),h('th',null,'Benchmark'),h('th',null,'Gap'),h('th',null,''))),
-          h('tbody',null,svcs.map(s=>h('tr',{key:s.id,style:{cursor:'pointer'},onClick:()=>onOpenService(s.id)},
+            h('th',null,'Mean'),h('th',null,'Spread'),h('th',null,'Benchmark'),h('th',null,'Gap'),h('th',{title:'Consciousness — from what level the family runs this service (centre of gravity, 1–7)'},'Lens'),h('th',null,''))),
+          h('tbody',null,svcs.map(s=>{const cc=s.stats.consciousness||{};return h('tr',{key:s.id,style:{cursor:'pointer'},onClick:()=>onOpenService(s.id)},
             h('td',null,s.number),
             h('td',null,s.name),
             members.map(m=>h('td',{key:m.id},s.stats.byUser[m.id]!=null?levelChip(s.stats.byUser[m.id]):h('span',{className:'muted'},'—'))),
-            h('td',null,s.stats.min!=null?s.stats.min:'—'),
             h('td',null,s.stats.mean!=null?h('b',null,s.stats.mean):'—'),
-            h('td',null,s.stats.max!=null?s.stats.max:'—'),
             h('td',null,s.stats.spread!=null?s.stats.spread:'—'),
             h('td',null,s.benchmark?levelChip(s.benchmark.benchmarkLevel):h('span',{className:'muted'},'—')),
             h('td',null,s.gap==null?'—':h('span',{style:{fontWeight:700,color:s.gap>0.5?'#92400E':s.gap<-0.5?'#0F766E':'var(--muted)'}},(s.gap>0?'+':'')+s.gap)),
+            h('td',null,ccChip(cc.cog,data.consciousnessLevels||data.levelLabels),cc.straddlesThreshold?h('span',{title:'members on both sides of Level 4',style:{color:'#92400E',fontWeight:700}},' ⚠'):null),
             h('td',null,s.actionCounts.open>0?h('span',{className:'small muted'},s.actionCounts.open+' action'+(s.actionCounts.open>1?'s':'')):'')
-          ))))));
+          );})))));
     })
   );
 }
@@ -381,11 +373,16 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
           h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>dismissSug(sg)},'Dismiss'))))
     ):null,
 
-    h('div',{className:'sec'},'This round — member scores'),
+    h('div',{className:'sec'},'This round — maturity (1–5) and consciousness (1–7) per member'),
+    (d.stats&&d.stats.consciousness&&d.stats.consciousness.cog!=null)?h('div',{className:'small muted',style:{marginBottom:6}},
+      'Consciousness centre of gravity ',ccChip(d.stats.consciousness.cog,d.consciousnessLevels),
+      d.stats.consciousness.spread!=null?('  ·  spread '+d.stats.consciousness.spread):'',
+      d.stats.consciousness.straddlesThreshold?'  ·  members straddle the Level-4 threshold':''):null,
     (d.scores&&d.scores.length)?h('table',{className:'tbl'},
-      h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Level'),h('th',null,'Method'),h('th',null,'Rationale'),h('th',null,''))),
+      h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Maturity'),h('th',null,'Consciousness'),h('th',null,'Method'),h('th',null,'Notes'),h('th',null,''))),
       h('tbody',null,d.scores.map(x=>h('tr',{key:x.userId},
-        h('td',null,x.userName),h('td',null,levelChip(x.level)),h('td',null,x.method),h('td',null,h('span',{className:'small'},x.rationale||'—')),
+        h('td',null,x.userName),h('td',null,levelChip(x.level)),h('td',null,ccChip(x.consciousnessLevel,d.consciousnessLevels)),h('td',null,x.method),
+        h('td',null,h('span',{className:'small'},[x.rationale,x.consciousnessNote].filter(Boolean).join(' · ')||'—')),
         h('td',null,x.submitted?h('span',{className:'chip chip-l5'},'submitted'):h('span',{className:'small muted'},'draft')))))
     ):h('div',{className:'small muted'},'No scores recorded this round.'),
 
@@ -446,38 +443,48 @@ function ActionList({actions,serviceId,dimensionId,roundId,members,roles,onChang
       :h('button',{className:'linkbtn',style:{marginTop:6},onClick:()=>setAdding(true)},'+ Add action')));
 }
 
-// =====================================================================
-// Capital Consciousness tab
-// =====================================================================
-function CCTab({roundId}){
-  const [cc,setCc]=useState(null);
-  useEffect(()=>{api.get('/api/maturity/cc?round='+(roundId||'')).then(setCc);},[roundId]);
-  if(!cc)return h('div',{className:'card'},'Loading…');
+// Shared consciousness rollup (used on the Progress tab). `cc` is the profile.consciousness
+// block: { overall, prevOverall, levels, byService }.
+function ConsciousnessSection({cc,note}){
+  if(!cc)return null;
+  const levels=cc.levels||[];
+  const o=cc.overall||{};
   return h('div',null,
     h('div',{className:'card'},
-      h('div',{className:'sec',style:{marginTop:0}},'The arc of capital consciousness'),
-      cc.levels.map(l=>h('div',{key:l.level,className:'line'},
-        h('div',{style:{flex:1}},h('b',null,l.level+' · '+l.name),h('span',{className:'muted'},' — '+l.tagline),
-          h('div',{className:'small muted'},l.description))))),
+      h('div',{className:'sec',style:{marginTop:0}},'Consciousness axis — from what level the family runs its services'),
+      o.cog!=null
+        ?h('div',null,
+          h('div',{style:{fontSize:14}},'Family centre of gravity: ',ccChip(o.cog,levels),
+            cc.prevOverall&&cc.prevOverall.cog!=null&&o.cog!==cc.prevOverall.cog
+              ?h('span',{className:'small',style:{marginLeft:6,color:o.cog>cc.prevOverall.cog?'#0F766E':'#991B1B'}},(o.cog>cc.prevOverall.cog?'▲':'▼')+' was L'+cc.prevOverall.cog):null),
+          h('div',{className:'track',style:{maxWidth:520}},
+            h('div',{className:'cog',style:{left:((o.cog-1)/6*100)+'%'}}),
+            o.min!=null&&h('div',{style:{position:'absolute',top:0,bottom:0,left:((o.min-1)/6*100)+'%',right:(100-(o.max-1)/6*100)+'%',background:'rgba(27,42,74,.10)'}})),
+          h('div',{className:'small muted',style:{marginTop:4}},'Range L'+o.min+'–L'+o.max+' across '+o.count+' service answers.'))
+        :h('div',{className:'small muted'},'No consciousness answers recorded this round.'),
+      note&&h('div',{style:{marginTop:10,fontSize:10.5,color:'var(--muted)'}},note)),
     h('div',{className:'card'},
-      h('div',{className:'sec',style:{marginTop:0}},'Family placement'),
-      (cc.profile||[]).map(p=>h('div',{key:p.dimensionId,style:{marginBottom:14}},
-        h('div',{style:{display:'flex',justifyContent:'space-between'}},
-          h('b',null,p.name),
-          h('span',{className:'small muted'},p.centreOfGravity!=null?('centre '+p.centreOfGravity+(p.prevCentreOfGravity!=null?(' (was '+p.prevCentreOfGravity+')'):'')):'no placements')),
-        h('div',{className:'track'},
-          p.centreOfGravity!=null&&h('div',{className:'cog',style:{left:((p.centreOfGravity-1)/6*100)+'%'}}),
-          (p.members||[]).filter(m=>m.submitted).map((m,i)=>h('div',{key:m.userId,className:'dot',style:{left:((m.level-1)/6*100)+'%',marginTop:(i%2?10:-10)+'px'},title:m.name+' — level '+m.level},(m.name||'?')[0]))),
-        p.straddlesThreshold&&h('div',{className:'small',style:{color:'#92400E'}},'Members sit on both sides of the Level-4 reactive → chosen threshold.'),
-        (p.members||[]).filter(m=>m.submitted&&m.reflection).map(m=>h('div',{key:m.userId,className:'small muted'},'“'+m.reflection+'” — '+m.name)))),
-      h('div',{style:{marginTop:8,fontSize:10.5,color:'var(--muted)'}},cc.attribution))
+      h('div',{className:'sec',style:{marginTop:0}},'By service — maturity (bar) with the consciousness level it is run from (colour)'),
+      h('div',{style:{overflowX:'auto'}},h('table',{className:'tbl'},
+        h('thead',null,h('tr',null,h('th',null,'#'),h('th',null,'Service'),h('th',{style:{width:220}},'Maturity 1–5'),h('th',null,'Consciousness'),h('th',null,'Spread'))),
+        h('tbody',null,(cc.byService||[]).map(s=>{
+          const w=s.maturityMean!=null?(s.maturityMean/5*100):0;
+          const col=({l1:'#9D174D',l2:'#B45309',l3:'#1E3A8A',l4:'#0F766E',l5:'#065F46',none:'#9CA3AF'})[ccClass(s.cog)];
+          return h('tr',{key:s.serviceId},
+            h('td',null,s.number),h('td',null,s.name),
+            h('td',null,h('div',{style:{position:'relative',height:16,background:'var(--bg)',borderRadius:4}},
+              h('div',{style:{position:'absolute',left:0,top:0,bottom:0,width:w+'%',background:col,borderRadius:4}}),
+              h('div',{style:{position:'absolute',right:4,top:0,fontSize:10,lineHeight:'16px',color:'var(--muted)'}},s.maturityMean!=null?s.maturityMean:'—'))),
+            h('td',null,ccChip(s.cog,levels),s.prevCog!=null&&s.cog!=null&&s.cog!==s.prevCog?h('span',{className:'small muted'},' (was L'+s.prevCog+')'):null,s.straddlesThreshold?h('span',{title:'members on both sides of Level 4',style:{color:'#92400E'}},' ⚠'):null),
+            h('td',null,s.spread!=null?s.spread:'—'));
+        })))))
   );
 }
 
 // =====================================================================
 // Progress tab
 // =====================================================================
-function ProgressTab({roundId}){
+function ProgressTab({roundId,consciousnessNote}){
   const [p,setP]=useState(null);
   const [syn,setSyn]=useState(null);
   const [busy,setBusy]=useState(false);
@@ -511,6 +518,7 @@ function ProgressTab({roundId}){
           h('td',null,r.name),h('td',null,r.prevMean!=null?r.prevMean:'—'),h('td',null,r.familyMean!=null?r.familyMean:'—'),
           h('td',null,r.delta==null?'—':h('b',{style:{color:r.delta>0?'#0F766E':r.delta<0?'#991B1B':'var(--muted)'}},(r.delta>0?'+':'')+r.delta)),
           h('td',null,r.benchmark!=null?r.benchmark:'—')))))),
+    h(ConsciousnessSection,{cc:p.consciousness,note:consciousnessNote}),
     h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Round synthesis'),
       h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:synth},busy?'Generating…':'Generate synthesis'),
       syn&&h('div',{style:{marginTop:8}},
@@ -585,7 +593,7 @@ function MaturityApp({me,roles}){
   useEffect(()=>{if(roundId)load(roundId);},[roundId]);
   if(err)return h('div',{className:'page'},h('div',{className:'alert alert-danger'},err));
   if(!data)return h('div',{className:'page'},'Loading…');
-  const TABS=[['assessment','Assessment'],['scorecard','Scorecard'],['cc','Capital Consciousness'],['progress','Progress']];
+  const TABS=[['assessment','Assessment'],['scorecard','Scorecard'],['progress','Progress']];
   if(roles.maturityAdmin)TABS.push(['manage','Manage']);
   return h('div',{className:'page'},
     h('div',{style:{marginBottom:12}},
@@ -594,8 +602,7 @@ function MaturityApp({me,roles}){
     h('div',{className:'tabs'},TABS.map(([k,l])=>h('div',{key:k,className:'tab'+(tab===k?' active':''),onClick:()=>setTab(k)},l))),
     tab==='assessment'&&h(AssessmentTab,{data,me,roles,onReload:()=>load(roundId)}),
     tab==='scorecard'&&h(ScorecardTab,{data,members:data.members,roles,roundId,onPickRound:setRoundId,onOpenService:setOpenSvc}),
-    tab==='cc'&&h(CCTab,{roundId}),
-    tab==='progress'&&h(ProgressTab,{roundId}),
+    tab==='progress'&&h(ProgressTab,{roundId,consciousnessNote:data.consciousnessNote}),
     tab==='manage'&&roles.maturityAdmin&&h(ManageTab,{data,members:data.members,onReload:()=>load(roundId)}),
     openSvc&&h(ServiceDrawer,{serviceId:openSvc,roundId,members:data.members,roles,levelLabels:data.levelLabels,onClose:()=>setOpenSvc(null),onChanged:()=>load(roundId)})
   );

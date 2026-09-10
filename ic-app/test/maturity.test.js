@@ -110,23 +110,27 @@ describe('round lifecycle', () => {
     const r = await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-03', responses: [] });
     assert.equal(r.status, 400);
   });
-  test('open -> answer -> computed level -> submit -> shows in the scorecard', async () => {
+  test('open -> answer both axes -> submit -> shows on the scorecard (maturity + consciousness)', async () => {
     as('reg');
     assert.equal((await send('POST', `/api/maturity/rounds/${roundId}/open`, {})).status, 200);
 
     as('ross');
     const detail = (await get(`/api/maturity/services/svc-03?round=${roundId}`)).body;
-    const qs = detail.questions;
-    const responses = qs.map((q) => ({ questionId: q.id, value: q.responseKind === 'level_pick' ? 4 : 4 }));
+    assert.equal(detail.consciousnessLevels.length, 7);
+    const responses = detail.questions.map((q) => ({ questionId: q.id, value: 4 }));
     const saved = await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-03', responses });
-    assert.equal(saved.status, 200);
     assert.equal(saved.body.computedLevel, 4); // all 4s
 
-    const sub = await send('POST', '/api/maturity/services/svc-03/submit', { roundId });
-    assert.equal(sub.status, 200);
+    // must answer the consciousness axis before submitting
+    assert.equal((await send('POST', '/api/maturity/services/svc-03/submit', { roundId })).status, 400);
+    assert.equal((await send('PUT', '/api/maturity/consciousness', { roundId, serviceId: 'svc-03', level: 3, note: 'run defensively' })).status, 200);
+    assert.equal((await send('POST', '/api/maturity/services/svc-03/submit', { roundId })).status, 200);
 
     const ov = (await get(`/api/maturity/overview?round=${roundId}`)).body;
-    assert.equal(ov.services.find((s) => s.id === 'svc-03').stats.byUser.ross, 4);
+    const svc = ov.services.find((s) => s.id === 'svc-03');
+    assert.equal(svc.stats.byUser.ross, 4);
+    assert.equal(svc.stats.consciousness.byUser.ross, 3);
+    assert.equal(svc.stats.consciousness.cog, 3);
   });
   test('closing without benchmarks does not create an anchor', async () => {
     as('reg');
@@ -154,12 +158,13 @@ describe('round lifecycle', () => {
 });
 
 describe('carry-forward pre-fill', () => {
-  test('opening a round with carryFrom seeds unsubmitted scores from the prior round', () => {
-    // r2 above carried from the H2 round; ross's svc-03 = 4 was submitted there
+  test('opening a round with carryFrom seeds unsubmitted scores (both axes) from the prior round', () => {
+    // r2 above carried from the H2 round; ross's svc-03 = maturity 4 / consciousness 3 was submitted there
     const r2 = db.prepare("SELECT id FROM maturity_rounds WHERE label = '2027 H1'").get().id;
     const row = db.prepare("SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = 'svc-03' AND user_id = 'ross'").get(r2);
     assert.ok(row);
     assert.equal(row.level, 4);
+    assert.equal(row.consciousness_level, 3);
     assert.equal(row.submitted, 0);
     assert.match(row.rationale, /Carried forward/);
   });
@@ -208,20 +213,39 @@ describe('actions <-> Family Task List', () => {
   });
 });
 
-describe('Capital Consciousness submit gate', () => {
-  test('cannot submit until placed on every dimension', async () => {
+describe('consciousness axis (Option C — one field per service, no separate instrument)', () => {
+  test('the old parallel-instrument tables are gone; /cc returns the 7-level scale + rollup', async () => {
+    for (const t of ['maturity_cc_dimensions', 'maturity_cc_prompts', 'maturity_cc_responses']) {
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name = ?").get(t).n, 0, `${t} should be dropped`);
+    }
     as('reg');
-    const roundId = (await send('POST', '/api/maturity/rounds', { label: 'cc-round' })).body.id;
+    const cc = (await get('/api/maturity/cc')).body;
+    assert.equal(cc.levels.length, 7);
+    assert.ok(cc.question && cc.question.prompt);
+    assert.ok(!('dimensions' in cc));
+  });
+
+  test('consciousness rolls up per service and family-wide, with a Level-4 straddle flag', async () => {
+    as('reg');
+    const roundId = (await send('POST', '/api/maturity/rounds', { label: 'cc-c' })).body.id;
     await send('POST', `/api/maturity/rounds/${roundId}/open`, {});
-    as('lucas');
-    const dims = (await get(`/api/maturity/cc?round=${roundId}`)).body.dimensions;
-    // place on all but one
-    await send('PUT', '/api/maturity/cc-responses', { roundId, responses: dims.slice(1).map((d) => ({ dimensionId: d.id, level: 3 })) });
-    assert.equal((await send('POST', '/api/maturity/cc/submit', { roundId })).status, 400);
-    await send('PUT', '/api/maturity/cc-responses', { roundId, responses: [{ dimensionId: dims[0].id, level: 3 }] });
-    assert.equal((await send('POST', '/api/maturity/cc/submit', { roundId })).status, 200);
+    // three members answer svc-05 straddling Level 4: 2, 4, 6  -> cog 4, spread 4, straddles
+    for (const [u, lvl] of [['reg', 2], ['ross', 4], ['lucas', 6]]) {
+      as(u);
+      const qs = (await get(`/api/maturity/services/svc-05?round=${roundId}`)).body.questions;
+      await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-05', responses: qs.map((q) => ({ questionId: q.id, value: 3 })) });
+      await send('PUT', '/api/maturity/consciousness', { roundId, serviceId: 'svc-05', level: lvl });
+      assert.equal((await send('POST', '/api/maturity/services/svc-05/submit', { roundId })).status, 200);
+    }
     as('reg');
-    db.prepare('DELETE FROM maturity_cc_responses WHERE round_id = ?').run(roundId);
+    const prof = (await get(`/api/maturity/profile?round=${roundId}`)).body;
+    const row = prof.consciousness.byService.find((x) => x.serviceId === 'svc-05');
+    assert.equal(row.cog, 4);
+    assert.equal(row.spread, 4);
+    assert.equal(row.straddlesThreshold, true);
+    assert.equal(prof.consciousness.overall.cog, 4);
+    db.prepare('DELETE FROM maturity_service_scores WHERE round_id = ?').run(roundId);
+    db.prepare('DELETE FROM maturity_responses WHERE round_id = ?').run(roundId);
     db.prepare('DELETE FROM maturity_rounds WHERE id = ?').run(roundId);
   });
 });

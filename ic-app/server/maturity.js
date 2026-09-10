@@ -21,7 +21,7 @@ const mailer = require('./mailer');
 const { logApiUsage } = require('./usage');
 const { contentRow, paragraph, emailShell } = require('./email-template');
 const { buildMaturityReportPdf } = require('./maturity-report');
-const { ACC_ATTRIBUTION, CHANGE_DIMENSIONS, FAMILY_CONTEXT } = require('./maturity-seed-data');
+const { CONSCIOUSNESS_NOTE, CONSCIOUSNESS_QUESTION, CHANGE_DIMENSIONS, FAMILY_CONTEXT } = require('./maturity-seed-data');
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 
@@ -153,15 +153,27 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       .map((q) => ({ id: q.id, serviceId: q.service_id, prompt: q.prompt, helpText: q.help_text, responseKind: q.response_kind, weight: q.weight, sortOrder: q.sort_order, isActive: !!q.is_active }));
   }
 
-  // family stats for one (round, service): mean/min/max/spread over SUBMITTED scores only
+  const median = (sorted) => (sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : null);
+
+  // family stats for one (round, service): the 1–5 MATURITY axis (how well it is run) plus
+  // the 1–7 CONSCIOUSNESS axis (from what level of awareness) — Option C, both on the
+  // same maturity_service_scores row, over SUBMITTED scores only.
   function serviceStats(roundId, serviceId) {
     const rows = db.prepare(
-      'SELECT user_id, level FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND submitted = 1'
+      'SELECT user_id, level, consciousness_level, consciousness_note FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND submitted = 1'
     ).all(roundId, serviceId);
     const byUser = {};
     const vals = [];
-    for (const r of rows) { byUser[r.user_id] = r.level; vals.push(r.level); }
+    const cByUser = {};
+    const cNote = {};
+    const cVals = [];
+    for (const r of rows) {
+      byUser[r.user_id] = r.level;
+      vals.push(r.level);
+      if (r.consciousness_level != null) { cByUser[r.user_id] = r.consciousness_level; cNote[r.user_id] = r.consciousness_note || ''; cVals.push(r.consciousness_level); }
+    }
     const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const cSorted = cVals.slice().sort((a, b) => a - b);
     return {
       byUser,
       count: vals.length,
@@ -169,6 +181,31 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       min: vals.length ? Math.min(...vals) : null,
       max: vals.length ? Math.max(...vals) : null,
       spread: vals.length ? Math.round((Math.max(...vals) - Math.min(...vals)) * 100) / 100 : null,
+      consciousness: {
+        byUser: cByUser,
+        note: cNote,
+        count: cVals.length,
+        cog: median(cSorted),
+        min: cSorted.length ? cSorted[0] : null,
+        max: cSorted.length ? cSorted[cSorted.length - 1] : null,
+        spread: cSorted.length ? cSorted[cSorted.length - 1] - cSorted[0] : null,
+        straddlesThreshold: cSorted.length ? (cSorted[0] < 4 && cSorted[cSorted.length - 1] >= 4) : false,
+      },
+    };
+  }
+  // family-wide consciousness rollup for a round: centre of gravity and dispersion across
+  // every submitted per-service answer.
+  function overallConsciousness(roundId, atOrPrev) {
+    const rid = atOrPrev === 'prev' ? previousClosedRoundId(roundId) : roundId;
+    if (!rid) return { cog: null, min: null, max: null, spread: null, count: 0 };
+    const vals = db.prepare('SELECT consciousness_level FROM maturity_service_scores WHERE round_id = ? AND submitted = 1 AND consciousness_level IS NOT NULL')
+      .all(rid).map((r) => r.consciousness_level).sort((a, b) => a - b);
+    return {
+      cog: median(vals),
+      min: vals.length ? vals[0] : null,
+      max: vals.length ? vals[vals.length - 1] : null,
+      spread: vals.length ? vals[vals.length - 1] - vals[0] : null,
+      count: vals.length,
     };
   }
   function benchmarkFor(roundId, serviceId) {
@@ -214,33 +251,24 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     return { total: rows.length, open: open.length, immediate: open.filter((a) => a.priority === 'Immediate').length };
   }
 
-  // ---- Capital Consciousness helpers ----
+  // ---- consciousness axis (Option C — one per-service field, no separate instrument) ----
 
-  function ccDimensions() {
-    return db.prepare('SELECT * FROM maturity_cc_dimensions ORDER BY sort_order').all()
-      .map((d) => ({ id: d.id, name: d.name, sortOrder: d.sort_order, serviceIds: jsonParse(d.service_ids, []) }));
-  }
-  function ccProfile(roundId) {
-    const dims = ccDimensions();
+  const ccLevels = () => db.prepare('SELECT level, name, tagline, description FROM maturity_cc_levels ORDER BY level').all();
+
+  // per-service consciousness rollup for a round, aligned to the maturity scorecard rows.
+  function consciousnessByService(roundId) {
     const prevId = previousClosedRoundId(roundId);
-    return dims.map((d) => {
-      const rows = db.prepare('SELECT user_id, level, reflection, submitted FROM maturity_cc_responses WHERE round_id = ? AND dimension_id = ?').all(roundId, d.id);
-      const submitted = rows.filter((r) => r.submitted);
-      const vals = submitted.map((r) => r.level).sort((a, b) => a - b);
-      const median = vals.length ? (vals.length % 2 ? vals[(vals.length - 1) / 2] : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2) : null;
-      let prevMedian = null;
-      if (prevId) {
-        const pv = db.prepare('SELECT level FROM maturity_cc_responses WHERE round_id = ? AND dimension_id = ? AND submitted = 1').all(prevId, d.id).map((r) => r.level).sort((a, b) => a - b);
-        prevMedian = pv.length ? (pv.length % 2 ? pv[(pv.length - 1) / 2] : (pv[pv.length / 2 - 1] + pv[pv.length / 2]) / 2) : null;
-      }
+    return servicesList(false).map((s) => {
+      const cur = serviceStats(roundId, s.id).consciousness;
+      const prev = prevId ? serviceStats(prevId, s.id).consciousness : null;
+      const maturityMean = serviceStats(roundId, s.id).mean;
       return {
-        dimensionId: d.id, name: d.name, serviceIds: d.serviceIds,
-        members: rows.map((r) => ({ userId: r.user_id, name: userName(r.user_id), level: r.level, reflection: r.reflection, submitted: !!r.submitted })),
-        centreOfGravity: median,
-        range: vals.length ? [vals[0], vals[vals.length - 1]] : null,
-        spread: vals.length ? vals[vals.length - 1] - vals[0] : null,
-        straddlesThreshold: vals.length ? (vals[0] < 4 && vals[vals.length - 1] >= 4) : false,
-        prevCentreOfGravity: prevMedian,
+        serviceId: s.id, number: s.number, name: s.name, groupId: s.group_id,
+        maturityMean,
+        cog: cur.cog, min: cur.min, max: cur.max, spread: cur.spread,
+        straddlesThreshold: cur.straddlesThreshold,
+        prevCog: prev ? prev.cog : null,
+        members: Object.entries(cur.byUser).map(([userId, level]) => ({ userId, name: userName(userId), level, note: cur.note[userId] || '' })),
       };
     });
   }
@@ -258,11 +286,9 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
 
   function roundCompletion(roundId, meId) {
     const activeServices = servicesList(false);
-    const ccTotal = ccDimensions().length;
     return familyMemberIds().map((uid) => {
       const done = db.prepare('SELECT COUNT(*) AS n FROM maturity_service_scores WHERE round_id = ? AND user_id = ? AND submitted = 1').get(roundId, uid).n;
-      const ccDone = db.prepare('SELECT COUNT(*) AS n FROM maturity_cc_responses WHERE round_id = ? AND user_id = ? AND submitted = 1').get(roundId, uid).n;
-      return { userId: uid, me: uid === meId, name: userName(uid), servicesDone: done, servicesTotal: activeServices.length, ccDone, ccTotal, complete: done >= activeServices.length && ccDone >= ccTotal };
+      return { userId: uid, me: uid === meId, name: userName(uid), servicesDone: done, servicesTotal: activeServices.length, complete: done >= activeServices.length };
     });
   }
 
@@ -276,7 +302,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       .map((g) => ({ id: g.id, name: g.name, sortOrder: g.sort_order }));
     const includeRetired = req.query.retired === '1';
     const services = servicesList(includeRetired).map((s) => {
-      const stats = roundId ? serviceStats(roundId, s.id) : { byUser: {}, count: 0, mean: null, min: null, max: null, spread: null };
+      const stats = roundId ? serviceStats(roundId, s.id) : { byUser: {}, count: 0, mean: null, min: null, max: null, spread: null, consciousness: { byUser: {}, note: {}, count: 0, cog: null } };
       const bench = roundId ? benchmarkFor(roundId, s.id) : null;
       return {
         id: s.id, groupId: s.group_id, number: s.number, name: s.name, description: s.description,
@@ -293,6 +319,8 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     res.json({
       round, rounds, groups, services,
       levelLabels: levelLabels(),
+      consciousnessLevels: ccLevels(),
+      consciousnessNote: CONSCIOUSNESS_NOTE,
       members: memberRows.map((m) => ({ id: m.id, name: m.name, maturityRole: m.maturity_role, maturityAdmin: !!m.is_fo_admin || m.maturity_role === 'admin' })),
       anchorRoundId: anchorRound()?.id || null,
       generatedAt: new Date().toISOString(),
@@ -307,8 +335,12 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       ? db.prepare('SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = ?').all(roundId, s.id).map((r) => ({
           id: r.id, userId: r.user_id, userName: userName(r.user_id), level: r.level, computedLevel: r.computed_level,
           method: r.method, rationale: r.rationale, submitted: !!r.submitted, submittedAt: r.submitted_at,
+          consciousnessLevel: r.consciousness_level, consciousnessNote: r.consciousness_note || '',
         }))
       : [];
+    const myScore = roundId
+      ? db.prepare('SELECT consciousness_level, consciousness_note FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND user_id = ?').get(roundId, s.id, req.session.userId)
+      : null;
     const myResponses = roundId
       ? db.prepare('SELECT question_id, value, note FROM maturity_responses WHERE round_id = ? AND service_id = ? AND user_id = ?')
           .all(roundId, s.id, req.session.userId)
@@ -332,6 +364,9 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       roundId,
       scores,
       myResponses,
+      myConsciousness: myScore ? { level: myScore.consciousness_level, note: myScore.consciousness_note || '' } : { level: null, note: '' },
+      consciousnessLevels: ccLevels(),
+      consciousnessQuestion: CONSCIOUSNESS_QUESTION,
       benchmark: roundId ? benchmarkFor(roundId, s.id) : null,
       stats: roundId ? serviceStats(roundId, s.id) : null,
       trend,
@@ -343,17 +378,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   app.get('/api/maturity/rounds', requireAuth, (req, res) => {
     const rounds = db.prepare('SELECT * FROM maturity_rounds ORDER BY COALESCE(closed_at, opened_at, created_at) DESC').all().map((r) => {
       const j = roundRowToJson(r);
-      // completion per member for a draft/open round
-      if (r.status === 'open' || r.status === 'draft') {
-        const activeServices = servicesList(false);
-        const members = familyMemberIds();
-        j.completion = members.map((uid) => {
-          const done = db.prepare('SELECT COUNT(*) AS n FROM maturity_service_scores WHERE round_id = ? AND user_id = ? AND submitted = 1').get(r.id, uid).n;
-          const ccDone = db.prepare('SELECT COUNT(*) AS n FROM maturity_cc_responses WHERE round_id = ? AND user_id = ? AND submitted = 1').get(r.id, uid).n;
-          const ccTotal = ccDimensions().length;
-          return { userId: uid, name: userName(uid), servicesDone: done, servicesTotal: activeServices.length, ccDone, ccTotal, complete: done >= activeServices.length && ccDone >= ccTotal };
-        });
-      }
+      if (r.status === 'open' || r.status === 'draft') j.completion = roundCompletion(r.id, req.session.userId);
       return j;
     });
     res.json({ rounds, anchorRoundId: anchorRound()?.id || null });
@@ -365,31 +390,25 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     res.json({ round: roundRowToJson(r), ladder: jsonParse(r.ladder_json, {}) });
   });
 
+  // Reference + rollup for the consciousness axis. There is no separate assessment here
+  // any more — consciousness is one question on every service worksheet (Option C).
   app.get('/api/maturity/cc', requireAuth, (req, res) => {
     const roundId = resolveRoundId(req.query);
-    const dims = ccDimensions();
-    const prompts = db.prepare('SELECT * FROM maturity_cc_prompts ORDER BY dimension_id, sort_order').all()
-      .map((p) => ({ id: p.id, dimensionId: p.dimension_id, prompt: p.prompt, sortOrder: p.sort_order }));
-    const myResponses = roundId
-      ? db.prepare('SELECT dimension_id, level, reflection, submitted FROM maturity_cc_responses WHERE round_id = ? AND user_id = ?')
-          .all(roundId, req.session.userId)
-          .map((r) => ({ dimensionId: r.dimension_id, level: r.level, reflection: r.reflection, submitted: !!r.submitted }))
-      : [];
     res.json({
       roundId,
-      levels: db.prepare('SELECT level, name, tagline, description FROM maturity_cc_levels ORDER BY level').all(),
-      dimensions: dims,
-      prompts,
-      myResponses,
-      profile: roundId ? ccProfile(roundId) : [],
+      levels: ccLevels(),
+      question: CONSCIOUSNESS_QUESTION,
       changeDimensions: CHANGE_DIMENSIONS,
-      attribution: ACC_ATTRIBUTION,
+      note: CONSCIOUSNESS_NOTE,
+      overall: roundId ? overallConsciousness(roundId) : { cog: null },
+      prevOverall: roundId ? overallConsciousness(roundId, 'prev') : { cog: null },
+      byService: roundId ? consciousnessByService(roundId) : [],
     });
   });
 
   app.get('/api/maturity/profile', requireAuth, (req, res) => {
     const roundId = resolveRoundId(req.query);
-    if (!roundId) return res.json({ roundId: null, services: [], radar: [], aggregateSeries: [], ccProfile: [] });
+    if (!roundId) return res.json({ roundId: null, services: [], radar: [], aggregateSeries: [], consciousness: null });
     const services = servicesList(false);
     const closedRounds = db.prepare("SELECT id, label, closed_at, created_at FROM maturity_rounds WHERE status = 'closed' ORDER BY COALESCE(closed_at, created_at) ASC").all();
     // aggregate self-reported mean & benchmark mean per closed round
@@ -412,7 +431,12 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     res.json({
       roundId, prevRoundId: prevId, anchorRoundId: anchorRound()?.id || null,
       radar, aggregateSeries,
-      ccProfile: ccProfile(roundId),
+      consciousness: {
+        overall: overallConsciousness(roundId),
+        prevOverall: overallConsciousness(roundId, 'prev'),
+        levels: ccLevels(),
+        byService: consciousnessByService(roundId),
+      },
       changesSince: radar.filter((x) => x.delta != null && x.delta !== 0).sort((a, b) => a.delta - b.delta),
     });
   });
@@ -468,13 +492,36 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     res.json({ computedLevel: computed, stored: stored.length });
   });
 
+  // Save the caller's consciousness answer (1..7) + one-line note for one service.
+  // Upserts onto the same maturity_service_scores row the maturity answers live on.
+  app.put('/api/maturity/consciousness', requireAuth, (req, res) => {
+    if (!requireMember(req, res)) return;
+    const b = req.body || {};
+    const round = getRound(b.roundId);
+    if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
+    if (!db.prepare('SELECT id FROM maturity_services WHERE id = ?').get(b.serviceId)) return res.status(404).json({ error: 'Service not found' });
+    const lvl = b.level == null ? null : Math.max(1, Math.min(7, Math.round(Number(b.level) || 0)));
+    const note = (b.note || '').trim();
+    const existing = db.prepare('SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND user_id = ?').get(b.roundId, b.serviceId, req.session.userId);
+    if (existing) {
+      db.prepare('UPDATE maturity_service_scores SET consciousness_level = ?, consciousness_note = ? WHERE id = ?').run(lvl, note, existing.id);
+    } else {
+      db.prepare(
+        `INSERT INTO maturity_service_scores (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at, consciousness_level, consciousness_note)
+         VALUES (?, ?, ?, ?, NULL, NULL, 'questionnaire', '', 0, NULL, ?, ?)`
+      ).run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, lvl, note);
+    }
+    res.json({ ok: true });
+  });
+
   app.post('/api/maturity/services/:serviceId/submit', requireAuth, (req, res) => {
     if (!requireMember(req, res)) return;
     const roundId = (req.body || {}).roundId;
     const round = getRound(roundId);
     if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
     const row = db.prepare('SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND user_id = ?').get(roundId, req.params.serviceId, req.session.userId);
-    if (!row || row.level == null) return res.status(400).json({ error: 'Answer the questions for this service first.' });
+    if (!row || row.level == null) return res.status(400).json({ error: 'Answer the maturity questions for this service first.' });
+    if (row.consciousness_level == null) return res.status(400).json({ error: 'Also pick the level of awareness this service is run from before submitting.' });
     db.prepare('UPDATE maturity_service_scores SET submitted = 1, submitted_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
     logAudit({ userId: req.session.userId, action: 'maturity.service_submitted', entityType: 'maturity_service', entityId: req.params.serviceId, details: { roundId } });
     res.json({ ok: true });
@@ -505,42 +552,6 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       ).run(crypto.randomUUID(), b.roundId, b.serviceId, targetUser, level, (b.rationale || '').trim(), b.submitted ? 1 : 0, b.submitted ? now : null);
     }
     logAudit({ userId: req.session.userId, action: 'maturity.score_set', entityType: 'maturity_service', entityId: b.serviceId, details: { roundId: b.roundId, targetUser, level } });
-    res.json({ ok: true });
-  });
-
-  // ---- Capital Consciousness (member) ----
-
-  app.put('/api/maturity/cc-responses', requireAuth, (req, res) => {
-    if (!requireMember(req, res)) return;
-    const b = req.body || {};
-    const round = getRound(b.roundId);
-    if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
-    const dimIds = new Set(ccDimensions().map((d) => d.id));
-    const items = Array.isArray(b.responses) ? b.responses.filter((r) => dimIds.has(r.dimensionId)) : [];
-    const now = new Date().toISOString();
-    const up = db.prepare(
-      `INSERT INTO maturity_cc_responses (id, round_id, user_id, dimension_id, level, reflection, submitted, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-       ON CONFLICT(round_id, user_id, dimension_id)
-       DO UPDATE SET level = excluded.level, reflection = excluded.reflection, updated_at = excluded.updated_at`
-    );
-    for (const r of items) {
-      const lvl = Math.max(1, Math.min(7, Math.round(Number(r.level) || 0)));
-      up.run(crypto.randomUUID(), b.roundId, req.session.userId, r.dimensionId, lvl, (r.reflection || '').trim(), now);
-    }
-    res.json({ ok: true, stored: items.length });
-  });
-
-  app.post('/api/maturity/cc/submit', requireAuth, (req, res) => {
-    if (!requireMember(req, res)) return;
-    const roundId = (req.body || {}).roundId;
-    const round = getRound(roundId);
-    if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
-    const dims = ccDimensions();
-    const have = db.prepare('SELECT COUNT(*) AS n FROM maturity_cc_responses WHERE round_id = ? AND user_id = ?').get(roundId, req.session.userId).n;
-    if (have < dims.length) return res.status(400).json({ error: 'Place yourself on all dimensions first.' });
-    db.prepare('UPDATE maturity_cc_responses SET submitted = 1 WHERE round_id = ? AND user_id = ?').run(roundId, req.session.userId);
-    logAudit({ userId: req.session.userId, action: 'maturity.cc_submitted', entityType: 'maturity_round', entityId: roundId });
     res.json({ ok: true });
   });
 
@@ -584,30 +595,18 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     }
     db.prepare("UPDATE maturity_rounds SET status = 'open', opened_at = ?, opened_by = ?, ladder_json = ? WHERE id = ?")
       .run(now, req.session.userId, JSON.stringify(ladder), r.id);
-    // carry-forward pre-fill (unsubmitted) from carried_from
+    // carry-forward pre-fill (unsubmitted) from carried_from — both axes on the same row
     if (r.carried_from) {
       const src = r.carried_from;
       for (const s of servicesList(false)) {
-        const prev = db.prepare('SELECT user_id, level FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND submitted = 1').all(src, s.id);
+        const prev = db.prepare('SELECT user_id, level, consciousness_level, consciousness_note FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND submitted = 1').all(src, s.id);
         for (const p of prev) {
           const exists = db.prepare('SELECT id FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND user_id = ?').get(r.id, s.id, p.user_id);
           if (!exists) {
             db.prepare(
-              `INSERT INTO maturity_service_scores (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at)
-               VALUES (?, ?, ?, ?, ?, NULL, 'direct', 'Carried forward from prior round', 0, NULL)`
-            ).run(crypto.randomUUID(), r.id, s.id, p.user_id, p.level);
-          }
-        }
-      }
-      for (const d of ccDimensions()) {
-        const prev = db.prepare('SELECT user_id, level, reflection FROM maturity_cc_responses WHERE round_id = ? AND dimension_id = ? AND submitted = 1').all(src, d.id);
-        for (const p of prev) {
-          const exists = db.prepare('SELECT id FROM maturity_cc_responses WHERE round_id = ? AND user_id = ? AND dimension_id = ?').get(r.id, p.user_id, d.id);
-          if (!exists) {
-            db.prepare(
-              `INSERT INTO maturity_cc_responses (id, round_id, user_id, dimension_id, level, reflection, submitted, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 0, ?)`
-            ).run(crypto.randomUUID(), r.id, p.user_id, d.id, p.level, p.reflection, now);
+              `INSERT INTO maturity_service_scores (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at, consciousness_level, consciousness_note)
+               VALUES (?, ?, ?, ?, ?, NULL, 'direct', 'Carried forward from prior round', 0, NULL, ?, ?)`
+            ).run(crypto.randomUUID(), r.id, s.id, p.user_id, p.level, p.consciousness_level, p.consciousness_note || '');
           }
         }
       }
@@ -651,8 +650,8 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       id: s.id, number: s.number, name: s.name, groupId: s.group_id,
       descriptors: descriptorsFor(s.id),
       stats: serviceStats(roundId, s.id),
-      scores: db.prepare('SELECT user_id, level, method, rationale, submitted FROM maturity_service_scores WHERE round_id = ? AND service_id = ?').all(roundId, s.id)
-        .map((x) => ({ userId: x.user_id, name: userName(x.user_id), level: x.level, method: x.method, rationale: x.rationale, submitted: !!x.submitted })),
+      scores: db.prepare('SELECT user_id, level, method, rationale, submitted, consciousness_level, consciousness_note FROM maturity_service_scores WHERE round_id = ? AND service_id = ?').all(roundId, s.id)
+        .map((x) => ({ userId: x.user_id, name: userName(x.user_id), level: x.level, method: x.method, rationale: x.rationale, submitted: !!x.submitted, consciousnessLevel: x.consciousness_level, consciousnessNote: x.consciousness_note || '' })),
       benchmark: benchmarkFor(roundId, s.id),
     }));
     return {
@@ -660,7 +659,8 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       groups: db.prepare('SELECT id, name, sort_order FROM maturity_service_groups ORDER BY sort_order').all(),
       levelLabels: levelLabels(),
       services,
-      ccProfile: ccProfile(roundId),
+      consciousnessLevels: ccLevels(),
+      consciousness: { overall: overallConsciousness(roundId), prevOverall: overallConsciousness(roundId, 'prev'), byService: consciousnessByService(roundId) },
       actions: db.prepare('SELECT * FROM maturity_actions WHERE (round_id = ? OR round_id IS NULL) AND archived_at IS NULL').all(roundId).map(actionRowToJson),
       generatedAt: new Date().toISOString(),
     };
@@ -885,12 +885,18 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       const b = benchmarkFor(r.id, s.id);
       const prev = prevId ? serviceStats(prevId, s.id).mean : null;
       const g = db.prepare('SELECT name FROM maturity_service_groups WHERE id = ?').get(s.group_id);
-      return { name: s.name, category: g ? g.name : '', familyMean: st.mean, benchmarkLevel: b ? b.benchmarkLevel : null, prevFamilyMean: prev };
+      return { name: s.name, category: g ? g.name : '', familyMean: st.mean, benchmarkLevel: b ? b.benchmarkLevel : null, prevFamilyMean: prev, consciousnessLevel: st.consciousness.cog, consciousnessSpread: st.consciousness.spread };
     });
+    const lvlNames = ccLevels();
     try {
       const { result, usage } = await claude.synthesizeMaturityRound({
         services,
-        ccProfile: ccProfile(r.id).map((d) => ({ dimension: d.name, memberLevels: d.members.filter((m) => m.submitted).map((m) => m.level), centreOfGravity: d.centreOfGravity, range: d.range, prevCentre: d.prevCentreOfGravity })),
+        consciousness: {
+          scale: lvlNames.map((l) => `${l.level} ${l.name} (${l.tagline})`),
+          overall: overallConsciousness(r.id),
+          previousOverall: overallConsciousness(r.id, 'prev'),
+          byService: consciousnessByService(r.id).map((c) => ({ service: c.name, cog: c.cog, spread: c.spread, maturityMean: c.maturityMean })),
+        },
         familyContext: FAMILY_CONTEXT,
       });
       logApiUsage({ callType: 'maturity_synthesis', usage, userId: req.session.userId });

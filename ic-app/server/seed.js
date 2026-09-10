@@ -319,14 +319,9 @@ function seedMaturity() {
     });
   });
 
+  // The 7-level consciousness scale (used per service, Option C — migration 034).
   const insCcLevel = db.prepare('INSERT INTO maturity_cc_levels (level, name, tagline, description) VALUES (?, ?, ?, ?)');
   for (const l of maturitySeed.CC_LEVELS) insCcLevel.run(l.level, l.name, l.tagline, l.description);
-
-  const insCcDim = db.prepare('INSERT INTO maturity_cc_dimensions (id, name, sort_order, service_ids) VALUES (?, ?, ?, ?)');
-  for (const d of maturitySeed.CC_DIMENSIONS) insCcDim.run(d.id, d.name, d.sort_order, JSON.stringify(d.service_ids || []));
-
-  const insCcPrompt = db.prepare('INSERT INTO maturity_cc_prompts (id, dimension_id, prompt, sort_order) VALUES (?, ?, ?, ?)');
-  for (const p of maturitySeed.CC_PROMPTS) insCcPrompt.run(crypto.randomUUID(), p.dimension_id, p.prompt, p.sort_order || 1);
 
   // The reference round — closed, no benchmarks, is_anchor = 0.
   const ref = maturitySeed.REFERENCE_ROUND;
@@ -351,7 +346,7 @@ function seedMaturity() {
 
   console.log(
     `Seeded Maturity Assessment: ${maturitySeed.GROUPS.length} categories, ${maturitySeed.SERVICES.length} services, ` +
-    `${maturitySeed.SERVICES.length * 5} level descriptors, ${maturitySeed.CC_LEVELS.length}-level Capital Consciousness ladder, ` +
+    `${maturitySeed.SERVICES.length * 5} level descriptors, ${maturitySeed.CC_LEVELS.length}-level consciousness scale, ` +
     `and the "${ref.label}" reference round (${Object.keys(ref.scores).length} services scored, ${ref.notAssessed.length} not assessed).`
   );
 }

@@ -35,7 +35,8 @@ async function radarPng(model) {
 }
 
 async function buildMaturityReportPdf(model) {
-  const { round, groups, levelLabels, services, ccProfile, actions, generatedAt } = model;
+  const { round, groups, levelLabels, services, consciousness, consciousnessLevels, actions, generatedAt } = model;
+  const ccName = (lvl) => (consciousnessLevels || []).find((l) => l.level === Math.round(lvl))?.name || '';
   const doc = new PDFDocument({ margin: 44, size: 'LETTER' });
   const chunks = [];
   doc.on('data', (c) => chunks.push(c));
@@ -93,35 +94,43 @@ async function buildMaturityReportPdf(model) {
           doc.fillColor('#374151').text(`   → ${w}`);
         }
       }
-      const per = (s.scores || []).filter((x) => x.submitted).map((x) => `${x.name.split(' ')[0]} ${x.level}`);
-      if (per.length) doc.fillColor('#6B7280').text('   ' + per.join('   ·   '));
+      const st = s.stats || {};
+      const per = (s.scores || []).filter((x) => x.submitted).map((x) => `${x.name.split(' ')[0]} ${x.level}${x.consciousnessLevel != null ? '/L' + x.consciousnessLevel : ''}`);
+      if (per.length) doc.fillColor('#6B7280').text('   maturity/consciousness — ' + per.join('   ·   '));
+      if (st.consciousness && st.consciousness.cog != null) {
+        doc.fillColor('#374151').text(`   Consciousness: level ${st.consciousness.cog} (${ccName(st.consciousness.cog)}), spread ${st.consciousness.spread}` + (st.consciousness.straddlesThreshold ? ' — straddles the Level-4 threshold' : ''));
+      }
       doc.fillColor('#111').moveDown(0.35);
     }
     doc.moveDown(0.2);
   }
 
-  // Capital Consciousness
+  // Consciousness axis — family rollup
   doc.addPage();
-  doc.fontSize(13).fillColor('#1B2A4A').text('Capital Consciousness — the Arc of Capital Consciousness', { underline: true });
+  doc.fontSize(13).fillColor('#1B2A4A').text('Consciousness axis — from what level each service is run', { underline: true });
   doc.moveDown(0.3);
   doc.fontSize(9).fillColor('#111');
-  for (const p of ccProfile || []) {
-    if (doc.y > 700) doc.addPage();
-    const members = (p.members || []).filter((m) => m.submitted);
-    doc.font('Helvetica-Bold').text(p.name);
-    doc.font('Helvetica').fillColor('#374151').text(
-      members.length
-        ? `Centre of gravity ${p.centreOfGravity}${p.prevCentreOfGravity != null ? ` (was ${p.prevCentreOfGravity})` : ''}` +
-          `   ·   range ${p.range ? p.range.join('–') : '—'}` +
-          (p.straddlesThreshold ? '   ·   members straddle the Level-4 threshold' : '')
-        : 'No placements recorded'
-    );
-    for (const m of members) {
-      if (doc.y > 730) doc.addPage();
-      doc.fillColor('#6B7280').text(`   ${m.name}: level ${m.level}${m.reflection ? ` — “${m.reflection}”` : ''}`);
-    }
+  const cc = consciousness || {};
+  if (cc.overall && cc.overall.cog != null) {
+    doc.font('Helvetica-Bold').text(`Family centre of gravity: level ${cc.overall.cog} (${ccName(cc.overall.cog)})` + (cc.prevOverall && cc.prevOverall.cog != null ? `  (was ${cc.prevOverall.cog})` : ''));
+    doc.font('Helvetica').fillColor('#374151').text(`Range ${cc.overall.min}–${cc.overall.max} across ${cc.overall.count} service answers.`);
     doc.fillColor('#111').moveDown(0.3);
+  } else {
+    doc.fillColor('#6B7280').text('No consciousness answers recorded this round.').fillColor('#111');
   }
+  for (const p of (cc.byService || [])) {
+    if (p.cog == null) continue;
+    if (doc.y > 720) doc.addPage();
+    doc.fillColor('#374151').text(
+      `#${p.number} ${p.name}: maturity ${p.maturityMean != null ? p.maturityMean : '—'}  ·  consciousness ${p.cog} (${ccName(p.cog)})  ·  spread ${p.spread}` +
+      (p.prevCog != null ? `  (was ${p.prevCog})` : '') +
+      (p.straddlesThreshold ? '  — members on both sides of Level 4' : '')
+    );
+    for (const m of (p.members || [])) {
+      if (m.note) { if (doc.y > 730) doc.addPage(); doc.fillColor('#6B7280').text(`     ${m.name}: L${m.level} — “${m.note}”`); }
+    }
+  }
+  doc.fillColor('#111');
 
   if (round && round.synthesis) {
     const syn = round.synthesis;
