@@ -308,7 +308,7 @@ function seedMaturity() {
     'INSERT INTO maturity_level_descriptors (id, service_id, level, text, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const insQ = db.prepare(
-    'INSERT INTO maturity_questions (id, service_id, prompt, help_text, response_kind, weight, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+    'INSERT INTO maturity_questions (id, service_id, prompt, help_text, response_kind, weight, sort_order, is_active, axis) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)'
   );
   maturitySeed.SERVICES.forEach((s, si) => {
     insSvc.run(s.id, s.groupId, s.number, s.name, s.description || '', si + 1);
@@ -316,7 +316,7 @@ function seedMaturity() {
       insDesc.run(crypto.randomUUID(), s.id, li + 1, text, eff, actor);
     });
     maturitySeed.questionsForService(s).forEach((q, qi) => {
-      insQ.run(crypto.randomUUID(), s.id, q.prompt, q.help_text || '', q.response_kind, q.weight || 1, qi + 1);
+      insQ.run(crypto.randomUUID(), s.id, q.prompt, q.help_text || '', q.response_kind, q.weight || 1, qi + 1, q.axis || 'maturity');
     });
   });
 

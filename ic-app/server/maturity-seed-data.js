@@ -196,35 +196,51 @@ const SERVICES = [
   },
 ];
 
-// ---- starter question set (3–5 per service, admin-editable; §5.3) ----
-// Derived from the level descriptors: one "which level fits" pick plus three
-// agreement statements that are true at higher levels and false at lower ones.
+// ---- starter question set (6 per service, admin-editable; §5.3/§5.8) ----
+// One combined worksheet, two axes. Each question carries an `axis`:
+//   'maturity'      — feeds only the 1–5 maturity level (how well the service is run)
+//   'consciousness' — feeds only the 1–7 consciousness level (from what level of
+//                     awareness it is run) — plain statements, no framework jargon,
+//                     answered the same 1–5 agreement way as everything else
+//   'both'          — a maturity question whose answer is also a real consciousness
+//                     signal (e.g. deliberate peer benchmarking reads as more systemic)
+// There is no separate "pick your level on the arc" step — the consciousness level is
+// DERIVED from these answers (consciousnessRollup in server/maturity.js), the same way
+// the maturity level is derived, so nobody needs to have read the framework to answer.
 function questionsForService(svc) {
   return [
     {
       prompt: `Which of the five descriptions best matches where the family office is today on ${svc.name}?`,
       help_text: 'Pick the single description that fits best overall, even if some details differ.',
-      response_kind: 'level_pick', weight: 2,
+      response_kind: 'level_pick', weight: 2, axis: 'maturity',
     },
     {
       prompt: `There is a documented, agreed approach to ${svc.name} that is actually followed in practice.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1,
+      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'maturity',
     },
     {
       prompt: `Our handling of ${svc.name} is embedded in day-to-day systems and routines — disciplined, monitored, and coordinated with the areas it touches.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1,
+      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'maturity',
     },
     {
       prompt: `We benchmark ${svc.name} against peer family offices and improve it deliberately over time.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1,
+      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'both',
+    },
+    {
+      prompt: `When something goes wrong with ${svc.name}, we tend to stay curious about what's really going on rather than just reacting to protect what we have.`,
+      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'consciousness',
+    },
+    {
+      prompt: `We treat ${svc.name} as one connected part of the whole picture, and we could clearly say what it's ultimately for — beyond just doing it well.`,
+      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'consciousness',
     },
   ];
 }
 
 // ---- the consciousness axis (Option C) ----
 // Every service is assessed on two axes: a 1–5 maturity level (how well it is run) and a
-// 1–7 consciousness level below (from what level of awareness it is run). One extra
-// question per service, answered in the same worksheet — there is no separate instrument.
+// 1–7 consciousness level (from what level of awareness it is run), both derived from the
+// same worksheet — there is no separate instrument and no direct "pick your level" step.
 const CC_LEVELS = [
   { level: 1, name: 'Instinctive', tagline: 'Capital as survival',
     description: 'Capital is primal — about safety, control and not losing. Fear is the primary driver and a powerful editor that filters out anything that does not feel immediately protective. Decisions are fast, reactive, and heavily weighted to loss avoidance.' },
@@ -242,12 +258,13 @@ const CC_LEVELS = [
     description: 'Wealth is still managed with full rigour, but it no longer occupies the centre of gravity or defines identity. The grip loosens; optimisation continues without attachment to it.' },
 ];
 
-// The single consciousness question asked on every service's worksheet. The seven answer
-// options are CC_LEVELS above.
+// The consciousness level is DERIVED from the axis:'consciousness'/'both' questions in
+// questionsForService() above, not asked directly. This is just the optional free-text
+// reflection shown once beneath a service's combined question list, and the label used
+// for the (optional, power-user) manual override against the named 7-level scale.
 const CONSCIOUSNESS_QUESTION = {
-  prompt: 'From what level of awareness is this service mostly being run today?',
-  help: 'Pick the level that best describes the mindset behind how decisions in this area actually get made — not where you wish it were.',
-  reflectionPrompt: 'Briefly, what makes you say that? (optional)',
+  reflectionPrompt: 'Anything you\'d add about how these decisions actually get made? (optional)',
+  overrideHelp: 'Computed from your answers above. If you know the framework and want to place it directly instead, you can override it here.',
 };
 
 // The four dimensions of change — how movement between levels actually happens.

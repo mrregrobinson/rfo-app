@@ -31,10 +31,18 @@ const APP_BASE_URL = process.env.APP_BASE_URL || 'https://rfo.quaysolutions.ca';
 const DEFAULT_TASK_CATEGORY_ID = 'maturity';
 
 // Scoring rule (§5.3) — mirrored verbatim in public/maturity.html and
-// server/maturity-report.js. A member's level for a service = weighted mean of their
-// answers on the 1-5 line, rounded to the nearest 0.5, clamped to 1..5.
+// server/maturity-report.js. A member's MATURITY level for a service = weighted mean of
+// their answers to that service's maturity-axis questions (axis 'maturity' or 'both') on
+// the 1-5 line, rounded to the nearest 0.5, clamped to 1..5.
+//
+// Every service also carries 1-2 CONSCIOUSNESS-axis questions (axis 'consciousness' or
+// 'both') — plain statements a member can answer without knowing the 7-level framework.
+// consciousnessRollup() below derives the 1-7 consciousness level from those same
+// answers, in the same worksheet, the same way levelRollup derives maturity. A member may
+// still override either computed value directly (method='direct'), but the questionnaire
+// is the default path for both axes — see RFO_Maturity_App_BuildSpec_v1 §5.3/§5.8.
 function levelRollup(answers, questions) {
-  const qById = new Map(questions.map((q) => [q.id, q]));
+  const qById = new Map(questions.filter((q) => !q.axis || q.axis === 'maturity' || q.axis === 'both').map((q) => [q.id, q]));
   let wsum = 0;
   let w = 0;
   for (const a of answers) {
@@ -49,10 +57,38 @@ function levelRollup(answers, questions) {
   if (w === 0) return null;
   return clampLevel(Math.round((wsum / w) * 2) / 2);
 }
+// Derives the 1-7 consciousness level from the service's consciousness-axis question
+// answers (1-5 agreement, like the maturity questions) — weighted mean mapped from the
+// 1-5 answer scale onto the 1-7 consciousness scale, rounded to the nearest whole level
+// (the 7 levels are named states, not a continuum like maturity's half-steps).
+function consciousnessRollup(answers, questions) {
+  const qById = new Map(questions.filter((q) => q.axis === 'consciousness' || q.axis === 'both').map((q) => [q.id, q]));
+  if (!qById.size) return null;
+  let wsum = 0;
+  let w = 0;
+  for (const a of answers) {
+    const q = qById.get(a.questionId);
+    if (!q) continue;
+    const v = Number(a.value);
+    if (!Number.isFinite(v)) continue;
+    const weight = Number(q.weight) || 1;
+    wsum += v * weight;
+    w += weight;
+  }
+  if (w === 0) return null;
+  const mean = wsum / w; // 1..5
+  const mapped = 1 + ((mean - 1) / 4) * 6; // -> 1..7
+  return Math.max(1, Math.min(7, Math.round(mapped)));
+}
 function clampLevel(x) {
   const n = Number(x);
   if (!Number.isFinite(n)) return null;
   return Math.max(1, Math.min(5, n));
+}
+function clampCcLevel(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(1, Math.min(7, Math.round(n)));
 }
 // UI band for a 1-5 level — mirrored in the frontend + report.
 function levelClass(level) {
@@ -150,7 +186,11 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   function questionsFor(serviceId, includeInactive) {
     const where = includeInactive ? '' : 'AND is_active = 1';
     return db.prepare(`SELECT * FROM maturity_questions WHERE service_id = ? ${where} ORDER BY sort_order, rowid`).all(serviceId)
-      .map((q) => ({ id: q.id, serviceId: q.service_id, prompt: q.prompt, helpText: q.help_text, responseKind: q.response_kind, weight: q.weight, sortOrder: q.sort_order, isActive: !!q.is_active }));
+      .map((q) => ({
+        id: q.id, serviceId: q.service_id, prompt: q.prompt, helpText: q.help_text, responseKind: q.response_kind,
+        weight: q.weight, sortOrder: q.sort_order, isActive: !!q.is_active,
+        axis: q.axis || 'maturity', // 'maturity' | 'consciousness' | 'both' — which rollup(s) this question feeds (§5.3/§5.8)
+      }));
   }
 
   const median = (sorted) => (sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : null);
@@ -335,7 +375,8 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       ? db.prepare('SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = ?').all(roundId, s.id).map((r) => ({
           id: r.id, userId: r.user_id, userName: userName(r.user_id), level: r.level, computedLevel: r.computed_level,
           method: r.method, rationale: r.rationale, submitted: !!r.submitted, submittedAt: r.submitted_at,
-          consciousnessLevel: r.consciousness_level, consciousnessNote: r.consciousness_note || '',
+          consciousnessLevel: r.consciousness_level, computedConsciousnessLevel: r.computed_consciousness_level,
+          consciousnessMethod: r.consciousness_method, consciousnessNote: r.consciousness_note || '',
         }))
       : [];
     const myScore = roundId
@@ -451,7 +492,10 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   // ===================================================================================
 
   // Upsert the caller's responses for one service in a round, then recompute + upsert
-  // their maturity_service_scores row (method 'questionnaire').
+  // BOTH axes on their maturity_service_scores row: the 1-5 maturity level and the 1-7
+  // consciousness level, each from the questions tagged for it (method 'questionnaire'
+  // unless that axis has a standing 'direct' override — see PUT /consciousness and
+  // PUT /scores below).
   app.put('/api/maturity/responses', requireAuth, (req, res) => {
     if (!requireMember(req, res)) return;
     const b = req.body || {};
@@ -475,42 +519,77 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const stored = db.prepare('SELECT question_id AS questionId, value FROM maturity_responses WHERE round_id = ? AND service_id = ? AND user_id = ?')
       .all(b.roundId, b.serviceId, req.session.userId);
     const computed = levelRollup(stored, questions);
-    // keep an unsubmitted score row in sync so the scorecard preview + submit work
+    const computedCc = consciousnessRollup(stored, questions);
     const existing = db.prepare('SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND user_id = ?').get(b.roundId, b.serviceId, req.session.userId);
-    if (existing && existing.method === 'direct' && existing.submitted) {
-      // don't clobber a submitted direct override; just refresh computed_level
-      db.prepare('UPDATE maturity_service_scores SET computed_level = ? WHERE id = ?').run(computed, existing.id);
-    } else if (existing) {
-      db.prepare('UPDATE maturity_service_scores SET level = ?, computed_level = ?, method = ? WHERE id = ?')
-        .run(computed ?? existing.level, computed, 'questionnaire', existing.id);
-    } else if (computed != null) {
+    const maturityOverridden = existing && existing.method === 'direct' && existing.submitted;
+    const ccOverridden = existing && existing.consciousness_method === 'direct' && existing.submitted;
+    if (existing) {
       db.prepare(
-        `INSERT INTO maturity_service_scores (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'questionnaire', '', 0, NULL)`
-      ).run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, computed, computed);
+        `UPDATE maturity_service_scores SET
+           level = @level, computed_level = @computedLevel, method = @method,
+           consciousness_level = @ccLevel, computed_consciousness_level = @computedCc, consciousness_method = @ccMethod
+         WHERE id = @id`
+      ).run({
+        id: existing.id,
+        // a submitted direct override holds its axis steady; the computed value still
+        // refreshes underneath it so switching back to "use computed" shows something current
+        level: maturityOverridden ? existing.level : (computed ?? existing.level),
+        computedLevel: computed,
+        method: maturityOverridden ? existing.method : 'questionnaire',
+        ccLevel: ccOverridden ? existing.consciousness_level : (computedCc ?? existing.consciousness_level),
+        computedCc: computedCc,
+        ccMethod: ccOverridden ? existing.consciousness_method : 'questionnaire',
+      });
+    } else if (computed != null || computedCc != null) {
+      db.prepare(
+        `INSERT INTO maturity_service_scores
+           (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at,
+            consciousness_level, computed_consciousness_level, consciousness_method, consciousness_note)
+         VALUES (?, ?, ?, ?, ?, ?, 'questionnaire', '', 0, NULL, ?, ?, 'questionnaire', '')`
+      ).run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, computed, computed, computedCc, computedCc);
     }
-    res.json({ computedLevel: computed, stored: stored.length });
+    res.json({ computedLevel: computed, computedConsciousnessLevel: computedCc, stored: stored.length });
   });
 
-  // Save the caller's consciousness answer (1..7) + one-line note for one service.
-  // Upserts onto the same maturity_service_scores row the maturity answers live on.
+  // Two things live here, kept separate so one never accidentally triggers the other:
+  //  - a manual OVERRIDE of the consciousness level (1..7), for the rare case someone
+  //    knows the framework and wants to place a service directly rather than answer the
+  //    questions. Sets consciousness_method='direct', same contract as PUT /scores for
+  //    maturity. Only happens when `level` is present in the body.
+  //  - saving the optional free-text reflection, which must NOT flip a still-computed
+  //    axis into 'direct' just because someone typed a note. Only happens when `note` is
+  //    present and `level` is not.
+  // The default path for the level itself is always the questionnaire in PUT /responses.
   app.put('/api/maturity/consciousness', requireAuth, (req, res) => {
     if (!requireMember(req, res)) return;
     const b = req.body || {};
     const round = getRound(b.roundId);
-    if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
+    if (!round || round.status === 'closed') return res.status(400).json({ error: 'That round is not editable.' });
     if (!db.prepare('SELECT id FROM maturity_services WHERE id = ?').get(b.serviceId)) return res.status(404).json({ error: 'Service not found' });
-    const lvl = b.level == null ? null : Math.max(1, Math.min(7, Math.round(Number(b.level) || 0)));
-    const note = (b.note || '').trim();
+    const hasLevel = b.level != null;
+    const lvl = hasLevel ? clampCcLevel(b.level) : null;
+    if (hasLevel && lvl == null) return res.status(400).json({ error: 'level must be 1..7' });
+    const hasNote = b.note != null;
+    const note = hasNote ? String(b.note).trim() : '';
     const existing = db.prepare('SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = ? AND user_id = ?').get(b.roundId, b.serviceId, req.session.userId);
+    const now = new Date().toISOString();
     if (existing) {
-      db.prepare('UPDATE maturity_service_scores SET consciousness_level = ?, consciousness_note = ? WHERE id = ?').run(lvl, note, existing.id);
-    } else {
+      const sets = [];
+      const params = { id: existing.id };
+      if (hasLevel) { sets.push('consciousness_level = @lvl', "consciousness_method = 'direct'"); params.lvl = lvl; }
+      if (hasNote) { sets.push('consciousness_note = @note'); params.note = note; }
+      if (b.submitted) { sets.push('submitted = 1', 'submitted_at = @now'); params.now = now; }
+      if (sets.length) db.prepare(`UPDATE maturity_service_scores SET ${sets.join(', ')} WHERE id = @id`).run(params);
+    } else if (hasLevel) {
       db.prepare(
-        `INSERT INTO maturity_service_scores (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at, consciousness_level, consciousness_note)
-         VALUES (?, ?, ?, ?, NULL, NULL, 'questionnaire', '', 0, NULL, ?, ?)`
-      ).run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, lvl, note);
+        `INSERT INTO maturity_service_scores
+           (id, round_id, service_id, user_id, level, computed_level, method, rationale, submitted, submitted_at,
+            consciousness_level, computed_consciousness_level, consciousness_method, consciousness_note)
+         VALUES (?, ?, ?, ?, NULL, NULL, 'questionnaire', '', ?, ?, ?, NULL, 'direct', ?)`
+      ).run(crypto.randomUUID(), b.roundId, b.serviceId, req.session.userId, b.submitted ? 1 : 0, b.submitted ? now : null, lvl, note);
     }
+    // a bare note with no existing row and no override yet has nothing to attach to —
+    // the questionnaire (PUT /responses) creates the row first, in the normal flow.
     res.json({ ok: true });
   });
 
@@ -1082,3 +1161,4 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
 
 module.exports.levelRollup = levelRollup;
 module.exports.levelClass = levelClass;
+module.exports.consciousnessRollup = consciousnessRollup;

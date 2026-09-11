@@ -101,14 +101,25 @@ const api={
   async del(u){const r=await fetch(u,{method:'DELETE',credentials:'same-origin'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');return r.json();},
 };
 
-// mirrors server/maturity.js levelClass / levelRollup
+// mirrors server/maturity.js levelClass / levelRollup / consciousnessRollup. Both
+// rollups read the SAME answered questions — axis 'maturity'/'both' feeds maturity,
+// axis 'consciousness'/'both' feeds consciousness — there is no separate instrument.
 function levelClass(n){n=Number(n);if(!isFinite(n))return 'none';if(n<2)return 'l1';if(n<3)return 'l2';if(n<4)return 'l3';if(n<5)return 'l4';return 'l5';}
 function rollup(answers,questions){
-  const w=new Map(questions.map(q=>[q.id,Number(q.weight)||1]));
+  const qs=questions.filter(q=>!q.axis||q.axis==='maturity'||q.axis==='both');
+  const w=new Map(qs.map(q=>[q.id,Number(q.weight)||1]));
   let s=0,tw=0;
   for(const a of answers){if(!w.has(a.questionId))continue;const v=Number(a.value);if(!isFinite(v))continue;const ww=w.get(a.questionId);s+=v*ww;tw+=ww;}
   if(!tw)return null;
   return Math.max(1,Math.min(5,Math.round((s/tw)*2)/2));
+}
+function ccRollup(answers,questions){
+  const qs=questions.filter(q=>q.axis==='consciousness'||q.axis==='both');
+  const w=new Map(qs.map(q=>[q.id,Number(q.weight)||1]));
+  let s=0,tw=0;
+  for(const a of answers){if(!w.has(a.questionId))continue;const v=Number(a.value);if(!isFinite(v))continue;const ww=w.get(a.questionId);s+=v*ww;tw+=ww;}
+  if(!tw)return null;
+  return Math.max(1,Math.min(7,Math.round(1+((s/tw)-1)/4*6)));
 }
 function levelChip(level,extra){
   if(level==null)return h('span',{className:'chip chip-none'},'—');
@@ -256,48 +267,58 @@ function Slopegraph({rows,onOpen}){
   });
   return svg('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',maxWidth:W+'px',height:'auto',display:'block'}},els);
 }
+// One combined worksheet: every question — maturity and consciousness alike — is
+// answered in the same list, same 1–5 controls. Nobody has to know the 7-level framework
+// to answer; the consciousness level is DERIVED from the consciousness-axis answers
+// (server/maturity.js consciousnessRollup), same as the maturity level. "Adjust" on
+// either result is an optional override for someone who wants to place it directly.
 function ServiceWorksheet({service,round,levelLabels,onReload}){
   const [detail,setDetail]=useState(null);
   const [ans,setAns]=useState({});
+  const [note,setNote]=useState('');
   const [saved,setSaved]=useState(false);
   const [busy,setBusy]=useState(false);
   const [override,setOverride]=useState(null);
+  const [ccOverride,setCcOverride]=useState(null);
   const [open,setOpen]=useState(false);
-  const [cc,setCc]=useState(null);        // my consciousness level for this service
-  const [ccNote,setCcNote]=useState('');
   useEffect(()=>{if(open&&!detail)api.get('/api/maturity/services/'+service.id+'?round='+round.id).then(d=>{
     setDetail(d);const a={};(d.myResponses||[]).forEach(r=>a[r.questionId]=r.value);setAns(a);
-    setCc(d.myConsciousness&&d.myConsciousness.level||null);setCcNote(d.myConsciousness&&d.myConsciousness.note||'');
+    setNote(d.myConsciousness&&d.myConsciousness.note||'');
   });},[open]);
   const questions=detail?detail.questions:[];
   const ccLevels=detail?detail.consciousnessLevels:[];
   const ccQ=detail?detail.consciousnessQuestion:null;
-  const computed=detail?rollup(Object.entries(ans).map(([questionId,value])=>({questionId,value})),questions):null;
+  const answered=Object.entries(ans).map(([questionId,value])=>({questionId,value}));
+  const computed=detail?rollup(answered,questions):null;
+  const computedCc=detail?ccRollup(answered,questions):null;
   const myScore=detail?(detail.scores||[]).find(x=>x.userId===window.__me):null;
   const submitted=myScore&&myScore.submitted;
-  async function save(next){
+  async function save(){
     setBusy(true);
     try{
-      await api.put('/api/maturity/responses',{roundId:round.id,serviceId:service.id,responses:Object.entries(next||ans).map(([questionId,value])=>({questionId,value}))});
+      await api.put('/api/maturity/responses',{roundId:round.id,serviceId:service.id,responses:answered});
       setSaved(true);setTimeout(()=>setSaved(false),1200);
     }catch(e){alert(e.message);}finally{setBusy(false);}
   }
-  async function saveCc(level,note){
-    setCc(level);
-    try{await api.put('/api/maturity/consciousness',{roundId:round.id,serviceId:service.id,level,note:note!==undefined?note:ccNote});}catch(e){alert(e.message);}
+  async function answer(q,value){
+    const n={...ans,[q.id]:value};setAns(n);
+    try{await api.put('/api/maturity/responses',{roundId:round.id,serviceId:service.id,responses:Object.entries(n).map(([questionId,value])=>({questionId,value}))});
+      setSaved(true);setTimeout(()=>setSaved(false),1200);
+    }catch(e){alert(e.message);}
   }
   async function submit(){
     setBusy(true);
     try{
+      await save(); // always persist answers first, so both computed levels are current
       if(override!=null)await api.put('/api/maturity/scores',{roundId:round.id,serviceId:service.id,level:override,rationale:'Direct override',submitted:false});
-      else await save();
-      await saveCc(cc,ccNote);
+      if(ccOverride!=null)await api.put('/api/maturity/consciousness',{roundId:round.id,serviceId:service.id,level:ccOverride});
+      else if(note)await api.put('/api/maturity/consciousness',{roundId:round.id,serviceId:service.id,note});
       await api.post('/api/maturity/services/'+service.id+'/submit',{roundId:round.id});
       await onReload();
       api.get('/api/maturity/services/'+service.id+'?round='+round.id).then(setDetail);
     }catch(e){alert(e.message);}finally{setBusy(false);}
   }
-  const ready=(override!=null||computed!=null)&&cc!=null;
+  const ready=(override!=null||computed!=null)&&(ccOverride!=null||computedCc!=null);
   return h('div',{style:{borderTop:'0.5px solid var(--border)',padding:'8px 4px'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer'},onClick:()=>setOpen(!open)},
       h('span',{style:{fontWeight:600}},'#'+service.number+' '+service.name),
@@ -307,30 +328,30 @@ function ServiceWorksheet({service,round,levelLabels,onReload}){
       h('span',{style:{marginLeft:'auto',color:'var(--teal)',fontSize:11}},open?'▾':'▸')),
     open&&(!detail?h('div',{className:'small muted',style:{padding:8}},'Loading…'):h('div',{style:{padding:'8px 4px'}},
       h('div',{className:'small muted',style:{marginBottom:8}},(service.descriptors.find(d=>d.level===3)||{}).text),
-      h('div',{className:'small',style:{fontWeight:700,color:'var(--teal)',margin:'4px 0'}},'How well is it run? (maturity, 1–5)'),
       questions.map(q=>h('div',{key:q.id,style:{marginBottom:10}},
         h('div',{style:{fontSize:12,marginBottom:4}},q.prompt),
         q.responseKind==='level_pick'
-          ?service.descriptors.map(d=>h('div',{key:d.level,className:'pickrow'+(Number(ans[q.id])===d.level?' on':''),onClick:()=>{const n={...ans,[q.id]:d.level};setAns(n);save(n);}},
+          ?service.descriptors.map(d=>h('div',{key:d.level,className:'pickrow'+(Number(ans[q.id])===d.level?' on':''),onClick:()=>answer(q,d.level)},
               h('span',{className:'pn'},d.level),h('span',null,(levelLabels.find(l=>l.level===d.level)||{}).name+' — '+d.text)))
-          :h('div',{className:'scoresel'},AGREE.map((lbl,i)=>h('button',{key:i,className:Number(ans[q.id])===i+1?'on':'',title:lbl,onClick:()=>{const n={...ans,[q.id]:i+1};setAns(n);save(n);}},i+1)))
+          :h('div',{className:'scoresel'},AGREE.map((lbl,i)=>h('button',{key:i,className:Number(ans[q.id])===i+1?'on':'',title:lbl,onClick:()=>answer(q,i+1)},i+1)))
       )),
-      h('div',{style:{display:'flex',alignItems:'center',gap:10,margin:'6px 0 14px',flexWrap:'wrap'}},
-        h('span',{className:'small muted'},'Computed level:'),levelChip(computed),
+      h('input',{className:'form-input',placeholder:(ccQ&&ccQ.reflectionPrompt)||'Anything you\'d add? (optional)',value:note,
+        onChange:e=>setNote(e.target.value),onBlur:e=>{if(ccOverride==null)api.put('/api/maturity/consciousness',{roundId:round.id,serviceId:service.id,note:e.target.value}).catch(()=>{});}}),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,margin:'6px 0 6px',flexWrap:'wrap'}},
+        h('span',{className:'small muted'},'Maturity:'),levelChip(override!=null?override:computed),
         h('button',{className:'linkbtn',onClick:()=>setOverride(override==null?(computed||3):null)},override==null?'adjust':'use computed'),
         override!=null&&h('div',{className:'scoresel'},[1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>h('button',{key:v,className:override===v?'on':'',onClick:()=>setOverride(v)},v))),
         saved&&h('span',{className:'small',style:{color:'var(--teal)'}},'saved')),
-      h('div',{style:{borderTop:'0.5px dashed var(--border)',paddingTop:10}},
-        h('div',{className:'small',style:{fontWeight:700,color:'var(--teal)',marginBottom:4}},'From what level is it run? (consciousness, 1–7)'),
-        ccQ&&h('div',{style:{fontSize:12,marginBottom:4}},ccQ.prompt),
-        ccQ&&h('div',{className:'small muted',style:{marginBottom:6}},ccQ.help),
-        h('div',{className:'arc'},(ccLevels||[]).map(l=>h('div',{key:l.level,className:'step'+(Number(cc)===l.level?' on':''),title:l.description,onClick:()=>saveCc(l.level)},
-          h('div',{className:'n'},l.level),l.name))),
-        h('input',{className:'form-input',style:{marginTop:6,marginBottom:0},placeholder:(ccQ&&ccQ.reflectionPrompt)||'Why?',value:ccNote,
-          onChange:e=>setCcNote(e.target.value),onBlur:e=>{if(cc!=null)saveCc(cc,e.target.value);}})),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:6,flexWrap:'wrap'}},
+        h('span',{className:'small muted'},'Awareness level:'),ccChip(ccOverride!=null?ccOverride:computedCc,ccLevels),
+        h('button',{className:'linkbtn',onClick:()=>setCcOverride(ccOverride==null?(computedCc||4):null)},ccOverride==null?'place directly':'use computed')),
+      ccOverride!=null&&h('div',{style:{marginBottom:10}},
+        ccQ&&h('div',{className:'small muted',style:{marginBottom:6}},ccQ.overrideHelp),
+        h('div',{className:'arc'},(ccLevels||[]).map(l=>h('div',{key:l.level,className:'step'+(ccOverride===l.level?' on':''),title:l.description,onClick:()=>setCcOverride(l.level)},
+          h('div',{className:'n'},l.level),l.name)))),
       h('div',{style:{display:'flex',alignItems:'center',gap:10,marginTop:12,flexWrap:'wrap'}},
         h('span',{style:{flex:1}}),
-        !ready&&h('span',{className:'small muted'},'Answer both axes to submit'),
+        !ready&&h('span',{className:'small muted'},'Answer the questions above to submit'),
         h('button',{className:'btn btn-teal btn-sm',disabled:busy||!ready,onClick:submit},submitted?'Re-submit':'Submit this service'))
     ))
   );
@@ -457,7 +478,8 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
     (d.scores&&d.scores.length)?h('table',{className:'tbl'},
       h('thead',null,h('tr',null,h('th',null,'Member'),h('th',null,'Maturity'),h('th',null,'Consciousness'),h('th',null,'Method'),h('th',null,'Notes'),h('th',null,''))),
       h('tbody',null,d.scores.map(x=>h('tr',{key:x.userId},
-        h('td',null,x.userName),h('td',null,levelChip(x.level)),h('td',null,ccChip(x.consciousnessLevel,d.consciousnessLevels)),h('td',null,x.method),
+        h('td',null,x.userName),h('td',null,levelChip(x.level)),h('td',null,ccChip(x.consciousnessLevel,d.consciousnessLevels)),
+        h('td',null,h('span',{className:'small'},x.method+(x.consciousnessMethod&&x.consciousnessMethod!==x.method?' / '+x.consciousnessMethod:''))),
         h('td',null,h('span',{className:'small'},[x.rationale,x.consciousnessNote].filter(Boolean).join(' · ')||'—')),
         h('td',null,x.submitted?h('span',{className:'chip chip-l5'},'submitted'):h('span',{className:'small muted'},'draft')))))
     ):h('div',{className:'small muted'},'No scores recorded this round.'),

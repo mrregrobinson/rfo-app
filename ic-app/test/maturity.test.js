@@ -15,7 +15,7 @@ process.env.ANTHROPIC_API_KEY = ''; // force the not-configured path for Claude 
 const db = require('../server/db');
 const { ensureSeeded } = require('../server/seed');
 const registerMaturityRoutes = require('../server/maturity');
-const { levelRollup, levelClass } = require('../server/maturity');
+const { levelRollup, levelClass, consciousnessRollup } = require('../server/maturity');
 
 ensureSeeded();
 
@@ -54,6 +54,25 @@ describe('levelRollup / levelClass', () => {
   });
   test('levelClass bands match the server', () => {
     assert.deepEqual([1, 1.5, 2, 3, 4, 4.5, 5].map(levelClass), ['l1', 'l1', 'l2', 'l3', 'l4', 'l4', 'l5']);
+  });
+});
+
+describe('consciousnessRollup — derived from questions, not a bare pick', () => {
+  const qs = [
+    { id: 'm1', weight: 1, axis: 'maturity' },
+    { id: 'both1', weight: 1, axis: 'both' },
+    { id: 'c1', weight: 1, axis: 'consciousness' },
+    { id: 'c2', weight: 1, axis: 'consciousness' },
+  ];
+  test('only consciousness/both-axis answers count, mapped from the 1-5 scale onto 1-7', () => {
+    // maturity-only answer ignored; both+c1+c2 all 3 -> mean 3 -> mapped 1+(3-1)/4*6=4
+    assert.equal(consciousnessRollup([{ questionId: 'm1', value: 5 }, { questionId: 'both1', value: 3 }, { questionId: 'c1', value: 3 }, { questionId: 'c2', value: 3 }], qs), 4);
+    // all consciousness answers at 5 -> mapped to 7 (top of the scale)
+    assert.equal(consciousnessRollup([{ questionId: 'both1', value: 5 }, { questionId: 'c1', value: 5 }, { questionId: 'c2', value: 5 }], qs), 7);
+    // all at 1 -> mapped to 1 (bottom of the scale)
+    assert.equal(consciousnessRollup([{ questionId: 'c1', value: 1 }, { questionId: 'c2', value: 1 }], qs), 1);
+    // no consciousness/both answers at all -> not derivable
+    assert.equal(consciousnessRollup([{ questionId: 'm1', value: 4 }], qs), null);
   });
 });
 
@@ -110,27 +129,56 @@ describe('round lifecycle', () => {
     const r = await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-03', responses: [] });
     assert.equal(r.status, 400);
   });
-  test('open -> answer both axes -> submit -> shows on the scorecard (maturity + consciousness)', async () => {
+  test('open -> answer the combined worksheet -> both axes are DERIVED, no separate pick needed', async () => {
     as('reg');
     assert.equal((await send('POST', `/api/maturity/rounds/${roundId}/open`, {})).status, 200);
 
     as('ross');
     const detail = (await get(`/api/maturity/services/svc-03?round=${roundId}`)).body;
     assert.equal(detail.consciousnessLevels.length, 7);
-    const responses = detail.questions.map((q) => ({ questionId: q.id, value: 4 }));
-    const saved = await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-03', responses });
-    assert.equal(saved.body.computedLevel, 4); // all 4s
+    // the worksheet itself carries consciousness-axis questions — there is no bare
+    // "pick your level on the arc" step; a member never has to know the framework.
+    assert.ok(detail.questions.some((q) => q.axis === 'consciousness'), 'worksheet includes consciousness-axis questions');
+    assert.ok(detail.questions.some((q) => q.axis === 'both'), 'a maturity question doubles as a consciousness signal');
 
-    // must answer the consciousness axis before submitting
-    assert.equal((await send('POST', '/api/maturity/services/svc-03/submit', { roundId })).status, 400);
-    assert.equal((await send('PUT', '/api/maturity/consciousness', { roundId, serviceId: 'svc-03', level: 3, note: 'run defensively' })).status, 200);
+    const responses = detail.questions.map((q) => ({ questionId: q.id, value: 4 })); // answer everything "agree"
+    const saved = await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-03', responses });
+    assert.equal(saved.body.computedLevel, 4); // maturity axis (level_pick w2 + 2 scale w1 + 'both' w1), all 4s
+    assert.equal(saved.body.computedConsciousnessLevel, 6); // consciousness axis ('both' + 2 consciousness Qs), mean 4 -> mapped 1+(4-1)/4*6=5.5 -> 6
+
+    // both axes derived automatically — submit works with no separate consciousness call
     assert.equal((await send('POST', '/api/maturity/services/svc-03/submit', { roundId })).status, 200);
 
     const ov = (await get(`/api/maturity/overview?round=${roundId}`)).body;
     const svc = ov.services.find((s) => s.id === 'svc-03');
     assert.equal(svc.stats.byUser.ross, 4);
-    assert.equal(svc.stats.consciousness.byUser.ross, 3);
-    assert.equal(svc.stats.consciousness.cog, 3);
+    assert.equal(svc.stats.consciousness.byUser.ross, 6);
+    assert.equal(svc.stats.consciousness.cog, 6);
+  });
+  test('submitting still requires the consciousness-axis questions specifically, not just the maturity ones', async () => {
+    as('sd');
+    const detail = (await get(`/api/maturity/services/svc-02?round=${roundId}`)).body;
+    const maturityOnly = detail.questions.filter((q) => q.axis !== 'consciousness' && q.axis !== 'both').map((q) => ({ questionId: q.id, value: 3 }));
+    assert.ok(maturityOnly.length, 'svc-02 has maturity-only questions to isolate');
+    const saved = await send('PUT', '/api/maturity/responses', { roundId, serviceId: 'svc-02', responses: maturityOnly });
+    assert.ok(saved.body.computedLevel != null);
+    assert.equal(saved.body.computedConsciousnessLevel, null);
+    assert.equal((await send('POST', '/api/maturity/services/svc-02/submit', { roundId })).status, 400);
+  });
+  test('the consciousness override sets method=direct; a bare note never flips it back', async () => {
+    as('sd');
+    // place it directly instead of answering the consciousness questions
+    assert.equal((await send('PUT', '/api/maturity/consciousness', { roundId, serviceId: 'svc-02', level: 5 })).status, 200);
+    let row = db.prepare("SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = 'svc-02' AND user_id = 'sd'").get(roundId);
+    assert.equal(row.consciousness_level, 5);
+    assert.equal(row.consciousness_method, 'direct');
+    // saving just a reflection note must not touch the level or the method
+    assert.equal((await send('PUT', '/api/maturity/consciousness', { roundId, serviceId: 'svc-02', note: 'because of X' })).status, 200);
+    row = db.prepare("SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = 'svc-02' AND user_id = 'sd'").get(roundId);
+    assert.equal(row.consciousness_level, 5);
+    assert.equal(row.consciousness_method, 'direct');
+    assert.equal(row.consciousness_note, 'because of X');
+    assert.equal((await send('POST', '/api/maturity/services/svc-02/submit', { roundId })).status, 200);
   });
   test('closing without benchmarks does not create an anchor', async () => {
     as('reg');
@@ -159,12 +207,12 @@ describe('round lifecycle', () => {
 
 describe('carry-forward pre-fill', () => {
   test('opening a round with carryFrom seeds unsubmitted scores (both axes) from the prior round', () => {
-    // r2 above carried from the H2 round; ross's svc-03 = maturity 4 / consciousness 3 was submitted there
+    // r2 above carried from the H2 round; ross's svc-03 = maturity 4 / consciousness 6 was submitted there
     const r2 = db.prepare("SELECT id FROM maturity_rounds WHERE label = '2027 H1'").get().id;
     const row = db.prepare("SELECT * FROM maturity_service_scores WHERE round_id = ? AND service_id = 'svc-03' AND user_id = 'ross'").get(r2);
     assert.ok(row);
     assert.equal(row.level, 4);
-    assert.equal(row.consciousness_level, 3);
+    assert.equal(row.consciousness_level, 6);
     assert.equal(row.submitted, 0);
     assert.match(row.rationale, /Carried forward/);
   });
@@ -221,8 +269,11 @@ describe('consciousness axis (Option C — one field per service, no separate in
     as('reg');
     const cc = (await get('/api/maturity/cc')).body;
     assert.equal(cc.levels.length, 7);
-    assert.ok(cc.question && cc.question.prompt);
+    assert.ok(cc.question && cc.question.reflectionPrompt); // no bare "pick your level" prompt any more
     assert.ok(!('dimensions' in cc));
+    // and every service's own worksheet carries the questions that derive it
+    const qCount = db.prepare("SELECT COUNT(*) n FROM maturity_questions WHERE axis IN ('consciousness','both')").get().n;
+    assert.equal(qCount, 16 * 3); // 2 consciousness-only + 1 'both' per service
   });
 
   test('consciousness rolls up per service and family-wide, with a Level-4 straddle flag', async () => {
