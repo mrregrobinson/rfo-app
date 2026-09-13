@@ -271,6 +271,8 @@ function seedRiskRegister() {
 // member scores need a real user to attribute to, and migrations run before ensureSeeded()
 // creates anyone. Idempotent: no-ops once maturity_services has rows.
 function seedMaturity() {
+  seedConsciousnessStatements(); // independent of the catalogue guard below — see its own header comment
+
   const existing = db.prepare('SELECT COUNT(*) AS n FROM maturity_services').get().n;
   if (existing > 0) return;
 
@@ -308,7 +310,7 @@ function seedMaturity() {
     'INSERT INTO maturity_level_descriptors (id, service_id, level, text, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const insQ = db.prepare(
-    'INSERT INTO maturity_questions (id, service_id, prompt, help_text, response_kind, weight, sort_order, is_active, axis) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)'
+    'INSERT INTO maturity_questions (id, service_id, prompt, help_text, response_kind, weight, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
   );
   maturitySeed.SERVICES.forEach((s, si) => {
     insSvc.run(s.id, s.groupId, s.number, s.name, s.description || '', si + 1);
@@ -316,11 +318,12 @@ function seedMaturity() {
       insDesc.run(crypto.randomUUID(), s.id, li + 1, text, eff, actor);
     });
     maturitySeed.questionsForService(s).forEach((q, qi) => {
-      insQ.run(crypto.randomUUID(), s.id, q.prompt, q.help_text || '', q.response_kind, q.weight || 1, qi + 1, q.axis || 'maturity');
+      insQ.run(crypto.randomUUID(), s.id, q.prompt, q.help_text || '', q.response_kind, q.weight || 1, qi + 1);
     });
   });
 
-  // The 7-level consciousness scale (used per service, Option C — migration 034).
+  // The 7-level consciousness scale (names/taglines/descriptions — reference metadata,
+  // shown once the standalone Capital Consciousness assessment computes a level).
   const insCcLevel = db.prepare('INSERT INTO maturity_cc_levels (level, name, tagline, description) VALUES (?, ?, ?, ?)');
   for (const l of maturitySeed.CC_LEVELS) insCcLevel.run(l.level, l.name, l.tagline, l.description);
 
@@ -350,6 +353,19 @@ function seedMaturity() {
     `${maturitySeed.SERVICES.length * 5} level descriptors, ${maturitySeed.CC_LEVELS.length}-level consciousness scale, ` +
     `and the "${ref.label}" reference round (${Object.keys(ref.scores).length} services scored, ${ref.notAssessed.length} not assessed).`
   );
+}
+
+// The 7 Capital Consciousness statements — guarded on their OWN table, independently of
+// the service-catalogue guard above. This matters: an install that already seeded the
+// maturity catalogue before this table existed (i.e. this exact deploy, on production)
+// would otherwise never get them, since seedMaturity() as a whole no-ops once
+// maturity_services has rows. Safe to call on every boot.
+function seedConsciousnessStatements() {
+  const existing = db.prepare('SELECT COUNT(*) AS n FROM maturity_consciousness_statements').get().n;
+  if (existing > 0) return;
+  const ins = db.prepare('INSERT INTO maturity_consciousness_statements (level, statement) VALUES (?, ?)');
+  for (const s of maturitySeed.CONSCIOUSNESS_STATEMENTS) ins.run(s.level, s.statement);
+  console.log(`Seeded ${maturitySeed.CONSCIOUSNESS_STATEMENTS.length} Capital Consciousness statements.`);
 }
 
 module.exports = { ensureSeeded, issueSetupCode, IC_MEMBERS };

@@ -223,27 +223,38 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   the `draft → open` transition. `maturity_descriptor_suggestions` holds Claude's
   start-of-cycle proposed re-wording (a review queue; nothing applied without an admin
   accept).
-- `maturity_questions` / `maturity_responses` / `maturity_service_scores` — the concise
-  per-service questionnaire, each member's answers per round, and the assigned scores.
-  Every `maturity_service_scores` row carries **two axes**: a 1–5 `level` (maturity — how
-  well the service is run; weighted mean of the answers rounded to the nearest 0.5, or a
-  `direct` override) and a 1–7 `consciousness_level` + `consciousness_note` (from what
-  level of awareness it is run — one question on the same worksheet; migration 034). A
-  service can only be submitted once both are answered. The latest submitted row per
-  (round, service, member) is what the scorecard averages / rolls up.
+- `maturity_questions` / `maturity_responses` / `maturity_service_scores` — the concise,
+  maturity-only per-service questionnaire (4 questions/service), each member's answers
+  per round, and the assigned scores. `maturity_service_scores.level` is a 1–5 weighted
+  mean of the answers rounded to the nearest 0.5, or a `direct` override; `method` records
+  which. The latest submitted row per (round, service, member) is what the scorecard
+  averages / rolls up.
 - `maturity_rounds` — an assessment cycle (`draft` → `open` → `closed`); one active at a
   time. Exactly one closed round is the `is_anchor` baseline all trends compare to. The
   seeded `round-2026-baseline` (Appendix B) is closed but deliberately carries no
   benchmarks and is not the anchor — the first in-app cycle closed with benchmarks
   becomes it. `maturity_round_snapshots` freezes the whole round as JSON on close.
+  `DELETE /api/maturity/rounds/:id` (admin-only) removes a round and everything recorded
+  against it — responses, scores, consciousness answers, benchmarks, snapshots —
+  reassigning `is_anchor` to the next-earliest closed round with benchmarks if the
+  deleted round held it; actions raised in it are kept but detached (`round_id = NULL`).
 - `maturity_benchmarks` — per (round, service) Claude web-search benchmark
   (`server/claude.js` `benchmarkMaturityService`); the round's written synthesis
   (`synthesizeMaturityRound`) is stored on `maturity_rounds.synthesis_json`.
-- `maturity_cc_levels` — the 7-level consciousness scale (1 survival → 7 freedom), used
-  by the per-service consciousness question above. The family's centre of gravity and
-  dispersion are computed live from the per-service answers (not averaged into one
-  score). Migration 034 folded this in and dropped the earlier separate instrument
-  (`maturity_cc_dimensions` / `_prompts` / `_responses`).
+- `maturity_cc_levels` / `maturity_consciousness_statements` / `_responses` / `_scores` —
+  Capital Consciousness (§5.8 of the build spec), a **standalone instrument answered once
+  per round for the family as a whole**, not per service. `maturity_cc_levels` names the
+  7-level scale (1 survival → 7 freedom); `maturity_consciousness_statements` holds one
+  plain-language statement per level (admin-editable); each member rates all 7 for how
+  true they currently feel (`maturity_consciousness_responses`) and the level is DERIVED
+  as the weighted centroid across those ratings (`consciousnessOverallRollup`, mirroring
+  the white paper's own Appendix I self-assessment logic), stored with a computed/override
+  split on `maturity_consciousness_scores` (same `level`/`computed_level`/`method` shape
+  as `maturity_service_scores`, at round grain instead of service grain). This design was
+  tried once as a **per-service** thing (migrations 034–036: two extra axis-tagged
+  questions on every one of the 16 service worksheets) and reverted (migration 037) —
+  asking the same shallow questions 16 times over wasn't a real measurement of the
+  family's actual level of awareness, just a repeated shallow read.
 - `maturity_actions` — "Notes / actions" per service or synthesis finding, each with a
   nullable `task_id` linking to a promoted Family Task List task (a soft reference, like
   `risk_actions.task_id`); soft-deleted via `archived_at`.

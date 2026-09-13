@@ -419,19 +419,21 @@ benchmarkLevel is 1-5 on the family's scale above, halves allowed. Include the 2
   return { result: extractJson(data), usage: data.usage };
 }
 
-// The round's written synthesis: a read on "doing things right" (operational maturity)
-// AND "doing the right things" (the consciousness axis — from what level of awareness each
-// service is run), the highest-value priorities, and a short peer comparison.
+// The round's written synthesis: a read on "doing things right" (operational maturity,
+// 16 services x 1-5) AND "doing the right things" (Capital Consciousness — a standalone,
+// once-per-round 1-7 read on the level of awareness the family is deciding from right
+// now, independent of any one service), the highest-value priorities, and a short peer
+// comparison.
 async function synthesizeMaturityRound({ services, consciousness, familyContext }) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
-  const systemPrompt = `You are advising a Canadian single-family office after a periodic maturity assessment. Every one of its 16 services is assessed on two axes: (1) a 1-5 maturity level — how well the service is run, i.e. whether the family office is "doing things right"; and (2) a 1-7 consciousness level — from what level of awareness the service is run (1 survival/fear, 2 accumulation/competition, 3 protection/care, 4 system/integration, 5 mirror/values, 6 force/impact, 7 freedom/non-attachment; the circle of responsibility widens and attachment loosens up the scale, crossing around Level 4) — i.e. whether they are "doing the right things". Use web search only for peer-comparison colour, not for the family's own numbers. Today is ${today}.`;
+  const systemPrompt = `You are advising a Canadian single-family office after a periodic maturity assessment. Two separate reads are taken each round: (1) operational maturity — each of 16 services scored 1-5 on how well it is run, i.e. whether the family office is "doing things right"; and (2) Capital Consciousness — a single family-wide 1-7 read, taken once per round (not per service), on what level of awareness the family is currently deciding from (1 survival/fear, 2 accumulation/competition, 3 protection/care, 4 system/integration, 5 mirror/values, 6 force/impact, 7 freedom/non-attachment; the circle of responsibility widens and attachment loosens up the scale, crossing around Level 4) — i.e. whether they are "doing the right things". Each family member rates 7 short statements for how true they currently feel; the level is the weighted centroid of those ratings, not a self-label. Use web search only for peer-comparison colour, not for the family's own numbers. Today is ${today}.`;
   const userPrompt = `Family context: ${familyContext}
 
-Per service (maturity + consciousness): ${JSON.stringify(services)}
-Consciousness rollup: ${JSON.stringify(consciousness)}
+Per-service operational maturity: ${JSON.stringify(services)}
+Capital Consciousness (family-wide, once per round): ${JSON.stringify(consciousness)}
 
 Return ONLY valid JSON, no markdown fences:
-{"doingThingsRight":"3-5 sentences on operational maturity, the trend, and the widest gaps","doingTheRightThings":"3-5 sentences reading the consciousness axis — the family's centre of gravity, how dispersed it is across services, movement since last round, and where the family is stuck below Level 4","mapOfErrors":[{"domain":"a service or area","read":"one sentence where maturity and consciousness diverge, e.g. well-run but run from a low level, or high intent but weak machinery"}],"priorities":["the 3-5 highest-value things to work on before the next round"],"peerComparison":"2-3 sentences","sources":[{"title":"...","url":"..."}]}`;
+{"doingThingsRight":"3-5 sentences on operational maturity, the trend, and the widest gaps","doingTheRightThings":"3-5 sentences reading the family's Capital Consciousness centre of gravity, how much members disagree (spread), movement since last round, and whether the family sits below or above the Level 4 threshold","mapOfErrors":[{"domain":"a service or theme","read":"one sentence connecting an operational gap to the family's current level of awareness, e.g. well-run machinery but decisions still made from a scarcity/competition footing"}],"priorities":["the 3-5 highest-value things to work on before the next round"],"peerComparison":"2-3 sentences","sources":[{"title":"...","url":"..."}]}`;
   const data = await callClaude({
     model: MODEL,
     max_tokens: 4000,

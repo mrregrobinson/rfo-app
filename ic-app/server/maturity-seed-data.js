@@ -196,51 +196,56 @@ const SERVICES = [
   },
 ];
 
-// ---- starter question set (6 per service, admin-editable; §5.3/§5.8) ----
-// One combined worksheet, two axes. Each question carries an `axis`:
-//   'maturity'      — feeds only the 1–5 maturity level (how well the service is run)
-//   'consciousness' — feeds only the 1–7 consciousness level (from what level of
-//                     awareness it is run) — plain statements, no framework jargon,
-//                     answered the same 1–5 agreement way as everything else
-//   'both'          — a maturity question whose answer is also a real consciousness
-//                     signal (e.g. deliberate peer benchmarking reads as more systemic)
-// There is no separate "pick your level on the arc" step — the consciousness level is
-// DERIVED from these answers (consciousnessRollup in server/maturity.js), the same way
-// the maturity level is derived, so nobody needs to have read the framework to answer.
+// ---- starter question set (4 per service, admin-editable; §5.3) ----
+// Maturity only — Capital Consciousness is a separate, once-per-round instrument (see
+// CONSCIOUSNESS_STATEMENTS below), not a per-service question. Asking the same one or two
+// consciousness-flavoured questions on all 16 services turned out to be a shallow,
+// repetitive read, not a real measurement — this reverts to a plain maturity-only
+// worksheet per service.
+//
+// The "Leading Practice" question below is explicitly about the family's OWN habit of
+// comparing and improving — not about having commissioned outside benchmarking. This
+// module's Claude benchmark (run per service, see §7.1) is what supplies the external
+// comparison; scoring yourself a 5 here does not require you to have done that yourselves.
 function questionsForService(svc) {
   return [
     {
       prompt: `Which of the five descriptions best matches where the family office is today on ${svc.name}?`,
-      help_text: 'Pick the single description that fits best overall, even if some details differ.',
-      response_kind: 'level_pick', weight: 2, axis: 'maturity',
+      help_text: 'Pick the single description that fits best overall, even if some details differ. "Leading Practice" describes a habit of comparing and improving — it does not require you to have hired outside benchmarking yourselves; this assessment\'s own Claude benchmark supplies that external comparison.',
+      response_kind: 'level_pick', weight: 2,
     },
     {
       prompt: `There is a documented, agreed approach to ${svc.name} that is actually followed in practice.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'maturity',
+      help_text: '', response_kind: 'scale_1_5', weight: 1,
     },
     {
       prompt: `Our handling of ${svc.name} is embedded in day-to-day systems and routines — disciplined, monitored, and coordinated with the areas it touches.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'maturity',
+      help_text: '', response_kind: 'scale_1_5', weight: 1,
     },
     {
-      prompt: `We benchmark ${svc.name} against peer family offices and improve it deliberately over time.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'both',
-    },
-    {
-      prompt: `When something goes wrong with ${svc.name}, we tend to stay curious about what's really going on rather than just reacting to protect what we have.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'consciousness',
-    },
-    {
-      prompt: `We treat ${svc.name} as one connected part of the whole picture, and we could clearly say what it's ultimately for — beyond just doing it well.`,
-      help_text: '', response_kind: 'scale_1_5', weight: 1, axis: 'consciousness',
+      prompt: `We deliberately compare how we approach ${svc.name} against how well-run peer family offices do it, and adjust as a result.`,
+      help_text: 'This is about the habit of comparing and improving, not about having run your own external benchmarking study — that\'s what this tool\'s Claude benchmark is for.',
+      response_kind: 'scale_1_5', weight: 1,
     },
   ];
 }
 
-// ---- the consciousness axis (Option C) ----
-// Every service is assessed on two axes: a 1–5 maturity level (how well it is run) and a
-// 1–7 consciousness level (from what level of awareness it is run), both derived from the
-// same worksheet — there is no separate instrument and no direct "pick your level" step.
+// ---- Capital Consciousness — a standalone, once-per-round instrument (§5.8) ----
+// Disconnected again from the per-service maturity worksheet (see migration 037's header
+// comment for why). One statement per level, in the spirit of the white paper's own
+// self-assessment (Appendix I): rate how true each feels right now, and the level is the
+// weighted centroid across all seven ratings — not a single pick, and not a bare
+// self-placement on the named arc. See consciousnessOverallRollup in server/maturity.js.
+const CONSCIOUSNESS_STATEMENTS = [
+  { level: 1, statement: 'When it comes to our wealth, our first instinct is to protect what we have and avoid losing it — even when that means passing on opportunities that are probably fine.' },
+  { level: 2, statement: 'We pay close attention to returns, fees, and how we compare to others, judging most financial decisions mainly on their own merits rather than as part of the bigger picture.' },
+  { level: 3, statement: "We think about our wealth mainly in terms of protecting and providing for the people we love, even if we haven't always had the harder conversations about how it should be used." },
+  { level: 4, statement: 'We see our finances as one connected system — investments, tax, estate, and giving are coordinated together rather than handled in separate silos.' },
+  { level: 5, statement: "We regularly ask whether our financial choices actually reflect what we value, and we're willing to sit with the answer even when it's uncomfortable." },
+  { level: 6, statement: 'We think of our capital as a tool for creating positive impact beyond our own family, guided by a real sense of what we are trying to change in the world.' },
+  { level: 7, statement: "Managing our wealth carefully matters to us, but it doesn't define who we are or dominate how we think about our lives." },
+];
+
 const CC_LEVELS = [
   { level: 1, name: 'Instinctive', tagline: 'Capital as survival',
     description: 'Capital is primal — about safety, control and not losing. Fear is the primary driver and a powerful editor that filters out anything that does not feel immediately protective. Decisions are fast, reactive, and heavily weighted to loss avoidance.' },
@@ -258,26 +263,26 @@ const CC_LEVELS = [
     description: 'Wealth is still managed with full rigour, but it no longer occupies the centre of gravity or defines identity. The grip loosens; optimisation continues without attachment to it.' },
 ];
 
-// The consciousness level is DERIVED from the axis:'consciousness'/'both' questions in
-// questionsForService() above, not asked directly. This is just the optional free-text
-// reflection shown once beneath a service's combined question list, and the label used
-// for the (optional, power-user) manual override against the named 7-level scale.
+// Intro copy + the optional free-text reflection shown once, beneath the 7 statements —
+// the level itself is computed, never asked directly (no "pick your level" prompt).
 const CONSCIOUSNESS_QUESTION = {
-  reflectionPrompt: 'Anything you\'d add about how these decisions actually get made? (optional)',
-  overrideHelp: 'Computed from your answers above. If you know the framework and want to place it directly instead, you can override it here.',
+  intro: 'For each statement, rate how true it currently feels for how your family actually relates to its capital — not how you wish it were.',
+  reflectionPrompt: 'Anything you\'d add? (optional)',
+  overrideHelp: 'Computed from your answers above. If you know the framework and want to place yourself directly instead, you can override it here.',
 };
 
 // The four dimensions of change — how movement between levels actually happens.
 const CHANGE_DIMENSIONS = ['Physical', 'Intellectual', 'Emotional', 'Soulful'];
 
-// A short standing note shown alongside the consciousness axis. The seven-level model is
-// treated as the family's own reflective tool.
+// A short standing note shown alongside the consciousness result. The seven-level model is
+// treated as the family's own reflective tool, assessed once per round for the family as
+// a whole (not per service).
 const CONSCIOUSNESS_NOTE =
   'Seven levels describe how the family relates to its capital, from survival to freedom. ' +
   'As awareness deepens the circle of responsibility widens (self → family → community → ' +
   'society) while emotional attachment to capital loosens; the two shifts cross around ' +
   'Level 4. The levels are not a hierarchy of worth — the aim is simply to notice which ' +
-  'level a given service is being run from, and what the next one would make possible.';
+  'level the family is deciding from right now, and what the next one would make possible.';
 
 // ---- the reference round: the current Appendix B assessment, seeded as a CLOSED,
 // benchmark-free, NON-anchor round (§5.4, §5.7). The first cycle the family runs in-app
@@ -321,6 +326,7 @@ module.exports = {
   SERVICES,
   questionsForService,
   CC_LEVELS,
+  CONSCIOUSNESS_STATEMENTS,
   CONSCIOUSNESS_QUESTION,
   CHANGE_DIMENSIONS,
   CONSCIOUSNESS_NOTE,
