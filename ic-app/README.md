@@ -245,12 +245,15 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   Capital Consciousness (§5.8 of the build spec), a **standalone instrument answered once
   per round for the family as a whole**, not per service. `maturity_cc_levels` names the
   7-level scale (1 survival → 7 freedom); `maturity_consciousness_statements` holds one
-  plain-language statement per level (admin-editable); each member rates all 7 for how
-  true they currently feel (`maturity_consciousness_responses`) and the level is DERIVED
-  as the weighted centroid across those ratings (`consciousnessOverallRollup`, mirroring
-  the white paper's own Appendix I self-assessment logic), stored with a computed/override
-  split on `maturity_consciousness_scores` (same `level`/`computed_level`/`method` shape
-  as `maturity_service_scores`, at round grain instead of service grain). This design was
+  plain-language statement per level (admin-editable); each member RANKS all 7 from most
+  to least true (`maturity_consciousness_responses.value` = the rank given that statement,
+  1..7, migration 038 — an earlier version asked for an independent 1-5 "how true" rating
+  per statement and that was confusing, since most people rated several similarly) and the
+  level is DERIVED as the weighted centroid across that ranking (`consciousnessOverallRollup`
+  — the top-ranked statement counts for the most, mirroring the white paper's own Appendix I
+  self-assessment logic), stored with a computed/override split on
+  `maturity_consciousness_scores` (same `level`/`computed_level`/`method` shape as
+  `maturity_service_scores`, at round grain instead of service grain). This design was
   tried once as a **per-service** thing (migrations 034–036: two extra axis-tagged
   questions on every one of the 16 service worksheets) and reverted (migration 037) —
   asking the same shallow questions 16 times over wasn't a real measurement of the

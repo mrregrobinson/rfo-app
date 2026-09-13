@@ -111,11 +111,12 @@ function rollup(answers,questions){
   return Math.max(1,Math.min(5,Math.round((s/tw)*2)/2));
 }
 // mirrors server/maturity.js consciousnessOverallRollup — the family-wide, once-per-round
-// Capital Consciousness read: weighted centroid across the 7 level statements, each rated
-// 1–5 for how true it currently feels. `answers` is [{level,value}], one per statement.
+// Capital Consciousness read: weighted centroid across the 7 level statements, RANKED
+// from most to least true (not rated independently). `answers` is [{level,value}], where
+// value is the rank given that statement: 1 = most true .. 7 = least true.
 function ccOverallRollup(answers){
   let s=0,tw=0;
-  for(const a of answers){const lvl=Number(a.level);const v=Number(a.value);if(!isFinite(lvl)||lvl<1||lvl>7||!isFinite(v))continue;s+=lvl*v;tw+=v;}
+  for(const a of answers){const lvl=Number(a.level);const rank=Number(a.value);if(!isFinite(lvl)||lvl<1||lvl>7||!isFinite(rank)||rank<1||rank>7)continue;const w=8-rank;s+=lvl*w;tw+=w;}
   if(!tw)return null;
   return Math.max(1,Math.min(7,Math.round(s/tw)));
 }
@@ -516,12 +517,15 @@ function ActionList({actions,serviceId,dimensionId,roundId,members,roles,onChang
 
 // =====================================================================
 // Capital Consciousness tab — a standalone, once-per-round family-wide instrument
-// (§5.8), NOT tied to any one service. Each member rates 7 short statements for how
-// true they currently feel; the level is the weighted centroid, not a self-label.
+// (§5.8), NOT tied to any one service. A plain 1-5 "how true does this feel" rating per
+// statement, answered independently, turned out confusing — most people rated several
+// statements similarly, flattening the read. Instead, members RANK all 7 statements from
+// most to least true (click to add to the ranking, click again to remove); the level is
+// the weighted centroid of that ranking, not a self-label.
 // =====================================================================
 function CCTab({roundId,roundMeta,consciousnessNote}){
   const [d,setD]=useState(null);
-  const [ans,setAns]=useState({});
+  const [order,setOrder]=useState([]); // level ids, most-true first
   const [note,setNote]=useState('');
   const [override,setOverride]=useState(null);
   const [busy,setBusy]=useState(false);
@@ -530,7 +534,7 @@ function CCTab({roundId,roundMeta,consciousnessNote}){
     setD(null);
     api.get('/api/maturity/cc'+(roundId?('?round='+roundId):'')).then(d=>{
       setD(d);
-      const a={};(d.myResponses||[]).forEach(r=>a[r.level]=r.value);setAns(a);
+      setOrder((d.myResponses||[]).slice().sort((a,b)=>a.value-b.value).map(r=>r.level));
       setNote((d.myScore&&d.myScore.note)||'');
       setOverride(d.myScore&&d.myScore.method==='direct'?d.myScore.level:null);
     });
@@ -540,15 +544,18 @@ function CCTab({roundId,roundMeta,consciousnessNote}){
   const editable=roundMeta&&roundMeta.status==='open';
   const levels=d.levels||[];
   const statements=d.statements||[];
-  const answered=Object.entries(ans).map(([level,value])=>({level:Number(level),value}));
-  const computed=answered.length?ccOverallRollup(answered):null;
+  const allRanked=statements.length>0&&order.length===statements.length;
+  const computed=allRanked?ccOverallRollup(order.map((lvl,i)=>({level:lvl,value:i+1}))):null;
   const submitted=d.myScore&&d.myScore.submitted;
-  async function answer(level,value){
-    const n={...ans,[level]:value};setAns(n);
+  async function saveOrder(next){
+    setOrder(next);
     try{
-      await api.put('/api/maturity/consciousness-responses',{roundId:d.roundId,responses:Object.entries(n).map(([lvl,val])=>({level:Number(lvl),value:val}))});
+      await api.put('/api/maturity/consciousness-responses',{roundId:d.roundId,responses:next.map((lvl,i)=>({level:lvl,value:i+1}))});
       setSaved(true);setTimeout(()=>setSaved(false),1200);
     }catch(e){alert(e.message);}
+  }
+  function toggleRank(level){
+    saveOrder(order.includes(level)?order.filter(l=>l!==level):[...order,level]);
   }
   async function saveNote(v){
     setNote(v);
@@ -570,9 +577,19 @@ function CCTab({roundId,roundMeta,consciousnessNote}){
     editable&&h('div',{className:'card'},
       h('div',{className:'sec',style:{marginTop:0}},'Where is the family deciding from right now?'),
       d.question&&h('div',{className:'small muted',style:{marginBottom:10}},d.question.intro),
-      statements.map(st=>h('div',{key:st.level,style:{marginBottom:10}},
-        h('div',{style:{fontSize:12,marginBottom:4}},st.statement),
-        h('div',{className:'scoresel'},AGREE.map((lbl,i)=>h('button',{key:i,className:Number(ans[st.level])===i+1?'on':'',title:lbl,onClick:()=>answer(st.level,i+1)},i+1))))),
+      h('div',{className:'small',style:{marginBottom:8,fontWeight:600,color:'var(--navy)'}},
+        allRanked?'All 7 ranked':'Ranked '+order.length+' of 7 — click a statement to rank it next'),
+      order.map((lvl,i)=>{
+        const st=statements.find(x=>x.level===lvl);
+        if(!st)return null;
+        return h('div',{key:lvl,className:'pickrow on',onClick:()=>toggleRank(lvl)},
+          h('span',{className:'pn'},i+1),h('span',null,st.statement));
+      }),
+      statements.filter(st=>!order.includes(st.level)).map(st=>
+        h('div',{key:st.level,className:'pickrow',onClick:()=>toggleRank(st.level)},
+          h('span',{className:'pn'},'○'),h('span',null,st.statement))
+      ),
+      order.length>0&&h('button',{className:'linkbtn',style:{marginBottom:10},onClick:()=>saveOrder([])},'Clear ranking'),
       h('div',{style:{display:'flex',alignItems:'center',gap:10,margin:'10px 0 6px',flexWrap:'wrap'}},
         h('span',{className:'small muted'},'Level:'),ccChip(override!=null?override:computed,levels),
         h('button',{className:'linkbtn',onClick:()=>setOverride(override==null?(computed||4):null)},override==null?'place directly':'use computed'),
@@ -585,7 +602,7 @@ function CCTab({roundId,roundMeta,consciousnessNote}){
         onChange:e=>setNote(e.target.value),onBlur:e=>saveNote(e.target.value)}),
       h('div',{style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         h('span',{style:{flex:1}}),
-        !ready&&h('span',{className:'small muted'},'Rate the statements above to submit'),
+        !ready&&h('span',{className:'small muted'},'Rank all 7 statements above to submit'),
         h('button',{className:'btn btn-teal btn-sm',disabled:busy||!ready,onClick:submit},submitted?'Re-submit':'Submit')),
       consciousnessNote&&h('div',{style:{marginTop:10,fontSize:10.5,color:'var(--muted)'}},consciousnessNote)),
     !editable&&h('div',{className:'card'},

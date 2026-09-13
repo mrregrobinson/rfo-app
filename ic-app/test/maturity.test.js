@@ -58,18 +58,23 @@ describe('levelRollup / levelClass', () => {
   });
 });
 
-describe('consciousnessOverallRollup — weighted centroid across the 7 statements, once per round', () => {
-  test('even ratings land near the middle of the scale', () => {
-    const even = [1, 2, 3, 4, 5, 6, 7].map((level) => ({ level, value: 3 })); // same "true-ness" for every level
-    assert.equal(consciousnessOverallRollup(even), 4); // (3*(1+..+7))/(3*7) = 4
+describe('consciousnessOverallRollup — weighted centroid across a RANKING of the 7 statements, once per round', () => {
+  // `value` is the rank a member gave a statement: 1 = most true .. 7 = least true.
+  // Weight = 8 - rank, so the top-ranked statement counts for the most.
+  test('ranking level-by-level in ascending order centres at 3', () => {
+    const natural = [1, 2, 3, 4, 5, 6, 7].map((level) => ({ level, value: level })); // statement 1 ranked most true .. statement 7 ranked least true
+    assert.equal(consciousnessOverallRollup(natural), 3); // Σ i*(8-i) / Σ(8-i) = 84/28 = 3
   });
-  test('a statement rated highly pulls the centroid toward its level', () => {
-    assert.equal(consciousnessOverallRollup([{ level: 1, value: 5 }, { level: 7, value: 1 }]), 2); // (5+7)/6 = 2
-    assert.equal(consciousnessOverallRollup([{ level: 7, value: 5 }]), 7);
-    assert.equal(consciousnessOverallRollup([{ level: 1, value: 5 }]), 1);
+  test('reversing the ranking (highest levels ranked most true) pulls the centroid up', () => {
+    const reversed = [1, 2, 3, 4, 5, 6, 7].map((level) => ({ level, value: 8 - level })); // statement 7 ranked most true (rank 1)
+    assert.equal(consciousnessOverallRollup(reversed), 5); // Σ i*i / Σ i = 140/28 = 5
   });
-  test('invalid entries are ignored; no valid answers -> null', () => {
-    assert.equal(consciousnessOverallRollup([{ level: 0, value: 5 }, { level: 8, value: 5 }, { level: 3, value: NaN }]), null);
+  test('a single top-ranked statement pulls the centroid all the way to its level', () => {
+    assert.equal(consciousnessOverallRollup([{ level: 7, value: 1 }]), 7);
+    assert.equal(consciousnessOverallRollup([{ level: 1, value: 1 }]), 1);
+  });
+  test('invalid entries (bad level, or rank out of 1..7) are ignored; no valid answers -> null', () => {
+    assert.equal(consciousnessOverallRollup([{ level: 0, value: 1 }, { level: 8, value: 1 }, { level: 3, value: 0 }, { level: 4, value: 8 }]), null);
     assert.equal(consciousnessOverallRollup([]), null);
   });
 });
@@ -259,15 +264,34 @@ describe('Capital Consciousness — standalone, once per round (§5.8)', () => {
     assert.equal(cc.myResponses.length, 0);
     assert.equal(cc.myScore, null);
   });
-  test('answering all 7 statements derives a level; submitting requires it', async () => {
+  test('ranking the statements derives a level; submitting requires a full ranking, not a partial one', async () => {
     as('ross');
     const cc = (await get(`/api/maturity/cc?round=${roundId}`)).body;
-    // rate every statement "3" except level 6, rated "5" -> centroid pulled toward 6
-    const responses = cc.statements.map((s) => ({ level: s.level, value: s.level === 6 ? 5 : 3 }));
-    const saved = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses });
-    assert.ok(saved.body.computedLevel >= 4 && saved.body.computedLevel <= 7);
+    assert.equal(cc.statements.length, 7);
 
-    // cannot submit before answering (a fresh member with nothing recorded yet)
+    const fullOrder = [7, 6, 5, 4, 3, 2, 1]; // most true (statement 7) down to least true (statement 1)
+    const partial = fullOrder.slice(0, 3).map((level, i) => ({ level, value: i + 1 }));
+    const partialSave = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: partial });
+    assert.equal(partialSave.body.stored, 3);
+    assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 400);
+
+    const full = fullOrder.map((level, i) => ({ level, value: i + 1 }));
+    const saved = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: full });
+    assert.equal(saved.body.stored, 7);
+    assert.equal(saved.body.computedLevel, 5);
+
+    // un-ranking a statement (dropping it from the payload) deletes its stored response —
+    // replace semantics, not additive — so the ranking goes back to partial
+    const withoutOne = full.filter((a) => a.level !== 1);
+    const afterDrop = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: withoutOne });
+    assert.equal(afterDrop.body.stored, 6);
+    assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 400);
+
+    // re-rank fully
+    const saved2 = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: full });
+    assert.equal(saved2.body.stored, 7);
+
+    // cannot submit before answering at all (a fresh member with nothing recorded yet)
     as('lucas');
     assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 400);
 
@@ -276,6 +300,7 @@ describe('Capital Consciousness — standalone, once per round (§5.8)', () => {
     const mine = (await get(`/api/maturity/cc?round=${roundId}`)).body.myScore;
     assert.equal(mine.submitted, true);
     assert.equal(mine.method, 'questionnaire');
+    assert.equal(mine.level, 5);
   });
   test('override sets method=direct; a bare note never flips it back; family summary rolls up all submitted members', async () => {
     as('lucas');

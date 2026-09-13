@@ -233,9 +233,13 @@ function questionsForService(svc) {
 // ---- Capital Consciousness — a standalone, once-per-round instrument (§5.8) ----
 // Disconnected again from the per-service maturity worksheet (see migration 037's header
 // comment for why). One statement per level, in the spirit of the white paper's own
-// self-assessment (Appendix I): rate how true each feels right now, and the level is the
-// weighted centroid across all seven ratings — not a single pick, and not a bare
-// self-placement on the named arc. See consciousnessOverallRollup in server/maturity.js.
+// self-assessment (Appendix I: "the level at which you find the most 'currently true'
+// responses is likely your dominant level"): rank all seven from most to least true, and
+// the level is the weighted centroid of that ranking (statements ranked closer to the top
+// carry more weight) — not a single pick, and not a bare self-placement on the named arc.
+// An earlier version asked people to rate each statement 1-5 independently; in practice
+// most people rated several statements similarly, which flattened the read — ranking
+// forces a relative call instead. See consciousnessOverallRollup in server/maturity.js.
 const CONSCIOUSNESS_STATEMENTS = [
   { level: 1, statement: 'When it comes to our wealth, our first instinct is to protect what we have and avoid losing it — even when that means passing on opportunities that are probably fine.' },
   { level: 2, statement: 'We pay close attention to returns, fees, and how we compare to others, judging most financial decisions mainly on their own merits rather than as part of the bigger picture.' },
@@ -265,10 +269,15 @@ const CC_LEVELS = [
 
 // Intro copy + the optional free-text reflection shown once, beneath the 7 statements —
 // the level itself is computed, never asked directly (no "pick your level" prompt).
+// A plain 1-5 "how true does this feel" rating per statement, independently answered,
+// turned out confusing in practice — most people rated several statements similarly,
+// which flattens the read. Ranking forces a relative call (which of these feels MOST
+// true right now, all the way down to least true) and is a more intuitive task than
+// rating seven things in isolation.
 const CONSCIOUSNESS_QUESTION = {
-  intro: 'For each statement, rate how true it currently feels for how your family actually relates to its capital — not how you wish it were.',
+  intro: 'Read all seven statements, then rank them from the one that feels most true for how your family actually relates to its capital today, down to the one that feels least true.',
   reflectionPrompt: 'Anything you\'d add? (optional)',
-  overrideHelp: 'Computed from your answers above. If you know the framework and want to place yourself directly instead, you can override it here.',
+  overrideHelp: 'Computed from your ranking above. If you know the framework and want to place yourself directly instead, you can override it here.',
 };
 
 // The four dimensions of change — how movement between levels actually happens.
