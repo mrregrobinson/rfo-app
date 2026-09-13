@@ -444,24 +444,34 @@ Return ONLY valid JSON, no markdown fences:
   return { result: extractJson(data), usage: data.usage };
 }
 
-// Proposes refreshed language for one service's five level descriptors at the start of a
-// cycle. Output is a review queue for a Maturity admin — nothing is applied automatically.
-async function suggestLevelDescriptors({ serviceName, description, levelLabels, currentDescriptors, familyContext }) {
+// Proposes refreshed language for one service's five level descriptors AND its four
+// assessment questions, from the same research pass, at the start of a cycle. Output is a
+// review queue for a Maturity admin — nothing is applied automatically. The questions
+// used to stay a fully standardized template reused across all 16 services (only the
+// service name substituted in) — this tailors the actual wording to what the research
+// turns up for THIS specific service, while keeping the four-question shape and response
+// mechanics (response_kind, weight) fixed so the scoring math doesn't change underneath.
+async function suggestServiceWording({ serviceName, description, levelLabels, currentDescriptors, currentQuestions, familyContext }) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
-  const systemPrompt = `You are helping a Canadian single-family office keep its maturity model current. For ONE operating service you are given the five level descriptors it uses today (1 Ad Hoc ... 5 Leading Practice). Search the web for how family-office maturity models, operating benchmarks and practitioner writing describe each of these levels for this service now, and propose tighter, clearer, more current wording. Keep each descriptor to 1-3 sentences, keep the family's own level names, keep the progression monotonic (each level a clear step up), and stay realistic for a family office of THIS size. Preserve anything already good — only change what genuinely improves clarity or currency. Today is ${today}.`;
+  const systemPrompt = `You are helping a Canadian single-family office keep its maturity assessment current for ONE operating service. You are given (a) the five level descriptors it uses today (1 Ad Hoc ... 5 Leading Practice) and (b) the four questions members answer to derive their maturity score for this service. Search the web for how family-office maturity models, operating benchmarks and practitioner writing describe this specific service and what distinguishes a well-run one, and propose tighter, more current, and more SERVICE-SPECIFIC wording for both. The four questions today are a generic template reused across every service with only the service name substituted in — replace that genericness with wording that reflects what actually matters for THIS service, while preserving: the same four-question shape (question 1 is always the "which of the five descriptions fits best" level pick; questions 2-4 are agree/disagree statements), each question's existing response mechanic (never change which ones are the level-pick vs. the agree/disagree ones), and a level of specificity realistic for a family office of THIS size. Keep each descriptor to 1-3 sentences and the level progression monotonic. Preserve anything already good — only change what genuinely improves clarity, currency, or specificity. Today is ${today}.`;
   const ladder = (currentDescriptors || []).map((t, i) => `${i + 1} (${(levelLabels && levelLabels[i]) || ''}): ${t}`).join('\n');
+  const questionsText = (currentQuestions || []).map((q, i) => `${i + 1} [${q.responseKind}]: ${q.prompt}${q.helpText ? '\n   help text: ' + q.helpText : ''}`).join('\n');
   const userPrompt = `Service: ${serviceName}.${description ? ' ' + description : ''}
-Current descriptors:
+Current level descriptors:
 ${ladder}
+Current questions:
+${questionsText}
 Family context: ${familyContext}
 
 Return ONLY valid JSON, no markdown fences:
-{"levels":[{"level":1,"suggestedText":"...","rationale":"one or two sentences on what changed and why","changed":true},{"level":2,"suggestedText":"...","rationale":"...","changed":false}],"sources":[{"title":"...","url":"..."}]}
+{"levels":[{"level":1,"suggestedText":"...","rationale":"one or two sentences on what changed and why","changed":true}, ...all 5, in order...],
+ "questions":[{"sortOrder":1,"suggestedPrompt":"...","suggestedHelpText":"...","rationale":"...","changed":true}, ...all 4, in order, matching the response mechanic given for that slot...],
+ "sources":[{"title":"...","url":"..."}]}
 
-Include all five levels in order. Set changed:false and echo the current text when it should be kept as-is.`;
+Include all five levels and all four questions. Set changed:false and echo the current wording when it should be kept as-is. sortOrder must match the 1-based position of the question above (do not reorder or add/remove questions). suggestedHelpText may be an empty string.`;
   const data = await callClaude({
     model: MODEL,
-    max_tokens: 4000,
+    max_tokens: 4500,
     system: systemPrompt,
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     messages: [{ role: 'user', content: userPrompt }],
@@ -469,4 +479,4 @@ Include all five levels in order. Set changed:false and echo the current text wh
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, benchmarkMaturityService, synthesizeMaturityRound, suggestLevelDescriptors, ClaudeNotConfiguredError };
+module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, benchmarkMaturityService, synthesizeMaturityRound, suggestServiceWording, ClaudeNotConfiguredError };

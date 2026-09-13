@@ -206,16 +206,63 @@ describe('Claude endpoints degrade when not configured', () => {
     const r = await send('POST', '/api/maturity/rounds/round-2026-baseline/benchmark', { serviceId: 'svc-01' });
     assert.equal(r.body.configured, false);
   });
-  test('descriptor suggestions require a draft round and degrade', async () => {
+  test('wording suggestions (levels + questions) require a draft round and degrade', async () => {
     as('reg');
     const draft = (await send('POST', '/api/maturity/rounds', { label: 'draft-for-suggest' })).body.id;
-    const r = await send('POST', `/api/maturity/rounds/${draft}/suggest-descriptors`, { serviceId: 'svc-01' });
+    const r = await send('POST', `/api/maturity/rounds/${draft}/suggest-wording`, { serviceId: 'svc-01' });
     assert.equal(r.body.configured, false);
     // a closed round refuses
-    const bad = await send('POST', '/api/maturity/rounds/round-2026-baseline/suggest-descriptors', {});
+    const bad = await send('POST', '/api/maturity/rounds/round-2026-baseline/suggest-wording', {});
     assert.equal(bad.status, 400);
     // tidy up so other suites still see "one active round" rules cleanly
     db.prepare('DELETE FROM maturity_rounds WHERE id = ?').run(draft);
+  });
+});
+
+describe('question wording suggestions — tailored per service, not the standardized template', () => {
+  test('the review queue is per-question (not per-service) and accepting one edits only that question', async () => {
+    const svc = db.prepare("SELECT id FROM maturity_services WHERE id = 'svc-04'").get();
+    const q = db.prepare('SELECT id, prompt, help_text FROM maturity_questions WHERE service_id = ? ORDER BY sort_order LIMIT 1').get(svc.id);
+    const now = new Date().toISOString();
+    // stub what suggestServiceWording would have produced — Claude isn't configured in
+    // tests, so this exercises the review-queue schema and the accept/dismiss routes
+    // directly, the same way maturity_benchmarks rows are stubbed elsewhere in this file
+    const sugId = 'qsug-1';
+    db.prepare(
+      `INSERT INTO maturity_question_suggestions (id, round_id, service_id, question_id, current_prompt, current_help_text, suggested_prompt, suggested_help_text, rationale, sources, status, model, searched_at)
+       VALUES (?, 'round-2026-baseline', ?, ?, ?, ?, ?, ?, 'more specific to this service', '[]', 'pending', 'test', ?)`
+    ).run(sugId, svc.id, q.id, q.prompt, q.help_text, 'A tailored, service-specific version of the question', 'Tailored help text', now);
+
+    as('lucas');
+    assert.equal((await send('POST', `/api/maturity/question-suggestions/${sugId}/accept`, {})).status, 403); // member cannot accept
+
+    as('reg');
+    const accepted = await send('POST', `/api/maturity/question-suggestions/${sugId}/accept`, {});
+    assert.equal(accepted.status, 200);
+    const updated = db.prepare('SELECT prompt, help_text FROM maturity_questions WHERE id = ?').get(q.id);
+    assert.equal(updated.prompt, 'A tailored, service-specific version of the question');
+    assert.equal(updated.help_text, 'Tailored help text');
+    const sugRow = db.prepare('SELECT status FROM maturity_question_suggestions WHERE id = ?').get(sugId);
+    assert.equal(sugRow.status, 'accepted');
+
+    // other questions on the same service are untouched
+    const otherQ = db.prepare('SELECT prompt FROM maturity_questions WHERE service_id = ? AND id != ? LIMIT 1').get(svc.id, q.id);
+    assert.notEqual(otherQ.prompt, 'A tailored, service-specific version of the question');
+  });
+
+  test('dismiss leaves the question untouched', async () => {
+    const svc = db.prepare("SELECT id FROM maturity_services WHERE id = 'svc-05'").get();
+    const q = db.prepare('SELECT id, prompt FROM maturity_questions WHERE service_id = ? ORDER BY sort_order LIMIT 1').get(svc.id);
+    const now = new Date().toISOString();
+    const sugId = 'qsug-2';
+    db.prepare(
+      `INSERT INTO maturity_question_suggestions (id, round_id, service_id, question_id, current_prompt, current_help_text, suggested_prompt, suggested_help_text, rationale, sources, status, model, searched_at)
+       VALUES (?, 'round-2026-baseline', ?, ?, ?, '', 'A different wording', '', '', '[]', 'pending', 'test', ?)`
+    ).run(sugId, svc.id, q.id, q.prompt, now);
+    as('reg');
+    assert.equal((await send('POST', `/api/maturity/question-suggestions/${sugId}/dismiss`, {})).status, 200);
+    assert.equal(db.prepare('SELECT prompt FROM maturity_questions WHERE id = ?').get(q.id).prompt, q.prompt);
+    assert.equal(db.prepare('SELECT status FROM maturity_question_suggestions WHERE id = ?').get(sugId).status, 'dismissed');
   });
 });
 

@@ -220,9 +220,19 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   content is seeded from `server/maturity-seed-data.js` by `ensureSeeded()` (not a
   migration — the reference round's member scores need a user). Descriptors are edited in
   place; each round freezes a copy of the ladder into `maturity_rounds.ladder_json` at
-  the `draft → open` transition. `maturity_descriptor_suggestions` holds Claude's
-  start-of-cycle proposed re-wording (a review queue; nothing applied without an admin
-  accept).
+  the `draft → open` transition.
+- `POST /api/maturity/rounds/:id/suggest-wording` (admin-only, draft rounds only —
+  "Ask Claude to refresh wording" on the Manage tab): one Claude web-search call per
+  service researches how that specific service ought to be assessed and proposes BOTH
+  refreshed level-descriptor language AND refreshed wording for its four assessment
+  questions (`claude.js` `suggestServiceWording`) — nothing applied without an admin
+  reviewing and accepting each suggestion individually from the service drawer.
+  `maturity_descriptor_suggestions` (migration 033) holds the level-wording queue;
+  `maturity_question_suggestions` (migration 039) holds the question-wording queue, keyed
+  to a specific `maturity_questions` row via `question_id` (not by sort position, since
+  that could drift). Before migration 039, all 16 services reused the exact same
+  templated question text with only the service name substituted in — this is what lets a
+  service's questions actually reflect that service, not a generic shape.
 - `maturity_questions` / `maturity_responses` / `maturity_service_scores` — the concise,
   maturity-only per-service questionnaire (4 questions/service), each member's answers
   per round, and the assigned scores. `maturity_service_scores.level` is a 1–5 weighted

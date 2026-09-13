@@ -416,6 +416,8 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
   }
   async function acceptSug(sg,text){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/accept',text!=null?{text}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}}
   async function dismissSug(sg){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
+  async function acceptQSug(sg,prompt,helpText){try{await api.post('/api/maturity/question-suggestions/'+sg.id+'/accept',(prompt!=null||helpText!=null)?{prompt,helpText}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}}
+  async function dismissQSug(sg){try{await api.post('/api/maturity/question-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
   async function runBenchmark(){setBusy('bench');try{const r=await api.post('/api/maturity/rounds/'+roundId+'/benchmark',{serviceId:s.id});if(r.configured===false)alert('Claude is not configured on the server — benchmark unavailable.');await load();onChanged&&onChanged();}catch(e){alert(e.message);}finally{setBusy('');}}
   return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
@@ -436,7 +438,7 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
       roles.maturityAdmin&&editLvl!==dd.level&&h('button',{className:'linkbtn',onClick:()=>{setEditLvl(dd.level);setEditText(dd.text);}},'edit'))),
 
     (d.suggestions&&d.suggestions.length)?h('div',null,
-      h('div',{className:'sec'},'Proposed wording (Claude) — review before the round opens'),
+      h('div',{className:'sec'},'Proposed level wording (Claude) — review before the round opens'),
       d.suggestions.filter(sg=>sg.status==='pending').map(sg=>h('div',{key:sg.id,className:'card',style:{background:'var(--gold-l)',padding:10}},
         h('div',{className:'small'},h('b',null,'Level '+sg.level),' — ',sg.rationale),
         h('div',{className:'grid2',style:{marginTop:6}},
@@ -446,6 +448,25 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
           h('button',{className:'btn btn-teal btn-sm',onClick:()=>acceptSug(sg)},'Accept'),
           h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>{const t=prompt('Edit and accept:',sg.suggestedText);if(t!=null)acceptSug(sg,t);}},'Edit & accept'),
           h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>dismissSug(sg)},'Dismiss'))))
+    ):null,
+
+    (d.questionSuggestions&&d.questionSuggestions.length)?h('div',null,
+      h('div',{className:'sec'},'Proposed question wording (Claude) — tailored to this service, review before the round opens'),
+      d.questionSuggestions.filter(sg=>sg.status==='pending').map(sg=>h('div',{key:sg.id,className:'card',style:{background:'var(--gold-l)',padding:10}},
+        sg.rationale&&h('div',{className:'small'},sg.rationale),
+        h('div',{className:'grid2',style:{marginTop:6}},
+          h('div',null,h('div',{className:'small muted'},'Current'),h('div',{className:'small'},sg.currentPrompt),
+            sg.currentHelpText&&h('div',{className:'small muted',style:{marginTop:2}},sg.currentHelpText)),
+          h('div',null,h('div',{className:'small muted'},'Suggested'),h('div',{className:'small'},sg.suggestedPrompt),
+            sg.suggestedHelpText&&h('div',{className:'small muted',style:{marginTop:2}},sg.suggestedHelpText))),
+        roles.maturityAdmin&&h('div',{style:{marginTop:6}},
+          h('button',{className:'btn btn-teal btn-sm',onClick:()=>acceptQSug(sg)},'Accept'),
+          h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>{
+            const p=prompt('Edit the question:',sg.suggestedPrompt);if(p==null)return;
+            const ht=prompt('Edit the help text (optional):',sg.suggestedHelpText||'');if(ht==null)return;
+            acceptQSug(sg,p,ht);
+          }},'Edit & accept'),
+          h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>dismissQSug(sg)},'Dismiss'))))
     ):null,
 
     h('div',{className:'sec'},'This round — maturity (1–5) per member'),
@@ -691,7 +712,7 @@ function ManageTab({data,members,onReload}){
       active?h('div',null,
         h('div',null,h('b',null,active.label),' ',h('span',{className:'pill pill-'+active.status},active.status)),
         h('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}},
-          active.status==='draft'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('suggest-descriptors','Descriptor suggestions')},busy==='suggest-descriptors'?'Asking Claude…':'Ask Claude to refresh level wording (all 16)'),
+          active.status==='draft'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('suggest-wording','Wording suggestions')},busy==='suggest-wording'?'Asking Claude…':'Ask Claude to refresh wording — levels & questions (all 16)'),
           active.status==='draft'&&h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:()=>act('open','Open round')},'Open the round for assessment'),
           active.status==='open'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('benchmark','Benchmark')},busy==='benchmark'?'Benchmarking…':'Run Claude benchmark (all 16)'),
           active.status==='open'&&h('button',{className:'btn btn-navy btn-sm',disabled:busy,onClick:()=>{if(confirm('Close this round? It becomes read-only and, if it has benchmarks, the comparison anchor.'))act('close','Close round');}},'Close the round'),

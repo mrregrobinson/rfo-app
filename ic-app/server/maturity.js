@@ -360,6 +360,16 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       ? db.prepare("SELECT * FROM maturity_descriptor_suggestions WHERE round_id = ? AND service_id = ? ORDER BY level").all(roundId, s.id)
           .map((r) => ({ id: r.id, level: r.level, currentText: r.current_text, suggestedText: r.suggested_text, rationale: r.rationale, sources: jsonParse(r.sources, []), status: r.status, appliedText: r.applied_text }))
       : [];
+    const questionSuggestions = roundId
+      ? db.prepare("SELECT * FROM maturity_question_suggestions WHERE round_id = ? AND service_id = ? ORDER BY rowid").all(roundId, s.id)
+          .map((r) => ({
+            id: r.id, questionId: r.question_id,
+            currentPrompt: r.current_prompt, currentHelpText: r.current_help_text,
+            suggestedPrompt: r.suggested_prompt, suggestedHelpText: r.suggested_help_text,
+            rationale: r.rationale, sources: jsonParse(r.sources, []), status: r.status,
+            appliedPrompt: r.applied_prompt, appliedHelpText: r.applied_help_text,
+          }))
+      : [];
     res.json({
       service: { id: s.id, groupId: s.group_id, number: s.number, name: s.name, description: s.description, isActive: !!s.is_active },
       descriptors: descriptorsFor(s.id),
@@ -372,6 +382,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       stats: roundId ? serviceStats(roundId, s.id) : null,
       trend,
       suggestions,
+      questionSuggestions,
       actions: db.prepare('SELECT * FROM maturity_actions WHERE service_id = ? AND archived_at IS NULL ORDER BY created_at').all(s.id).map(actionRowToJson),
     });
   });
@@ -752,7 +763,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const r = getRound(req.params.id);
     if (!r) return res.status(404).json({ error: 'Round not found' });
     db.prepare('UPDATE maturity_actions SET round_id = NULL WHERE round_id = ?').run(r.id);
-    for (const t of ['maturity_responses', 'maturity_service_scores', 'maturity_consciousness_responses', 'maturity_consciousness_scores', 'maturity_benchmarks', 'maturity_descriptor_suggestions', 'maturity_round_snapshots']) {
+    for (const t of ['maturity_responses', 'maturity_service_scores', 'maturity_consciousness_responses', 'maturity_consciousness_scores', 'maturity_benchmarks', 'maturity_descriptor_suggestions', 'maturity_question_suggestions', 'maturity_round_snapshots']) {
       db.prepare(`DELETE FROM ${t} WHERE round_id = ?`).run(r.id);
     }
     db.prepare('DELETE FROM maturity_rounds WHERE id = ?').run(r.id);
@@ -1054,11 +1065,17 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     }
   });
 
-  app.post('/api/maturity/rounds/:id/suggest-descriptors', requireAuth, async (req, res) => {
+  // Researches how a specific service ought to be assessed and proposes refreshed wording
+  // for BOTH its five level descriptors AND its four assessment questions in one pass —
+  // the questions used to stay a fully standardized template reused across all 16
+  // services (only the service name substituted in); this tailors them to what the
+  // research turns up for that particular service. Nothing is applied without an admin
+  // reviewing and accepting each suggestion (see the accept/dismiss routes below).
+  app.post('/api/maturity/rounds/:id/suggest-wording', requireAuth, async (req, res) => {
     if (!requireAdmin(req, res)) return;
     const r = getRound(req.params.id);
     if (!r) return res.status(404).json({ error: 'Round not found' });
-    if (r.status !== 'draft') return res.status(400).json({ error: 'Descriptor suggestions can only be run while the round is a draft.' });
+    if (r.status !== 'draft') return res.status(400).json({ error: 'Wording suggestions can only be run while the round is a draft.' });
     const only = (req.body || {}).serviceId;
     const targets = only ? servicesList(true).filter((s) => s.id === only) : servicesList(false);
     const labels = levelLabels().map((l) => l.name);
@@ -1067,14 +1084,17 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     for (const s of targets) {
       try {
         const current = descriptorsFor(s.id);
-        const { result, usage } = await claude.suggestLevelDescriptors({
+        const currentQuestions = questionsFor(s.id, false); // already ordered by sort_order
+        const { result, usage } = await claude.suggestServiceWording({
           serviceName: s.name, description: s.description || '',
-          levelLabels: labels, currentDescriptors: current.map((d) => d.text), familyContext: FAMILY_CONTEXT,
+          levelLabels: labels, currentDescriptors: current.map((d) => d.text),
+          currentQuestions, familyContext: FAMILY_CONTEXT,
         });
-        logApiUsage({ callType: 'maturity_descriptor_suggest', usage, userId: req.session.userId });
+        logApiUsage({ callType: 'maturity_wording_suggest', usage, userId: req.session.userId });
         const now = new Date().toISOString();
+
         db.prepare('DELETE FROM maturity_descriptor_suggestions WHERE round_id = ? AND service_id = ?').run(r.id, s.id);
-        const ins = db.prepare(
+        const insDesc = db.prepare(
           `INSERT INTO maturity_descriptor_suggestions (id, round_id, service_id, level, current_text, suggested_text, rationale, sources, status, model, searched_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
         );
@@ -1083,15 +1103,32 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
           const level = Number(lv.level);
           if (![1, 2, 3, 4, 5].includes(level)) continue;
           const curText = (current.find((d) => d.level === level) || {}).text || '';
-          ins.run(crypto.randomUUID(), r.id, s.id, level, curText, String(lv.suggestedText || curText), String(lv.rationale || ''), JSON.stringify(Array.isArray(result.sources) ? result.sources : []), 'claude-sonnet-5', now);
+          insDesc.run(crypto.randomUUID(), r.id, s.id, level, curText, String(lv.suggestedText || curText), String(lv.rationale || ''), JSON.stringify(Array.isArray(result.sources) ? result.sources : []), 'claude-sonnet-5', now);
         }
-        results.push({ serviceId: s.id, levels: levels.length });
+
+        db.prepare('DELETE FROM maturity_question_suggestions WHERE round_id = ? AND service_id = ?').run(r.id, s.id);
+        const insQ = db.prepare(
+          `INSERT INTO maturity_question_suggestions (id, round_id, service_id, question_id, current_prompt, current_help_text, suggested_prompt, suggested_help_text, rationale, sources, status, model, searched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+        );
+        const questions = Array.isArray(result.questions) ? result.questions : [];
+        for (const qs of questions) {
+          const sortOrder = Number(qs.sortOrder);
+          const target = currentQuestions.find((q) => q.sortOrder === sortOrder);
+          if (!target) continue; // Claude returned a slot that doesn't match a real question — skip rather than guess
+          insQ.run(
+            crypto.randomUUID(), r.id, s.id, target.id, target.prompt, target.helpText || '',
+            String(qs.suggestedPrompt || target.prompt), String(qs.suggestedHelpText ?? target.helpText ?? ''),
+            String(qs.rationale || ''), JSON.stringify(Array.isArray(result.sources) ? result.sources : []), 'claude-sonnet-5', now
+          );
+        }
+        results.push({ serviceId: s.id, levels: levels.length, questions: questions.length });
       } catch (err) {
         if (err instanceof claude.ClaudeNotConfiguredError) return res.json({ configured: false });
         errors.push({ serviceId: s.id, error: err.message });
       }
     }
-    logAudit({ userId: req.session.userId, action: 'maturity.descriptors_suggested', entityType: 'maturity_round', entityId: r.id, details: { count: results.length } });
+    logAudit({ userId: req.session.userId, action: 'maturity.wording_suggested', entityType: 'maturity_round', entityId: r.id, details: { count: results.length } });
     res.json({ configured: true, results, errors });
   });
 
@@ -1119,6 +1156,32 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const sug = db.prepare('SELECT * FROM maturity_descriptor_suggestions WHERE id = ?').get(req.params.id);
     if (!sug) return res.status(404).json({ error: 'Suggestion not found' });
     db.prepare('UPDATE maturity_descriptor_suggestions SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
+      .run('dismissed', req.session.userId, new Date().toISOString(), sug.id);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/maturity/question-suggestions/:id/accept', requireAuth, (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const sug = db.prepare('SELECT * FROM maturity_question_suggestions WHERE id = ?').get(req.params.id);
+    if (!sug) return res.status(404).json({ error: 'Suggestion not found' });
+    const b = req.body || {};
+    const prompt = (b.prompt != null ? b.prompt : sug.suggested_prompt || '').trim();
+    if (!prompt) return res.status(400).json({ error: 'prompt is empty' });
+    const helpText = (b.helpText != null ? b.helpText : sug.suggested_help_text || '').trim();
+    const edited = prompt !== sug.suggested_prompt || helpText !== (sug.suggested_help_text || '');
+    const now = new Date().toISOString();
+    db.prepare('UPDATE maturity_questions SET prompt = ?, help_text = ? WHERE id = ?').run(prompt, helpText, sug.question_id);
+    db.prepare('UPDATE maturity_question_suggestions SET status = ?, applied_prompt = ?, applied_help_text = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
+      .run(edited ? 'accepted_edited' : 'accepted', prompt, helpText, req.session.userId, now, sug.id);
+    logAudit({ userId: req.session.userId, action: 'maturity.question_wording_accepted', entityType: 'maturity_question', entityId: sug.question_id, details: { serviceId: sug.service_id, edited } });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/maturity/question-suggestions/:id/dismiss', requireAuth, (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const sug = db.prepare('SELECT * FROM maturity_question_suggestions WHERE id = ?').get(req.params.id);
+    if (!sug) return res.status(404).json({ error: 'Suggestion not found' });
+    db.prepare('UPDATE maturity_question_suggestions SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
       .run('dismissed', req.session.userId, new Date().toISOString(), sug.id);
     res.json({ ok: true });
   });
