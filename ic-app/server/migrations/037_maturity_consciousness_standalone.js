@@ -28,6 +28,20 @@
 module.exports = function (db) {
   const qCols = db.prepare('PRAGMA table_info(maturity_questions)').all().map((c) => c.name);
   if (qCols.includes('axis')) {
+    // maturity_responses.question_id is a FOREIGN KEY on maturity_questions(id) with FK
+    // enforcement on (server/db.js). On any install where a family member actually
+    // answered a consciousness-only question since migration 036 backfilled it (true on
+    // production, not yet true in a fresh dev db — which is exactly why this passed
+    // locally and crash-looped in production), deleting those questions outright violates
+    // that constraint. Those answers have no home in the new round-level design anyway
+    // (they were never part of anyone's maturity level calc — the live build's rollup
+    // already only read axis 'maturity'/'both' questions for that), so it's safe to drop
+    // the recorded answers along with the retired questions.
+    const consciousnessQuestionIds = db.prepare("SELECT id FROM maturity_questions WHERE axis = 'consciousness'").all().map((r) => r.id);
+    if (consciousnessQuestionIds.length) {
+      const placeholders = consciousnessQuestionIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM maturity_responses WHERE question_id IN (${placeholders})`).run(...consciousnessQuestionIds);
+    }
     db.exec("DELETE FROM maturity_questions WHERE axis = 'consciousness'");
     db.exec("UPDATE maturity_questions SET axis = 'maturity' WHERE axis = 'both'");
     db.exec('ALTER TABLE maturity_questions DROP COLUMN axis');
