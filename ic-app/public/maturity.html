@@ -393,12 +393,19 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
   const [busy,setBusy]=useState('');
   const [editLvl,setEditLvl]=useState(null);
   const [editText,setEditText]=useState('');
+  const [editQ,setEditQ]=useState(null);
+  const [editQPrompt,setEditQPrompt]=useState('');
+  const [editQHelp,setEditQHelp]=useState('');
   function load(){return api.get('/api/maturity/services/'+serviceId+'?round='+(roundId||'')+'&allQuestions=1').then(setD);}
   useEffect(()=>{load();},[serviceId,roundId]);
   if(!d)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
   const s=d.service;
   async function saveDesc(level){
     try{await api.put('/api/maturity/services/'+s.id+'/descriptors/'+level,{text:editText});setEditLvl(null);await load();onChanged&&onChanged();}catch(e){alert(e.message);}
+  }
+  async function saveQuestion(q){
+    if(!editQPrompt.trim())return;
+    try{await api.put('/api/maturity/questions/'+q.id,{prompt:editQPrompt,helpText:editQHelp});setEditQ(null);await load();onChanged&&onChanged();}catch(e){alert(e.message);}
   }
   async function acceptSug(sg,text){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/accept',text!=null?{text}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}}
   async function dismissSug(sg){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
@@ -435,6 +442,20 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
           h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>{const t=prompt('Edit and accept:',sg.suggestedText);if(t!=null)acceptSug(sg,t);}},'Edit & accept'),
           h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>dismissSug(sg)},'Dismiss'))))
     ):null,
+
+    h('div',{className:'sec'},'Assessment questions'),
+    d.questions.filter(q=>q.isActive).sort((a,b)=>a.sortOrder-b.sortOrder).map(q=>h('div',{key:q.id,className:'line',style:{alignItems:'flex-start'}},
+      h('div',{style:{flex:1}},
+        editQ===q.id
+          ?h('div',null,
+              h('textarea',{className:'form-textarea',value:editQPrompt,onChange:e=>setEditQPrompt(e.target.value)}),
+              h('input',{className:'form-input',placeholder:'Help text (optional)',value:editQHelp,onChange:e=>setEditQHelp(e.target.value)}),
+              h('button',{className:'btn btn-teal btn-sm',onClick:()=>saveQuestion(q)},'Save'),
+              h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>setEditQ(null)},'Cancel'))
+          :h('div',null,
+              h('div',{className:'small'},q.prompt),
+              q.helpText&&h('div',{className:'small muted',style:{marginTop:2}},q.helpText))),
+      roles.maturityAdmin&&editQ!==q.id&&h('button',{className:'linkbtn',onClick:()=>{setEditQ(q.id);setEditQPrompt(q.prompt);setEditQHelp(q.helpText||'');}},'edit'))),
 
     (d.questionSuggestions&&d.questionSuggestions.length)?h('div',null,
       h('div',{className:'sec'},'Proposed question wording (Claude) — tailored to this service, review before the round opens'),

@@ -242,7 +242,11 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   per round, and the assigned scores. `maturity_service_scores.level` is a 1–5 weighted
   mean of the answers rounded to the nearest 0.5, or a `direct` override; `method` records
   which. The latest submitted row per (round, service, member) is what the scorecard
-  averages / rolls up.
+  averages / rolls up. Like the level descriptors, a question's `prompt`/`helpText` is
+  directly editable by an admin from the service drawer (`PUT /api/maturity/questions/:qid`)
+  at any time, regardless of round status and with no dependency on Claude having reviewed
+  it first — the wording-suggestions flow (below) is an optional research aid, never a
+  gate on editing.
 - `maturity_rounds` — an assessment cycle (`draft` → `open` → `closed`); one active at a
   time. Exactly one closed round is the `is_anchor` baseline all trends compare to. The
   seeded `round-2026-baseline` (Appendix B) is closed but deliberately carries no

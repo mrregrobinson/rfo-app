@@ -288,6 +288,32 @@ describe('question wording suggestions — tailored per service, not the standar
   });
 });
 
+describe('direct question editing — no Claude review required (PUT /api/maturity/questions/:qid)', () => {
+  test('an admin can edit a question\'s wording directly, with no suggestion involved and regardless of round status', async () => {
+    const q = db.prepare("SELECT id, prompt, help_text, weight, sort_order, response_kind FROM maturity_questions WHERE service_id = 'svc-07' ORDER BY sort_order LIMIT 1").get();
+    as('lucas');
+    assert.equal((await send('PUT', `/api/maturity/questions/${q.id}`, { prompt: 'nope' })).status, 403); // member cannot edit
+
+    as('reg');
+    const r = await send('PUT', `/api/maturity/questions/${q.id}`, { prompt: 'Edited directly, no Claude involved', helpText: 'a hand-written help text' });
+    assert.equal(r.status, 200);
+    const updated = db.prepare('SELECT prompt, help_text, weight, sort_order, response_kind FROM maturity_questions WHERE id = ?').get(q.id);
+    assert.equal(updated.prompt, 'Edited directly, no Claude involved');
+    assert.equal(updated.help_text, 'a hand-written help text');
+    // untouched fields survive a partial update
+    assert.equal(updated.weight, q.weight);
+    assert.equal(updated.sort_order, q.sort_order);
+    assert.equal(updated.response_kind, q.response_kind);
+
+    // no suggestion row of any kind was created or needed for this
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM maturity_question_suggestions WHERE question_id = ?').get(q.id).n, 0);
+  });
+  test('unknown question 404s', async () => {
+    as('reg');
+    assert.equal((await send('PUT', '/api/maturity/questions/does-not-exist', { prompt: 'x' })).status, 404);
+  });
+});
+
 describe('actions <-> Family Task List', () => {
   test('create, promote to a task, read through, unlink', async () => {
     as('reg');
