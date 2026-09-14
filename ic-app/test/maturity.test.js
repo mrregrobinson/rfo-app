@@ -186,16 +186,58 @@ describe('Claude endpoints degrade when not configured', () => {
     const r = await send('POST', '/api/maturity/rounds/round-2026-baseline/benchmark', { serviceId: 'svc-01' });
     assert.equal(r.body.configured, false);
   });
-  test('wording suggestions (levels + questions) require a draft round and degrade', async () => {
+  test('wording suggestions work for a draft OR an open round, refuse a closed one, and degrade without Claude configured', async () => {
     as('reg');
     const draft = (await send('POST', '/api/maturity/rounds', { label: 'draft-for-suggest' })).body.id;
-    const r = await send('POST', `/api/maturity/rounds/${draft}/suggest-wording`, { serviceId: 'svc-01' });
-    assert.equal(r.body.configured, false);
+    const draftResult = await send('POST', `/api/maturity/rounds/${draft}/suggest-wording`, { serviceId: 'svc-01' });
+    assert.equal(draftResult.body.configured, false);
+    await send('POST', `/api/maturity/rounds/${draft}/open`, {});
+    const openResult = await send('POST', `/api/maturity/rounds/${draft}/suggest-wording`, { serviceId: 'svc-01' });
+    assert.equal(openResult.body.configured, false); // still reaches the Claude call, just degrades — not refused for being open
     // a closed round refuses
     const bad = await send('POST', '/api/maturity/rounds/round-2026-baseline/suggest-wording', {});
     assert.equal(bad.status, 400);
     // tidy up so other suites still see "one active round" rules cleanly
     db.prepare('DELETE FROM maturity_rounds WHERE id = ?').run(draft);
+  });
+});
+
+describe('consolidated wording-suggestions review list — Manage tab, not buried per-service', () => {
+  test('GET /api/maturity/rounds/:id/wording-suggestions returns pending level + question suggestions with service context, and excludes already-reviewed ones', async () => {
+    const svc = db.prepare("SELECT id, number, name FROM maturity_services WHERE id = 'svc-06'").get();
+    const questions = db.prepare('SELECT id, prompt, help_text FROM maturity_questions WHERE service_id = ? ORDER BY sort_order').all(svc.id);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO maturity_descriptor_suggestions (id, round_id, service_id, level, current_text, suggested_text, rationale, sources, status, model, searched_at)
+       VALUES ('dsug-list', 'round-2026-baseline', ?, 3, 'old text', 'new text', 'clearer', '[]', 'pending', 'test', ?)`
+    ).run(svc.id, now);
+    db.prepare(
+      `INSERT INTO maturity_question_suggestions (id, round_id, service_id, question_id, current_prompt, current_help_text, suggested_prompt, suggested_help_text, rationale, sources, status, model, searched_at)
+       VALUES ('qsug-list-pending', 'round-2026-baseline', ?, ?, ?, ?, 'new prompt', 'new help', 'sharper', '[]', 'pending', 'test', ?)`
+    ).run(svc.id, questions[0].id, questions[0].prompt, questions[0].help_text, now);
+    // an already-reviewed one (accepted, in this case) must NOT show up as pending
+    db.prepare(
+      `INSERT INTO maturity_question_suggestions (id, round_id, service_id, question_id, current_prompt, current_help_text, suggested_prompt, suggested_help_text, rationale, sources, status, model, searched_at)
+       VALUES ('qsug-list-accepted', 'round-2026-baseline', ?, ?, ?, ?, 'already handled', '', '', '[]', 'accepted', 'test', ?)`
+    ).run(svc.id, questions[1].id, questions[1].prompt, questions[1].help_text, now);
+
+    as('reg');
+    const r = await get('/api/maturity/rounds/round-2026-baseline/wording-suggestions');
+    assert.equal(r.status, 200);
+    const d = r.body.descriptors.find((x) => x.id === 'dsug-list');
+    assert.ok(d);
+    assert.equal(d.serviceId, svc.id);
+    assert.equal(d.serviceNumber, svc.number);
+    assert.equal(d.serviceName, svc.name);
+    assert.equal(d.suggestedText, 'new text');
+    const qr = r.body.questions.find((x) => x.id === 'qsug-list-pending');
+    assert.ok(qr);
+    assert.equal(qr.suggestedPrompt, 'new prompt');
+    assert.ok(!r.body.questions.some((x) => x.id === 'qsug-list-accepted'), 'already-reviewed suggestions are not listed as pending');
+
+    // cleaned up so other suites still see a clean baseline round
+    db.prepare("DELETE FROM maturity_descriptor_suggestions WHERE id = 'dsug-list'").run();
+    db.prepare("DELETE FROM maturity_question_suggestions WHERE id IN ('qsug-list-pending','qsug-list-accepted')").run();
   });
 });
 

@@ -998,7 +998,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     if (!requireAdmin(req, res)) return;
     const r = getRound(req.params.id);
     if (!r) return res.status(404).json({ error: 'Round not found' });
-    if (r.status !== 'draft') return res.status(400).json({ error: 'Wording suggestions can only be run while the round is a draft.' });
+    if (r.status === 'closed') return res.status(400).json({ error: 'Wording suggestions can\'t be run against a closed round — start or open a new one first.' });
     const only = (req.body || {}).serviceId;
     const targets = only ? servicesList(true).filter((s) => s.id === only) : servicesList(false);
     const labels = levelLabels().map((l) => l.name);
@@ -1107,6 +1107,34 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     db.prepare('UPDATE maturity_question_suggestions SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
       .run('dismissed', req.session.userId, new Date().toISOString(), sug.id);
     res.json({ ok: true });
+  });
+
+  // Every pending level-wording and question-wording suggestion for a round, across all
+  // 16 services in one call — feeds a single "review" list on the Manage tab, instead of
+  // requiring an admin to open each service's drawer individually to find them.
+  app.get('/api/maturity/rounds/:id/wording-suggestions', requireAuth, (req, res) => {
+    const r = getRound(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Round not found' });
+    const descriptors = db.prepare(
+      `SELECT ds.*, s.number AS service_number, s.name AS service_name FROM maturity_descriptor_suggestions ds
+       JOIN maturity_services s ON s.id = ds.service_id
+       WHERE ds.round_id = ? AND ds.status = 'pending' ORDER BY s.number, ds.level`
+    ).all(r.id).map((row) => ({
+      id: row.id, serviceId: row.service_id, serviceNumber: row.service_number, serviceName: row.service_name,
+      level: row.level, currentText: row.current_text, suggestedText: row.suggested_text,
+      rationale: row.rationale, sources: jsonParse(row.sources, []),
+    }));
+    const questions = db.prepare(
+      `SELECT qs.*, s.number AS service_number, s.name AS service_name FROM maturity_question_suggestions qs
+       JOIN maturity_services s ON s.id = qs.service_id
+       WHERE qs.round_id = ? AND qs.status = 'pending' ORDER BY s.number`
+    ).all(r.id).map((row) => ({
+      id: row.id, serviceId: row.service_id, serviceNumber: row.service_number, serviceName: row.service_name,
+      questionId: row.question_id, currentPrompt: row.current_prompt, currentHelpText: row.current_help_text,
+      suggestedPrompt: row.suggested_prompt, suggestedHelpText: row.suggested_help_text,
+      rationale: row.rationale, sources: jsonParse(row.sources, []),
+    }));
+    res.json({ descriptors, questions });
   });
 
   // ===================================================================================
