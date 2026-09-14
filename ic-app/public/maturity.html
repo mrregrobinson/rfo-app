@@ -79,10 +79,6 @@ table.tbl td{padding:7px 8px;border-bottom:0.5px solid var(--border);vertical-al
 .pickrow{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:0.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:12px}
 .pickrow.on{border-color:var(--navy);background:var(--navy-l)}
 .pickrow .pn{font-weight:700;color:var(--muted);flex-shrink:0}
-.arc{display:flex;gap:3px;flex-wrap:wrap}
-.arc .step{flex:1;min-width:64px;text-align:center;border:0.5px solid var(--border);border-radius:7px;padding:5px 4px;cursor:pointer;font-size:10.5px;background:#fff}
-.arc .step.on{background:var(--navy);color:#fff;border-color:var(--navy)}
-.arc .step .n{font-weight:700;font-size:12px}
 .track{position:relative;height:34px;border-radius:8px;background:linear-gradient(90deg,var(--l1-bg),var(--gold-l),var(--l5-bg));margin:6px 0}
 .track .dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
 .track .cog{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--gold)}
@@ -109,16 +105,6 @@ function rollup(answers,questions){
   for(const a of answers){if(!w.has(a.questionId))continue;const v=Number(a.value);if(!isFinite(v))continue;const ww=w.get(a.questionId);s+=v*ww;tw+=ww;}
   if(!tw)return null;
   return Math.max(1,Math.min(5,Math.round((s/tw)*2)/2));
-}
-// mirrors server/maturity.js consciousnessOverallRollup — the family-wide, once-per-round
-// Capital Consciousness read: weighted centroid across the 7 level statements, RANKED
-// from most to least true (not rated independently). `answers` is [{level,value}], where
-// value is the rank given that statement: 1 = most true .. 7 = least true.
-function ccOverallRollup(answers){
-  let s=0,tw=0;
-  for(const a of answers){const lvl=Number(a.level);const rank=Number(a.value);if(!isFinite(lvl)||lvl<1||lvl>7||!isFinite(rank)||rank<1||rank>7)continue;const w=8-rank;s+=lvl*w;tw+=w;}
-  if(!tw)return null;
-  return Math.max(1,Math.min(7,Math.round(s/tw)));
 }
 function levelChip(level,extra){
   if(level==null)return h('span',{className:'chip chip-none'},'—');
@@ -538,26 +524,25 @@ function ActionList({actions,serviceId,dimensionId,roundId,members,roles,onChang
 
 // =====================================================================
 // Capital Consciousness tab — a standalone, once-per-round family-wide instrument
-// (§5.8), NOT tied to any one service. A plain 1-5 "how true does this feel" rating per
-// statement, answered independently, turned out confusing — most people rated several
-// statements similarly, flattening the read. Instead, members RANK all 7 statements from
-// most to least true (click to add to the ranking, click again to remove); the level is
-// the weighted centroid of that ranking, not a self-label.
+// (§5.8), NOT tied to any one service. Two earlier approaches — rating each of the 7
+// statements independently 1-5, then ranking all 7 from most to least true — both proved
+// more confusing than the thing they were meant to simplify. This just asks: which ONE
+// statement best reflects the family today? The level is that statement's level — no
+// computation, no separate override path, the same shape as the maturity worksheet's own
+// "which of these five descriptions fits best" question.
 // =====================================================================
 function CCTab({roundId,roundMeta,consciousnessNote}){
   const [d,setD]=useState(null);
-  const [order,setOrder]=useState([]); // level ids, most-true first
+  const [picked,setPicked]=useState(null);
   const [note,setNote]=useState('');
-  const [override,setOverride]=useState(null);
   const [busy,setBusy]=useState(false);
   const [saved,setSaved]=useState(false);
   useEffect(()=>{
     setD(null);
     api.get('/api/maturity/cc'+(roundId?('?round='+roundId):'')).then(d=>{
       setD(d);
-      setOrder((d.myResponses||[]).slice().sort((a,b)=>a.value-b.value).map(r=>r.level));
+      setPicked(d.myScore?d.myScore.level:null);
       setNote((d.myScore&&d.myScore.note)||'');
-      setOverride(d.myScore&&d.myScore.method==='direct'?d.myScore.level:null);
     });
   },[roundId]);
   if(!d)return h('div',{className:'card'},'Loading…');
@@ -565,65 +550,43 @@ function CCTab({roundId,roundMeta,consciousnessNote}){
   const editable=roundMeta&&roundMeta.status==='open';
   const levels=d.levels||[];
   const statements=d.statements||[];
-  const allRanked=statements.length>0&&order.length===statements.length;
-  const computed=allRanked?ccOverallRollup(order.map((lvl,i)=>({level:lvl,value:i+1}))):null;
   const submitted=d.myScore&&d.myScore.submitted;
-  async function saveOrder(next){
-    setOrder(next);
+  async function pick(level){
+    setPicked(level);
     try{
-      await api.put('/api/maturity/consciousness-responses',{roundId:d.roundId,responses:next.map((lvl,i)=>({level:lvl,value:i+1}))});
+      await api.put('/api/maturity/consciousness-pick',{roundId:d.roundId,level});
       setSaved(true);setTimeout(()=>setSaved(false),1200);
     }catch(e){alert(e.message);}
   }
-  function toggleRank(level){
-    saveOrder(order.includes(level)?order.filter(l=>l!==level):[...order,level]);
-  }
   async function saveNote(v){
     setNote(v);
-    if(override==null){try{await api.put('/api/maturity/consciousness/override',{roundId:d.roundId,note:v});}catch(e){}}
+    try{await api.put('/api/maturity/consciousness-pick',{roundId:d.roundId,note:v});}catch(e){}
   }
   async function submit(){
     setBusy(true);
     try{
-      if(override!=null)await api.put('/api/maturity/consciousness/override',{roundId:d.roundId,level:override});
-      if(note)await api.put('/api/maturity/consciousness/override',{roundId:d.roundId,note});
       await api.post('/api/maturity/consciousness/submit',{roundId:d.roundId});
       const fresh=await api.get('/api/maturity/cc?round='+d.roundId);
       setD(fresh);
     }catch(e){alert(e.message);}finally{setBusy(false);}
   }
-  const ready=override!=null||computed!=null;
+  const ready=picked!=null;
   const s=d.summary||{}, prev=d.prevSummary||{};
   return h('div',null,
     editable&&h('div',{className:'card'},
-      h('div',{className:'sec',style:{marginTop:0}},'Where is the family deciding from right now?'),
+      h('div',{className:'sec',style:{marginTop:0}},'Where is the family today?'),
       d.question&&h('div',{className:'small muted',style:{marginBottom:10}},d.question.intro),
-      h('div',{className:'small',style:{marginBottom:8,fontWeight:600,color:'var(--navy)'}},
-        allRanked?'All 7 ranked':'Ranked '+order.length+' of 7 — click a statement to rank it next'),
-      order.map((lvl,i)=>{
-        const st=statements.find(x=>x.level===lvl);
-        if(!st)return null;
-        return h('div',{key:lvl,className:'pickrow on',onClick:()=>toggleRank(lvl)},
-          h('span',{className:'pn'},i+1),h('span',null,st.statement));
-      }),
-      statements.filter(st=>!order.includes(st.level)).map(st=>
-        h('div',{key:st.level,className:'pickrow',onClick:()=>toggleRank(st.level)},
-          h('span',{className:'pn'},'○'),h('span',null,st.statement))
-      ),
-      order.length>0&&h('button',{className:'linkbtn',style:{marginBottom:10},onClick:()=>saveOrder([])},'Clear ranking'),
+      statements.map(st=>h('div',{key:st.level,className:'pickrow'+(picked===st.level?' on':''),
+        title:(levels.find(l=>l.level===st.level)||{}).description||'',onClick:()=>pick(st.level)},
+        h('span',{className:'pn'},picked===st.level?'●':'○'),h('span',null,st.statement))),
       h('div',{style:{display:'flex',alignItems:'center',gap:10,margin:'10px 0 6px',flexWrap:'wrap'}},
-        h('span',{className:'small muted'},'Level:'),ccChip(override!=null?override:computed,levels),
-        h('button',{className:'linkbtn',onClick:()=>setOverride(override==null?(computed||4):null)},override==null?'place directly':'use computed'),
+        picked!=null&&h('span',null,h('span',{className:'small muted'},'Level:'),' ',ccChip(picked,levels)),
         saved&&h('span',{className:'small',style:{color:'var(--teal)'}},'saved')),
-      override!=null&&h('div',{style:{marginBottom:10}},
-        d.question&&h('div',{className:'small muted',style:{marginBottom:6}},d.question.overrideHelp),
-        h('div',{className:'arc'},levels.map(l=>h('div',{key:l.level,className:'step'+(override===l.level?' on':''),title:l.description,onClick:()=>setOverride(l.level)},
-          h('div',{className:'n'},l.level),l.name)))),
       h('input',{className:'form-input',placeholder:(d.question&&d.question.reflectionPrompt)||'Anything you\'d add? (optional)',value:note,
         onChange:e=>setNote(e.target.value),onBlur:e=>saveNote(e.target.value)}),
       h('div',{style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
         h('span',{style:{flex:1}}),
-        !ready&&h('span',{className:'small muted'},'Rank all 7 statements above to submit'),
+        !ready&&h('span',{className:'small muted'},'Pick the statement above that fits best to submit'),
         h('button',{className:'btn btn-teal btn-sm',disabled:busy||!ready,onClick:submit},submitted?'Re-submit':'Submit')),
       consciousnessNote&&h('div',{style:{marginTop:10,fontSize:10.5,color:'var(--muted)'}},consciousnessNote)),
     !editable&&h('div',{className:'card'},

@@ -251,23 +251,27 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 - `maturity_benchmarks` — per (round, service) Claude web-search benchmark
   (`server/claude.js` `benchmarkMaturityService`); the round's written synthesis
   (`synthesizeMaturityRound`) is stored on `maturity_rounds.synthesis_json`.
-- `maturity_cc_levels` / `maturity_consciousness_statements` / `_responses` / `_scores` —
-  Capital Consciousness (§5.8 of the build spec), a **standalone instrument answered once
-  per round for the family as a whole**, not per service. `maturity_cc_levels` names the
+- `maturity_cc_levels` / `maturity_consciousness_statements` / `_scores` — Capital
+  Consciousness (§5.8 of the build spec), a **standalone instrument answered once per
+  round for the family as a whole**, not per service. `maturity_cc_levels` names the
   7-level scale (1 survival → 7 freedom); `maturity_consciousness_statements` holds one
-  plain-language statement per level (admin-editable); each member RANKS all 7 from most
-  to least true (`maturity_consciousness_responses.value` = the rank given that statement,
-  1..7, migration 038 — an earlier version asked for an independent 1-5 "how true" rating
-  per statement and that was confusing, since most people rated several similarly) and the
-  level is DERIVED as the weighted centroid across that ranking (`consciousnessOverallRollup`
-  — the top-ranked statement counts for the most, mirroring the white paper's own Appendix I
-  self-assessment logic), stored with a computed/override split on
-  `maturity_consciousness_scores` (same `level`/`computed_level`/`method` shape as
-  `maturity_service_scores`, at round grain instead of service grain). This design was
-  tried once as a **per-service** thing (migrations 034–036: two extra axis-tagged
-  questions on every one of the 16 service worksheets) and reverted (migration 037) —
-  asking the same shallow questions 16 times over wasn't a real measurement of the
-  family's actual level of awareness, just a repeated shallow read.
+  plain-language statement per level (admin-editable); each member picks the ONE
+  statement that best reflects the family today (`PUT /api/maturity/consciousness-pick`,
+  migration 040) and the level IS that statement's level — no computation, the same
+  "which of these five descriptions fits best" shape as the maturity worksheet's own
+  question 1. `maturity_consciousness_scores` holds the placement (`level`/
+  `computed_level`/`method`/`note`/`submitted`, same shape as `maturity_service_scores`,
+  at round grain instead of service grain) — `method` stays `'questionnaire'` for an
+  active pick; round carry-forward pre-fills it `'direct'` to mean "carried from last
+  round, not yet reconfirmed". Two earlier mechanics were tried and abandoned here: an
+  independent 1-5 "how true" rating per statement (confusing — most people rated several
+  similarly) and, after that, a full ranking of all 7 from most to least true
+  (`maturity_consciousness_responses`, migration 038 — also more than the task needed;
+  dropped outright in migration 040, nothing to aggregate once the answer is a single
+  pick). Before that, it was tried once as a **per-service** thing (migrations 034–036:
+  two extra axis-tagged questions on every one of the 16 service worksheets) and reverted
+  (migration 037) — asking the same shallow questions 16 times over wasn't a real
+  measurement of the family's actual level of awareness, just a repeated shallow read.
 - `maturity_actions` — "Notes / actions" per service or synthesis finding, each with a
   nullable `task_id` linking to a promoted Family Task List task (a soft reference, like
   `risk_actions.task_id`); soft-deleted via `archived_at`.

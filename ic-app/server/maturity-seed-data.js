@@ -232,14 +232,13 @@ function questionsForService(svc) {
 
 // ---- Capital Consciousness — a standalone, once-per-round instrument (§5.8) ----
 // Disconnected again from the per-service maturity worksheet (see migration 037's header
-// comment for why). One statement per level, in the spirit of the white paper's own
-// self-assessment (Appendix I: "the level at which you find the most 'currently true'
-// responses is likely your dominant level"): rank all seven from most to least true, and
-// the level is the weighted centroid of that ranking (statements ranked closer to the top
-// carry more weight) — not a single pick, and not a bare self-placement on the named arc.
-// An earlier version asked people to rate each statement 1-5 independently; in practice
-// most people rated several statements similarly, which flattened the read — ranking
-// forces a relative call instead. See consciousnessOverallRollup in server/maturity.js.
+// comment for why). One statement per level. The level is derived by picking the ONE
+// statement that best reflects the family today (migration 040) — not a bare
+// self-placement on the named arc (nobody has to know the framework's level names to
+// answer, only recognize which plain-language statement fits). Two earlier mechanics
+// tried here — an independent 1-5 "how true" rating per statement, then a full ranking of
+// all seven from most to least true — both proved more confusing than the thing they were
+// meant to simplify.
 const CONSCIOUSNESS_STATEMENTS = [
   { level: 1, statement: 'When it comes to our wealth, our first instinct is to protect what we have and avoid losing it — even when that means passing on opportunities that are probably fine.' },
   { level: 2, statement: 'We pay close attention to returns, fees, and how we compare to others, judging most financial decisions mainly on their own merits rather than as part of the bigger picture.' },
@@ -267,17 +266,10 @@ const CC_LEVELS = [
     description: 'Wealth is still managed with full rigour, but it no longer occupies the centre of gravity or defines identity. The grip loosens; optimisation continues without attachment to it.' },
 ];
 
-// Intro copy + the optional free-text reflection shown once, beneath the 7 statements —
-// the level itself is computed, never asked directly (no "pick your level" prompt).
-// A plain 1-5 "how true does this feel" rating per statement, independently answered,
-// turned out confusing in practice — most people rated several statements similarly,
-// which flattens the read. Ranking forces a relative call (which of these feels MOST
-// true right now, all the way down to least true) and is a more intuitive task than
-// rating seven things in isolation.
+// Intro copy + the optional free-text reflection shown once, beneath the 7 statements.
 const CONSCIOUSNESS_QUESTION = {
-  intro: 'Read all seven statements, then rank them from the one that feels most true for how your family actually relates to its capital today, down to the one that feels least true.',
+  intro: 'Read all seven statements and pick the ONE that best reflects how your family actually relates to its capital today — not how you wish it were.',
   reflectionPrompt: 'Anything you\'d add? (optional)',
-  overrideHelp: 'Computed from your ranking above. If you know the framework and want to place yourself directly instead, you can override it here.',
 };
 
 // The four dimensions of change — how movement between levels actually happens.

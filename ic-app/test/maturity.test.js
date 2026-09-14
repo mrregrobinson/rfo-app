@@ -15,7 +15,7 @@ process.env.ANTHROPIC_API_KEY = ''; // force the not-configured path for Claude 
 const db = require('../server/db');
 const { ensureSeeded } = require('../server/seed');
 const registerMaturityRoutes = require('../server/maturity');
-const { levelRollup, levelClass, consciousnessOverallRollup } = require('../server/maturity');
+const { levelRollup, levelClass } = require('../server/maturity');
 
 ensureSeeded();
 
@@ -58,26 +58,6 @@ describe('levelRollup / levelClass', () => {
   });
 });
 
-describe('consciousnessOverallRollup — weighted centroid across a RANKING of the 7 statements, once per round', () => {
-  // `value` is the rank a member gave a statement: 1 = most true .. 7 = least true.
-  // Weight = 8 - rank, so the top-ranked statement counts for the most.
-  test('ranking level-by-level in ascending order centres at 3', () => {
-    const natural = [1, 2, 3, 4, 5, 6, 7].map((level) => ({ level, value: level })); // statement 1 ranked most true .. statement 7 ranked least true
-    assert.equal(consciousnessOverallRollup(natural), 3); // Σ i*(8-i) / Σ(8-i) = 84/28 = 3
-  });
-  test('reversing the ranking (highest levels ranked most true) pulls the centroid up', () => {
-    const reversed = [1, 2, 3, 4, 5, 6, 7].map((level) => ({ level, value: 8 - level })); // statement 7 ranked most true (rank 1)
-    assert.equal(consciousnessOverallRollup(reversed), 5); // Σ i*i / Σ i = 140/28 = 5
-  });
-  test('a single top-ranked statement pulls the centroid all the way to its level', () => {
-    assert.equal(consciousnessOverallRollup([{ level: 7, value: 1 }]), 7);
-    assert.equal(consciousnessOverallRollup([{ level: 1, value: 1 }]), 1);
-  });
-  test('invalid entries (bad level, or rank out of 1..7) are ignored; no valid answers -> null', () => {
-    assert.equal(consciousnessOverallRollup([{ level: 0, value: 1 }, { level: 8, value: 1 }, { level: 3, value: 0 }, { level: 4, value: 8 }]), null);
-    assert.equal(consciousnessOverallRollup([]), null);
-  });
-});
 
 describe('seed — the Appendix B reference round', () => {
   test('16 services in 5 categories with 80 level descriptors, 4 questions each', () => {
@@ -290,10 +270,10 @@ describe('actions <-> Family Task List', () => {
   });
 });
 
-describe('Capital Consciousness — standalone, once per round (§5.8)', () => {
+describe('Capital Consciousness — standalone, once per round, a single pick (§5.8)', () => {
   let roundId;
-  test('the per-service consciousness schema is gone; /cc serves the 7 statements + scale', async () => {
-    for (const t of ['maturity_cc_dimensions', 'maturity_cc_prompts', 'maturity_cc_responses']) {
+  test('the per-service consciousness schema, and the old ranking table, are both gone; /cc serves the 7 statements + scale', async () => {
+    for (const t of ['maturity_cc_dimensions', 'maturity_cc_prompts', 'maturity_cc_responses', 'maturity_consciousness_responses']) {
       assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name = ?").get(t).n, 0, `${t} should be dropped`);
     }
     for (const col of ['consciousness_level', 'computed_consciousness_level', 'consciousness_method', 'consciousness_note']) {
@@ -308,37 +288,40 @@ describe('Capital Consciousness — standalone, once per round (§5.8)', () => {
     assert.equal(cc.levels.length, 7);
     assert.equal(cc.statements.length, 7);
     assert.ok(cc.question && cc.question.intro && cc.question.reflectionPrompt);
-    assert.equal(cc.myResponses.length, 0);
+    assert.ok(!('myResponses' in cc), 'no more per-statement responses to report');
     assert.equal(cc.myScore, null);
   });
-  test('ranking the statements derives a level; submitting requires a full ranking, not a partial one', async () => {
+  test('picking a statement sets the level directly; submitting requires a pick', async () => {
     as('ross');
     const cc = (await get(`/api/maturity/cc?round=${roundId}`)).body;
     assert.equal(cc.statements.length, 7);
 
-    const fullOrder = [7, 6, 5, 4, 3, 2, 1]; // most true (statement 7) down to least true (statement 1)
-    const partial = fullOrder.slice(0, 3).map((level, i) => ({ level, value: i + 1 }));
-    const partialSave = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: partial });
-    assert.equal(partialSave.body.stored, 3);
+    // cannot submit before picking anything
     assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 400);
 
-    const full = fullOrder.map((level, i) => ({ level, value: i + 1 }));
-    const saved = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: full });
-    assert.equal(saved.body.stored, 7);
-    assert.equal(saved.body.computedLevel, 5);
+    // an out-of-range / non-existent statement level is rejected
+    assert.equal((await send('PUT', '/api/maturity/consciousness-pick', { roundId, level: 9 })).status, 400);
 
-    // un-ranking a statement (dropping it from the payload) deletes its stored response —
-    // replace semantics, not additive — so the ranking goes back to partial
-    const withoutOne = full.filter((a) => a.level !== 1);
-    const afterDrop = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: withoutOne });
-    assert.equal(afterDrop.body.stored, 6);
-    assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 400);
+    const picked = await send('PUT', '/api/maturity/consciousness-pick', { roundId, level: 5 });
+    assert.equal(picked.status, 200);
+    assert.equal(picked.body.level, 5);
+    let row = db.prepare("SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = 'ross'").get(roundId);
+    assert.equal(row.level, 5);
+    assert.equal(row.computed_level, 5);
+    assert.equal(row.method, 'questionnaire');
 
-    // re-rank fully
-    const saved2 = await send('PUT', '/api/maturity/consciousness-responses', { roundId, responses: full });
-    assert.equal(saved2.body.stored, 7);
+    // changing your mind just re-picks — no separate "un-pick" step needed
+    await send('PUT', '/api/maturity/consciousness-pick', { roundId, level: 3 });
+    row = db.prepare("SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = 'ross'").get(roundId);
+    assert.equal(row.level, 3);
 
-    // cannot submit before answering at all (a fresh member with nothing recorded yet)
+    // a note can be saved on its own, without re-picking
+    await send('PUT', '/api/maturity/consciousness-pick', { roundId, note: 'discussed as a family over dinner' });
+    row = db.prepare("SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = 'ross'").get(roundId);
+    assert.equal(row.level, 3); // unchanged
+    assert.equal(row.note, 'discussed as a family over dinner');
+
+    // cannot submit before picking at all (a fresh member with nothing recorded yet)
     as('lucas');
     assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 400);
 
@@ -347,27 +330,21 @@ describe('Capital Consciousness — standalone, once per round (§5.8)', () => {
     const mine = (await get(`/api/maturity/cc?round=${roundId}`)).body.myScore;
     assert.equal(mine.submitted, true);
     assert.equal(mine.method, 'questionnaire');
-    assert.equal(mine.level, 5);
+    assert.equal(mine.level, 3);
+    assert.equal(mine.note, 'discussed as a family over dinner');
   });
-  test('override sets method=direct; a bare note never flips it back; family summary rolls up all submitted members', async () => {
+  test('family summary rolls up every submitted member', async () => {
     as('lucas');
-    assert.equal((await send('PUT', '/api/maturity/consciousness/override', { roundId, level: 2 })).status, 200);
-    let row = db.prepare("SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = 'lucas'").get(roundId);
-    assert.equal(row.level, 2);
-    assert.equal(row.method, 'direct');
-    assert.equal((await send('PUT', '/api/maturity/consciousness/override', { roundId, note: 'gut read, not the questionnaire' })).status, 200);
-    row = db.prepare("SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = 'lucas'").get(roundId);
-    assert.equal(row.level, 2);
-    assert.equal(row.method, 'direct');
-    assert.equal(row.note, 'gut read, not the questionnaire');
+    assert.equal((await send('PUT', '/api/maturity/consciousness-pick', { roundId, level: 2 })).status, 200);
     assert.equal((await send('POST', '/api/maturity/consciousness/submit', { roundId })).status, 200);
 
     as('reg');
     const cc = (await get(`/api/maturity/cc?round=${roundId}`)).body;
-    assert.equal(cc.summary.count, 2); // ross (questionnaire) + lucas (direct)
+    assert.equal(cc.summary.count, 2); // ross + lucas
     assert.ok(cc.summary.cog != null);
     const members = cc.summary.members;
-    assert.ok(members.find((m) => m.userId === 'lucas' && m.level === 2 && m.note));
+    assert.ok(members.find((m) => m.userId === 'lucas' && m.level === 2));
+    assert.ok(members.find((m) => m.userId === 'ross' && m.level === 3 && m.note));
   });
   test('DELETE /api/maturity/rounds/:id removes every trace and reassigns the anchor if needed', async () => {
     as('lucas');
@@ -379,7 +356,6 @@ describe('Capital Consciousness — standalone, once per round (§5.8)', () => {
     assert.equal(r.status, 200);
     assert.equal(db.prepare('SELECT * FROM maturity_rounds WHERE id = ?').get(roundId), undefined);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM maturity_consciousness_scores WHERE round_id = ?').get(roundId).n, 0);
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM maturity_consciousness_responses WHERE round_id = ?').get(roundId).n, 0);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM maturity_service_scores WHERE round_id = ?').get(roundId).n, 0);
     // deleting a nonexistent round 404s
     assert.equal((await del(`/api/maturity/rounds/${roundId}`)).status, 404);

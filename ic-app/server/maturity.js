@@ -51,39 +51,10 @@ function levelRollup(answers, questions) {
   if (w === 0) return null;
   return clampLevel(Math.round((wsum / w) * 2) / 2);
 }
-// Derives the family's Capital Consciousness level (1-7) for a round from one member's
-// RANKING of the 7 statements (one per level, §5.8) — not an independent 1-5 "how true"
-// rating per statement (that turned out confusing: most people rated several statements
-// similarly, flattening the read). Each answer carries `value` = the rank the member gave
-// that statement, 1 (most true) .. 7 (least true); a rank of 1 is worth the most weight
-// (7), a rank of 7 the least (1), so the level is the weighted centroid across all seven,
-// pulled toward whichever statements were ranked closest to the top. In the spirit of the
-// white paper's own self-assessment (Appendix I: "the level at which you find the most
-// 'currently true' responses is likely your dominant level") — never a single pick, never
-// a bare self-placement on the named arc.
-function consciousnessOverallRollup(answers) {
-  let wsum = 0;
-  let w = 0;
-  for (const a of answers) {
-    const lvl = Number(a.level);
-    const rank = Number(a.value);
-    if (!Number.isFinite(lvl) || lvl < 1 || lvl > 7 || !Number.isFinite(rank) || rank < 1 || rank > 7) continue;
-    const weight = 8 - rank; // rank 1 (most true) -> weight 7 ... rank 7 (least true) -> weight 1
-    wsum += lvl * weight;
-    w += weight;
-  }
-  if (w === 0) return null;
-  return clampCcLevel(wsum / w);
-}
 function clampLevel(x) {
   const n = Number(x);
   if (!Number.isFinite(n)) return null;
   return Math.max(1, Math.min(5, n));
-}
-function clampCcLevel(x) {
-  const n = Number(x);
-  if (!Number.isFinite(n)) return null;
-  return Math.max(1, Math.min(7, Math.round(n)));
 }
 // UI band for a 1-5 level — mirrored in the frontend + report.
 function levelClass(level) {
@@ -403,12 +374,9 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   });
 
   // Capital Consciousness — the standalone instrument for this round: the 7 statements,
-  // the caller's own answers/score, and the family-wide rollup so far.
+  // the caller's own pick/score, and the family-wide rollup so far.
   app.get('/api/maturity/cc', requireAuth, (req, res) => {
     const roundId = resolveRoundId(req.query);
-    const myResponses = roundId
-      ? db.prepare('SELECT level, value FROM maturity_consciousness_responses WHERE round_id = ? AND user_id = ?').all(roundId, req.session.userId)
-      : [];
     const myScoreRow = roundId
       ? db.prepare('SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = ?').get(roundId, req.session.userId)
       : null;
@@ -419,7 +387,6 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       question: CONSCIOUSNESS_QUESTION,
       changeDimensions: CHANGE_DIMENSIONS,
       note: CONSCIOUSNESS_NOTE,
-      myResponses,
       myScore: myScoreRow ? { level: myScoreRow.level, computedLevel: myScoreRow.computed_level, method: myScoreRow.method, note: myScoreRow.note, submitted: !!myScoreRow.submitted } : null,
       summary: roundId ? consciousnessRoundSummary(roundId) : null,
       prevSummary: roundId ? consciousnessRoundSummary(previousClosedRoundId(roundId)) : null,
@@ -525,84 +492,44 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
 
   // ---- Capital Consciousness (member) — standalone, once per round ----
 
-  // Replaces the caller's current ranking of the 7 statements with exactly what's sent
-  // (an in-progress ranking has fewer than 7 entries; a statement dropped from the list —
-  // the member clicked it again to un-rank it — is deleted here too, not just left stale),
-  // then recomputes + upserts their maturity_consciousness_scores row (method
-  // 'questionnaire' unless a standing 'direct' override is in place — see the override
-  // route below).
-  app.put('/api/maturity/consciousness-responses', requireAuth, (req, res) => {
+  // Sets the caller's Capital Consciousness placement for the round by picking the ONE
+  // statement (of the 7) that best reflects the family today — the level IS that
+  // statement's level, no computation and no separate override path (two earlier
+  // approaches, rating each statement 1-5 independently and then ranking all 7, both
+  // proved more confusing than the thing they were meant to simplify). `level` and `note`
+  // can be sent independently, so typing a note never requires re-picking.
+  // `method` stays 'questionnaire' for an active pick; carry-forward pre-fill (see
+  // POST /rounds/:id/open) still uses 'direct' to mean "not yet reconfirmed this round".
+  app.put('/api/maturity/consciousness-pick', requireAuth, (req, res) => {
     if (!requireMember(req, res)) return;
     const b = req.body || {};
     const round = getRound(b.roundId);
     if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
-    const validLevels = new Set(ccStatements().map((s) => s.level));
-    const answers = Array.isArray(b.responses) ? b.responses.filter((a) => validLevels.has(Number(a.level))) : [];
-    const now = new Date().toISOString();
-    const up = db.prepare(
-      `INSERT INTO maturity_consciousness_responses (id, round_id, user_id, level, value, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(round_id, user_id, level) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
-    );
-    for (const a of answers) {
-      // value = the rank the member gave this statement (1 = most true .. 7 = least true)
-      const v = Math.max(1, Math.min(7, Math.round(Number(a.value) || 4)));
-      up.run(crypto.randomUUID(), b.roundId, req.session.userId, Number(a.level), v, now);
-    }
-    const keepLevels = answers.map((a) => Number(a.level));
-    if (keepLevels.length) {
-      const placeholders = keepLevels.map(() => '?').join(',');
-      db.prepare(`DELETE FROM maturity_consciousness_responses WHERE round_id = ? AND user_id = ? AND level NOT IN (${placeholders})`)
-        .run(b.roundId, req.session.userId, ...keepLevels);
-    } else {
-      db.prepare('DELETE FROM maturity_consciousness_responses WHERE round_id = ? AND user_id = ?').run(b.roundId, req.session.userId);
-    }
-    const stored = db.prepare('SELECT level, value FROM maturity_consciousness_responses WHERE round_id = ? AND user_id = ?').all(b.roundId, req.session.userId);
-    const computed = consciousnessOverallRollup(stored);
-    const existing = db.prepare('SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = ?').get(b.roundId, req.session.userId);
-    if (existing && existing.method === 'direct' && existing.submitted) {
-      db.prepare('UPDATE maturity_consciousness_scores SET computed_level = ? WHERE id = ?').run(computed, existing.id);
-    } else if (existing) {
-      db.prepare('UPDATE maturity_consciousness_scores SET level = ?, computed_level = ?, method = ? WHERE id = ?')
-        .run(computed ?? existing.level, computed, 'questionnaire', existing.id);
-    } else if (computed != null) {
-      db.prepare(
-        `INSERT INTO maturity_consciousness_scores (id, round_id, user_id, level, computed_level, method, note, submitted, submitted_at)
-         VALUES (?, ?, ?, ?, ?, 'questionnaire', '', 0, NULL)`
-      ).run(crypto.randomUUID(), b.roundId, req.session.userId, computed, computed);
-    }
-    res.json({ computedLevel: computed, stored: stored.length });
-  });
-
-  // Manual override (place directly on the named arc) and/or saving the optional
-  // reflection note — kept separate so typing a note never silently flips a still-computed
-  // level to 'direct'. Mirrors PUT /scores' override contract for the maturity axis.
-  app.put('/api/maturity/consciousness/override', requireAuth, (req, res) => {
-    if (!requireMember(req, res)) return;
-    const b = req.body || {};
-    const round = getRound(b.roundId);
-    if (!round || round.status === 'closed') return res.status(400).json({ error: 'That round is not editable.' });
     const hasLevel = b.level != null;
-    const lvl = hasLevel ? clampCcLevel(b.level) : null;
-    if (hasLevel && lvl == null) return res.status(400).json({ error: 'level must be 1..7' });
+    let level = null;
+    if (hasLevel) {
+      // a discrete pick from the 7 statements — reject anything that isn't one of them,
+      // rather than silently clamping an out-of-range value into looking like a valid pick
+      const raw = Number(b.level);
+      if (!Number.isInteger(raw) || !ccStatements().some((s) => s.level === raw)) return res.status(400).json({ error: 'level must match one of the statements' });
+      level = raw;
+    }
     const hasNote = b.note != null;
     const note = hasNote ? String(b.note).trim() : '';
     const existing = db.prepare('SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = ?').get(b.roundId, req.session.userId);
-    const now = new Date().toISOString();
     if (existing) {
       const sets = [];
       const params = { id: existing.id };
-      if (hasLevel) { sets.push('level = @lvl', "method = 'direct'"); params.lvl = lvl; }
+      if (hasLevel) { sets.push('level = @lvl', 'computed_level = @lvl', "method = 'questionnaire'"); params.lvl = level; }
       if (hasNote) { sets.push('note = @note'); params.note = note; }
-      if (b.submitted) { sets.push('submitted = 1', 'submitted_at = @now'); params.now = now; }
       if (sets.length) db.prepare(`UPDATE maturity_consciousness_scores SET ${sets.join(', ')} WHERE id = @id`).run(params);
     } else if (hasLevel) {
       db.prepare(
         `INSERT INTO maturity_consciousness_scores (id, round_id, user_id, level, computed_level, method, note, submitted, submitted_at)
-         VALUES (?, ?, ?, ?, NULL, 'direct', ?, ?, ?)`
-      ).run(crypto.randomUUID(), b.roundId, req.session.userId, lvl, note, b.submitted ? 1 : 0, b.submitted ? now : null);
+         VALUES (?, ?, ?, ?, ?, 'questionnaire', ?, 0, NULL)`
+      ).run(crypto.randomUUID(), b.roundId, req.session.userId, level, level, note);
     }
-    res.json({ ok: true });
+    res.json({ ok: true, level });
   });
 
   app.post('/api/maturity/consciousness/submit', requireAuth, (req, res) => {
@@ -611,12 +538,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const round = getRound(roundId);
     if (!round || round.status !== 'open') return res.status(400).json({ error: 'That round is not open for assessment.' });
     const row = db.prepare('SELECT * FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = ?').get(roundId, req.session.userId);
-    if (!row || row.level == null) return res.status(400).json({ error: 'Answer the Capital Consciousness statements first.' });
-    if (row.method !== 'direct') {
-      const rankedCount = db.prepare('SELECT COUNT(*) AS n FROM maturity_consciousness_responses WHERE round_id = ? AND user_id = ?').get(roundId, req.session.userId).n;
-      const total = ccStatements().length;
-      if (rankedCount < total) return res.status(400).json({ error: `Rank all ${total} statements before submitting.` });
-    }
+    if (!row || row.level == null) return res.status(400).json({ error: 'Pick the statement that best reflects the family first.' });
     db.prepare('UPDATE maturity_consciousness_scores SET submitted = 1, submitted_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
     logAudit({ userId: req.session.userId, action: 'maturity.consciousness_submitted', entityType: 'maturity_round', entityId: roundId });
     res.json({ ok: true });
@@ -706,8 +628,9 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         }
       }
       // Capital Consciousness is a fresh, once-per-round read, but carrying the prior
-      // placement forward (unsubmitted, as a starting point) keeps continuity — a member
-      // who agrees can just re-submit; anyone who's shifted overrides or re-answers.
+      // placement forward (unsubmitted, method 'direct' — "not yet reconfirmed") keeps
+      // continuity: a member who agrees can just re-submit; anyone who's shifted just
+      // picks a different statement, which flips method back to 'questionnaire'.
       const prevCc = db.prepare('SELECT user_id, level, note FROM maturity_consciousness_scores WHERE round_id = ? AND submitted = 1').all(src);
       for (const p of prevCc) {
         const exists = db.prepare('SELECT id FROM maturity_consciousness_scores WHERE round_id = ? AND user_id = ?').get(r.id, p.user_id);
@@ -763,7 +686,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const r = getRound(req.params.id);
     if (!r) return res.status(404).json({ error: 'Round not found' });
     db.prepare('UPDATE maturity_actions SET round_id = NULL WHERE round_id = ?').run(r.id);
-    for (const t of ['maturity_responses', 'maturity_service_scores', 'maturity_consciousness_responses', 'maturity_consciousness_scores', 'maturity_benchmarks', 'maturity_descriptor_suggestions', 'maturity_question_suggestions', 'maturity_round_snapshots']) {
+    for (const t of ['maturity_responses', 'maturity_service_scores', 'maturity_consciousness_scores', 'maturity_benchmarks', 'maturity_descriptor_suggestions', 'maturity_question_suggestions', 'maturity_round_snapshots']) {
       db.prepare(`DELETE FROM ${t} WHERE round_id = ?`).run(r.id);
     }
     db.prepare('DELETE FROM maturity_rounds WHERE id = ?').run(r.id);
@@ -1290,4 +1213,3 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
 
 module.exports.levelRollup = levelRollup;
 module.exports.levelClass = levelClass;
-module.exports.consciousnessOverallRollup = consciousnessOverallRollup;
