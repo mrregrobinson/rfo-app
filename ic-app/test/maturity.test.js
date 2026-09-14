@@ -202,6 +202,33 @@ describe('Claude endpoints degrade when not configured', () => {
   });
 });
 
+describe('Claude benchmark recommendation — how it got there, and whether to act on it', () => {
+  test('the service detail endpoint surfaces recommendedPriority + recommendation alongside the benchmark', async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, recommended_priority, recommendation, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+       VALUES ('bench-rec-1', 'round-2026-baseline', 'svc-08', 4, 'compared against Campden/FOE surveys for this size', 'Immediate', 'The family scores itself at 2 while a comparable office is typically at 4 — a wide, consequential gap.', '["do X","do Y"]', '[]', '', 'test', 'reg', ?)`
+    ).run(now);
+    as('reg');
+    const detail = (await get('/api/maturity/services/svc-08?round=round-2026-baseline')).body;
+    assert.equal(detail.benchmark.recommendedPriority, 'Immediate');
+    assert.match(detail.benchmark.recommendation, /wide, consequential gap/);
+    assert.deepEqual(detail.benchmark.whatWouldMoveUp, ['do X', 'do Y']);
+    db.prepare("DELETE FROM maturity_benchmarks WHERE id = 'bench-rec-1'").run();
+  });
+  test('a benchmark row inserted without the new columns (the pre-migration-041 shape) still gets a valid default', () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+       VALUES ('bench-legacy-1', 'round-2026-baseline', 'svc-09', 3, 'old-shape row', '[]', '[]', '', 'test', 'reg', ?)`
+    ).run(now);
+    const row = db.prepare("SELECT recommended_priority, recommendation FROM maturity_benchmarks WHERE id = 'bench-legacy-1'").get();
+    assert.equal(row.recommended_priority, 'Monitor');
+    assert.equal(row.recommendation, '');
+    db.prepare("DELETE FROM maturity_benchmarks WHERE id = 'bench-legacy-1'").run();
+  });
+});
+
 describe('consolidated wording-suggestions review list — Manage tab, not buried per-service', () => {
   test('GET /api/maturity/rounds/:id/wording-suggestions returns pending level + question suggestions with service context, and excludes already-reviewed ones', async () => {
     const svc = db.prepare("SELECT id, number, name FROM maturity_services WHERE id = 'svc-06'").get();

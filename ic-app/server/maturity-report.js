@@ -93,6 +93,11 @@ async function buildMaturityReportPdf(model) {
       if (bench != null) {
         doc.fillColor('#111').text(`Claude benchmark ${bench} (${labelName(bench)})   ·   gap ${gap > 0 ? '+' : ''}${gap.toFixed(1)}`);
         if (s.benchmark.rationale) doc.fillColor('#374151').text(s.benchmark.rationale);
+        if (s.benchmark.recommendedPriority) {
+          const pc = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E3A8A', Maintain: '#065F46' }[s.benchmark.recommendedPriority] || '#111';
+          doc.font('Helvetica-Bold').fillColor(pc).text(`${s.benchmark.recommendedPriority}. `, { continued: !!s.benchmark.recommendation })
+            .font('Helvetica').fillColor('#374151').text(s.benchmark.recommendation || '');
+        }
         for (const w of s.benchmark.whatWouldMoveUp || []) {
           if (doc.y > 730) doc.addPage();
           doc.fillColor('#374151').text(`   → ${w}`);

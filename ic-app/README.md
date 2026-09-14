@@ -257,8 +257,18 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   reassigning `is_anchor` to the next-earliest closed round with benchmarks if the
   deleted round held it; actions raised in it are kept but detached (`round_id = NULL`).
 - `maturity_benchmarks` — per (round, service) Claude web-search benchmark
-  (`server/claude.js` `benchmarkMaturityService`); the round's written synthesis
-  (`synthesizeMaturityRound`) is stored on `maturity_rounds.synthesis_json`.
+  (`server/claude.js` `benchmarkMaturityService`); besides the benchmark level and its
+  rationale, it carries an explicit `recommended_priority` (`Immediate`/`Active`/
+  `Monitor`/`Maintain`, migration 041 — same vocabulary as `maturity_actions.priority`)
+  and a `recommendation` explaining whether pursuing improvement here is actually worth it
+  for a family office this size. The benchmark LEVEL is assessed independently of the
+  family's own self-score, but the recommendation and its priority are explicitly informed
+  by BOTH readings together — the size of the gap between the family's score and the
+  benchmark (not the benchmark alone) drives urgency, so a family that already rates
+  itself at or above the benchmark gets `Maintain` even if the absolute level is below
+  Leading Practice. `what_would_move_up` stays the list of concrete next steps. The
+  round's written synthesis (`synthesizeMaturityRound`) is stored on
+  `maturity_rounds.synthesis_json`.
 - `maturity_cc_levels` / `maturity_consciousness_statements` / `_scores` — Capital
   Consciousness (§5.8 of the build spec), a **standalone instrument answered once per
   round for the family as a whole**, not per service. `maturity_cc_levels` names the

@@ -110,6 +110,13 @@ function levelChip(level,extra){
   if(level==null)return h('span',{className:'chip chip-none'},'—');
   return h('span',{className:'chip chip-'+levelClass(level),title:extra||''},Number(level).toFixed(1).replace(/\.0$/,''));
 }
+// Claude's benchmark recommendation on whether pursuing improvement here is worth it —
+// same vocabulary as action priorities (Immediate/Active/Monitor), plus Maintain for
+// "already appropriate for a family office this size, don't invest further right now".
+function priorityChip(p){
+  const cls={Immediate:'l1',Active:'l2',Monitor:'l4',Maintain:'l5'}[p]||'l4';
+  return h('span',{className:'chip chip-'+cls},p);
+}
 const AGREE=['Strongly disagree','Disagree','Neutral','Agree','Strongly agree'];
 const QUARTERS=['','Q1 2026','Q2 2026','Q3 2026','Q4 2026','Q1 2027','Q2 2027','Q3 2027','Q4 2027'];
 const PRIORITIES=['Immediate','Active','Monitor'];
@@ -490,6 +497,9 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
     d.benchmark?h('div',null,
       h('div',null,levelChip(d.benchmark.benchmarkLevel),'  ',h('span',{className:'small muted'},'by '+d.benchmark.searchedByName+' · '+(d.benchmark.searchedAt||'').slice(0,10))),
       h('div',{className:'small',style:{marginTop:6}},d.benchmark.rationale),
+      d.benchmark.recommendedPriority&&h('div',{style:{marginTop:8}},
+        priorityChip(d.benchmark.recommendedPriority),' ',
+        d.benchmark.recommendation&&h('span',{className:'small'},d.benchmark.recommendation)),
       d.benchmark.whatWouldMoveUp&&d.benchmark.whatWouldMoveUp.length?h('div',{style:{marginTop:6}},
         h('div',{className:'small muted'},'What would move us up'),
         d.benchmark.whatWouldMoveUp.map((x,i)=>h('div',{key:i,className:'small'},'• '+x))):null,
