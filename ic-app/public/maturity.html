@@ -705,6 +705,62 @@ function ProgressTab({roundId}){
 // draft or already open (accepting updates the live wording immediately either way — the
 // only difference is a round's own frozen ladder_json snapshot, taken at draft→open,
 // won't retroactively pick up a change made after that transition).
+// Admin-triggered outreach — opening a round never emails anyone by itself, so the admin
+// decides exactly when to ask the family to go assess. Defaults to everyone who hasn't
+// finished yet (unchecked members are skipped), but any member can be checked/unchecked —
+// e.g. to resend to one straggler, or nudge everyone including those already done as the
+// round nears its close.
+function InvitePanel({round,members,onChanged}){
+  const [completion,setCompletion]=useState(null);
+  const [checked,setChecked]=useState({});
+  const [note,setNote]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [result,setResult]=useState(null);
+  useEffect(()=>{
+    setCompletion(null);setResult(null);
+    if(!round||round.status!=='open')return;
+    api.get('/api/maturity/overview?round='+round.id).then(d=>{
+      const c=(d.round&&d.round.completion)||[];
+      setCompletion(c);
+      const init={};c.forEach(x=>{init[x.userId]=!x.complete;});setChecked(init);
+    });
+  },[round&&round.id,round&&round.status]);
+  if(!round||round.status!=='open')return null;
+  if(!completion)return h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Invite family to assess'),'Loading…');
+  const eligible=completion.filter(c=>{
+    const m=members.find(x=>x.id===c.userId);
+    return m&&(m.maturityAdmin||m.maturityRole==='member');
+  });
+  function toggle(id){setChecked({...checked,[id]:!checked[id]});}
+  async function send(){
+    const userIds=eligible.filter(c=>checked[c.userId]).map(c=>c.userId);
+    if(!userIds.length)return;
+    setBusy(true);setResult(null);
+    try{
+      const r=await api.post('/api/maturity/rounds/'+round.id+'/invite',{userIds,note:note.trim()||undefined});
+      setResult(r);
+      onChanged&&onChanged();
+    }catch(e){setResult({error:e.message});}finally{setBusy(false);}
+  }
+  return h('div',{className:'card'},
+    h('div',{className:'sec',style:{marginTop:0}},'Invite family to assess'),
+    h('div',{className:'small muted',style:{marginBottom:8}},'Sent only when you click Send — opening the round does not notify anyone by itself.'),
+    eligible.length?eligible.map(c=>h('div',{key:c.userId,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+      h('input',{type:'checkbox',checked:!!checked[c.userId],onChange:()=>toggle(c.userId)}),
+      h('span',{style:{flex:1}},c.name),
+      c.complete?h('span',{className:'chip chip-l5'},'complete')
+        :h('span',{className:'small muted'},c.servicesDone+'/'+c.servicesTotal+' services'+(c.consciousnessDone?', CC done':', CC not done'))
+    )):h('div',{className:'small muted'},'No members with an admin or member role to invite.'),
+    h('input',{className:'form-input',style:{marginTop:8},placeholder:'Add a note (optional)',value:note,onChange:e=>setNote(e.target.value)}),
+    h('button',{className:'btn btn-teal btn-sm',style:{marginTop:6},disabled:busy||!eligible.some(c=>checked[c.userId]),onClick:send},busy?'Sending…':'Send invite'),
+    result&&(result.error?h('div',{className:'alert alert-danger',style:{marginTop:8}},result.error):
+      h('div',{className:'alert alert-success',style:{marginTop:8}},
+        (result.sent.length?'Sent to '+result.sent.map(x=>x.name).join(', ')+'.':'Nothing sent.')+
+        (result.skipped.length?'  Skipped (no email on file): '+result.skipped.map(x=>x.name).join(', ')+'.':'')+
+        (result.errors.length?'  Failed: '+result.errors.map(x=>x.name).join(', ')+'.':'')))
+  );
+}
+
 function WordingSuggestionsPanel({roundId,onChanged}){
   const [d,setD]=useState(null);
   const [busy,setBusy]=useState('');
@@ -782,6 +838,7 @@ function ManageTab({data,members,onReload}){
             h('option',{value:''},'Start blank'),
             closed.map(r=>h('option',{key:r.id,value:r.id},'Carry answers from '+r.label)))),
         h('button',{className:'btn btn-teal btn-sm',disabled:busy||!label.trim(),onClick:startRound},'Start a draft round'))),
+    h(InvitePanel,{round:active,members,onChanged:onReload}),
     h(WordingSuggestionsPanel,{roundId:active?active.id:null,onChanged:onReload}),
     h('div',{className:'card'},
       h('div',{className:'sec',style:{marginTop:0}},'Closed rounds'),

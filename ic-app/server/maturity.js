@@ -21,7 +21,7 @@ const { requireAuth } = require('./auth');
 const claude = require('./claude');
 const mailer = require('./mailer');
 const { logApiUsage } = require('./usage');
-const { contentRow, paragraph, emailShell } = require('./email-template');
+const { contentRow, paragraph, emailShell, escapeHtml } = require('./email-template');
 const { buildMaturityReportPdf } = require('./maturity-report');
 const { CONSCIOUSNESS_NOTE, CONSCIOUSNESS_QUESTION, CHANGE_DIMENSIONS, FAMILY_CONTEXT } = require('./maturity-seed-data');
 
@@ -647,6 +647,71 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     }
     logAudit({ userId: req.session.userId, action: 'maturity.round_opened', entityType: 'maturity_round', entityId: r.id });
     res.json({ ok: true });
+  });
+
+  // Notify family members to go complete their assessment. Purely admin-triggered — no
+  // email is ever sent automatically on a state transition (opening a round does NOT
+  // notify anyone by itself), so the timing of outreach stays entirely in the admin's
+  // hands. Defaults to everyone who hasn't finished yet; the admin can instead target a
+  // specific subset via userIds (e.g. a resend to one straggler, or a "closing soon" nudge
+  // to everyone including those already done). Each email is personalized with that
+  // member's own progress so far.
+  app.post('/api/maturity/rounds/:id/invite', requireAuth, async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const r = getRound(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Round not found' });
+    if (r.status !== 'open') return res.status(400).json({ error: 'The round must be open before inviting the family to assess it.' });
+    if (!mailer.isConfigured()) return res.status(503).json({ error: 'Email is not configured on the server.' });
+    const b = req.body || {};
+    const completion = roundCompletion(r.id, req.session.userId);
+    const eligible = completion.filter((c) => {
+      const row = db.prepare('SELECT is_fo_admin, maturity_role FROM users WHERE id = ?').get(c.userId);
+      return row && (row.is_fo_admin || row.maturity_role === 'admin' || row.maturity_role === 'member');
+    });
+    const targets = Array.isArray(b.userIds) && b.userIds.length
+      ? eligible.filter((c) => b.userIds.includes(c.userId))
+      : eligible.filter((c) => !c.complete);
+    const note = (b.note || '').trim();
+    const adminName = userName(req.session.userId) || 'An admin';
+    const sent = [];
+    const skipped = [];
+    const errors = [];
+    for (const c of targets) {
+      const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(c.userId);
+      if (!user || !user.email) { skipped.push({ userId: c.userId, name: c.name, reason: 'no email on file' }); continue; }
+      let statusLine;
+      if (c.complete) {
+        statusLine = "You've already completed this round — thank you!";
+      } else if (c.servicesDone === 0 && !c.consciousnessDone) {
+        statusLine = "You haven't started yet.";
+      } else {
+        statusLine = `Your progress so far: ${c.servicesDone} of ${c.servicesTotal} services completed, ` +
+          `Capital Consciousness ${c.consciousnessDone ? 'placed' : 'not yet placed'}.`;
+      }
+      try {
+        await mailer.sendMail({
+          to: user.email,
+          subject: `${r.label} — please complete your Maturity Assessment`,
+          html: emailShell({
+            eyebrow: 'Robinson Family Office',
+            title: 'Maturity Assessment',
+            subtitle: r.label,
+            bodyRowsHtml: contentRow(
+              paragraph(`${escapeHtml(adminName)} is asking every family member to complete the <b>${escapeHtml(r.label)}</b> Maturity Assessment.`) +
+              paragraph(`<b>${escapeHtml(statusLine)}</b>`) +
+              (note ? paragraph(escapeHtml(note)) : '')
+            ),
+            ctaText: 'Open Maturity Assessment',
+            ctaUrl: `${APP_BASE_URL}/maturity`,
+          }),
+        });
+        sent.push({ userId: c.userId, name: c.name });
+      } catch (err) {
+        errors.push({ userId: c.userId, name: c.name, error: err.message });
+      }
+    }
+    logAudit({ userId: req.session.userId, action: 'maturity.round_invited', entityType: 'maturity_round', entityId: r.id, details: { sent: sent.length, skipped: skipped.length, errors: errors.length } });
+    res.json({ configured: true, sent, skipped, errors });
   });
 
   app.post('/api/maturity/rounds/:id/close', requireAuth, (req, res) => {

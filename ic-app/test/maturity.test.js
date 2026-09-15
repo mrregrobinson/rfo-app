@@ -202,6 +202,31 @@ describe('Claude endpoints degrade when not configured', () => {
   });
 });
 
+describe('invite family to assess — admin-triggered only, never automatic', () => {
+  let draft;
+  test('a draft round refuses (must be open); a member cannot trigger it', async () => {
+    as('reg');
+    draft = (await send('POST', '/api/maturity/rounds', { label: 'draft-for-invite' })).body.id;
+    const onDraft = await send('POST', `/api/maturity/rounds/${draft}/invite`, {});
+    assert.equal(onDraft.status, 400);
+    await send('POST', `/api/maturity/rounds/${draft}/open`, {});
+    as('lucas');
+    assert.equal((await send('POST', `/api/maturity/rounds/${draft}/invite`, {})).status, 403);
+  });
+  test('opening the round does not itself send anything; an admin must explicitly invite, and it degrades cleanly with no mail server configured', async () => {
+    as('reg');
+    // nothing was sent as a side effect of opening the round above
+    const r = await send('POST', `/api/maturity/rounds/${draft}/invite`, { userIds: ['ross'] });
+    assert.equal(r.status, 503); // ANTHROPIC_API_KEY-style: MS_GRAPH_* isn't configured in tests either
+    assert.match(r.body.error, /not configured/i);
+  });
+  test('unknown round 404s', async () => {
+    as('reg');
+    assert.equal((await send('POST', '/api/maturity/rounds/does-not-exist/invite', {})).status, 404);
+    db.prepare('DELETE FROM maturity_rounds WHERE id = ?').run(draft);
+  });
+});
+
 describe('Claude benchmark — two independent numbers (peer + assessed), and a recommendation weighing them', () => {
   test('the service detail endpoint surfaces both levels, both rationales, and the recommendation', async () => {
     const now = new Date().toISOString();

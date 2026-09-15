@@ -256,6 +256,18 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   against it — responses, scores, consciousness answers, benchmarks, snapshots —
   reassigning `is_anchor` to the next-earliest closed round with benchmarks if the
   deleted round held it; actions raised in it are kept but detached (`round_id = NULL`).
+  `POST /api/maturity/rounds/:id/invite` (admin-only, open rounds only) emails family
+  members asking them to go complete their assessment — purely admin-triggered, never a
+  side effect of opening a round, so the timing of outreach stays entirely in the admin's
+  hands. Defaults to everyone with an admin/member role who hasn't finished yet; an
+  explicit `userIds` list targets a specific subset instead (a resend, a last-call nudge to
+  everyone including those already done). Each email is personalized with that member's
+  own progress (`roundCompletion()`) and an optional admin note, sent one Graph call per
+  recipient (`server/mailer.js` `sendMail` takes a single address, not an array — the
+  existing `/report/email` routes on this and other modules pass an array through
+  unchanged, which is a latent bug for >1 recipient, not something this route repeats). The
+  Manage tab's `InvitePanel` surfaces this as a checklist of members with their completion
+  status.
 - `maturity_benchmarks` — per (round, service) Claude web-search read
   (`server/claude.js` `benchmarkMaturityService`), carrying TWO independently-derived
   1-5 numbers (migration 042), not one: `peer_level` / `peer_rationale` (renamed from the
