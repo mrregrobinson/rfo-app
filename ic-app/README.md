@@ -263,11 +263,8 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   explicit `userIds` list targets a specific subset instead (a resend, a last-call nudge to
   everyone including those already done). Each email is personalized with that member's
   own progress (`roundCompletion()`) and an optional admin note, sent one Graph call per
-  recipient (`server/mailer.js` `sendMail` takes a single address, not an array — the
-  existing `/report/email` routes on this and other modules pass an array through
-  unchanged, which is a latent bug for >1 recipient, not something this route repeats). The
-  Manage tab's `InvitePanel` surfaces this as a checklist of members with their completion
-  status.
+  recipient via `server/mailer.js` `sendMail`. The Manage tab's `InvitePanel` surfaces this
+  as a checklist of members with their completion status.
 - `maturity_benchmarks` — per (round, service) Claude web-search read
   (`server/claude.js` `benchmarkMaturityService`), carrying TWO independently-derived
   1-5 numbers (migration 042), not one: `peer_level` / `peer_rationale` (renamed from the

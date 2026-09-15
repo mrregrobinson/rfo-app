@@ -42,7 +42,18 @@ async function getAccessToken() {
   return cachedToken.accessToken;
 }
 
+// Builds Graph's toRecipients array from `to`, which may be a single address string or an
+// array of addresses — sendMail() accepts either, so callers that already collect an
+// array (e.g. a report-email route's recipient list) don't need to special-case the
+// single-recipient case, and callers with just one address don't need to wrap it.
+// Exported mainly so this mapping can be unit-tested without a configured Graph mailbox.
+function toRecipients(to) {
+  const addresses = Array.isArray(to) ? to : [to];
+  return addresses.filter(Boolean).map((address) => ({ emailAddress: { address } }));
+}
+
 // { to, subject, html, attachments } — sends as SENDER via Graph's /users/{sender}/sendMail.
+// `to` is a single address string or an array of addresses (see toRecipients above).
 // attachments (optional) is [{ name, contentType, contentBase64 }] — used by the
 // Meetings module to attach a hand-built .ics meeting request (server/ics.js) rather
 // than creating the event through Graph's Calendar API, which has a known gap for
@@ -51,11 +62,13 @@ async function getAccessToken() {
 // on any Graph/HTTP failure — callers decide how much that should matter to the request
 // that triggered the email (usually: log it, don't fail the request).
 async function sendMail({ to, subject, html, attachments }) {
+  const recipients = toRecipients(to);
+  if (!recipients.length) throw new Error('sendMail: at least one recipient is required');
   const token = await getAccessToken();
   const message = {
     subject,
     body: { contentType: 'HTML', content: html },
-    toRecipients: [{ emailAddress: { address: to } }],
+    toRecipients: recipients,
   };
   if (attachments && attachments.length) {
     message.attachments = attachments.map((a) => ({
@@ -78,4 +91,4 @@ async function sendMail({ to, subject, html, attachments }) {
   }
 }
 
-module.exports = { sendMail, isConfigured, MailNotConfiguredError };
+module.exports = { sendMail, isConfigured, MailNotConfiguredError, toRecipients };
