@@ -160,7 +160,7 @@ describe('round lifecycle — maturity worksheet only, no per-service consciousn
     const r2 = (await send('POST', '/api/maturity/rounds', { label: '2027 H1', carryFrom: roundId })).body.id;
     await send('POST', `/api/maturity/rounds/${r2}/open`, {});
     db.prepare(
-      `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+      `INSERT INTO maturity_benchmarks (id, round_id, service_id, peer_level, peer_rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
        VALUES ('b1', ?, 'svc-03', 3.5, 'stub', '[]', '[]', '', 'test', 'reg', ?)`
     ).run(r2, new Date().toISOString());
     const c = await send('POST', `/api/maturity/rounds/${r2}/close`, {});
@@ -202,29 +202,36 @@ describe('Claude endpoints degrade when not configured', () => {
   });
 });
 
-describe('Claude benchmark recommendation — how it got there, and whether to act on it', () => {
-  test('the service detail endpoint surfaces recommendedPriority + recommendation alongside the benchmark', async () => {
+describe('Claude benchmark — two independent numbers (peer + assessed), and a recommendation weighing them', () => {
+  test('the service detail endpoint surfaces both levels, both rationales, and the recommendation', async () => {
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, recommended_priority, recommendation, what_would_move_up, sources, caveats, model, searched_by, searched_at)
-       VALUES ('bench-rec-1', 'round-2026-baseline', 'svc-08', 4, 'compared against Campden/FOE surveys for this size', 'Immediate', 'The family scores itself at 2 while a comparable office is typically at 4 — a wide, consequential gap.', '["do X","do Y"]', '[]', '', 'test', 'reg', ?)`
+      `INSERT INTO maturity_benchmarks (id, round_id, service_id, peer_level, peer_rationale, assessed_level, assessed_rationale, recommended_priority, recommendation, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+       VALUES ('bench-rec-1', 'round-2026-baseline', 'svc-08', 4, 'compared against Campden/FOE surveys for this size', 2, 'their own descriptors describe an ad hoc process, not the documented one they self-scored', 'Immediate', 'Our own read of this family sits well below a comparable office, and below their own self-score too — a wide, consequential gap.', '["do X","do Y"]', '[]', '', 'test', 'reg', ?)`
     ).run(now);
     as('reg');
     const detail = (await get('/api/maturity/services/svc-08?round=round-2026-baseline')).body;
+    assert.equal(detail.benchmark.peerLevel, 4);
+    assert.match(detail.benchmark.peerRationale, /Campden\/FOE/);
+    assert.equal(detail.benchmark.assessedLevel, 2);
+    assert.match(detail.benchmark.assessedRationale, /ad hoc process/);
     assert.equal(detail.benchmark.recommendedPriority, 'Immediate');
     assert.match(detail.benchmark.recommendation, /wide, consequential gap/);
     assert.deepEqual(detail.benchmark.whatWouldMoveUp, ['do X', 'do Y']);
     db.prepare("DELETE FROM maturity_benchmarks WHERE id = 'bench-rec-1'").run();
   });
-  test('a benchmark row inserted without the new columns (the pre-migration-041 shape) still gets a valid default', () => {
+  test('assessedLevel is nullable — a row without it (predating migration 042) still returns cleanly, with priority defaulting to Monitor', async () => {
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+      `INSERT INTO maturity_benchmarks (id, round_id, service_id, peer_level, peer_rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
        VALUES ('bench-legacy-1', 'round-2026-baseline', 'svc-09', 3, 'old-shape row', '[]', '[]', '', 'test', 'reg', ?)`
     ).run(now);
-    const row = db.prepare("SELECT recommended_priority, recommendation FROM maturity_benchmarks WHERE id = 'bench-legacy-1'").get();
-    assert.equal(row.recommended_priority, 'Monitor');
-    assert.equal(row.recommendation, '');
+    as('reg');
+    const detail = (await get('/api/maturity/services/svc-09?round=round-2026-baseline')).body;
+    assert.equal(detail.benchmark.peerLevel, 3);
+    assert.equal(detail.benchmark.assessedLevel, null);
+    assert.equal(detail.benchmark.recommendedPriority, 'Monitor');
+    assert.equal(detail.benchmark.recommendation, '');
     db.prepare("DELETE FROM maturity_benchmarks WHERE id = 'bench-legacy-1'").run();
   });
 });
@@ -461,7 +468,7 @@ describe('Capital Consciousness — standalone, once per round, a single pick (�
     // give an older closed round its own benchmark so it can inherit anchor status
     const older = db.prepare("SELECT id FROM maturity_rounds WHERE id = 'round-2026-baseline'").get().id;
     db.prepare(
-      `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+      `INSERT INTO maturity_benchmarks (id, round_id, service_id, peer_level, peer_rationale, what_would_move_up, sources, caveats, model, searched_by, searched_at)
        VALUES ('b-old', ?, 'svc-01', 3, 'stub', '[]', '[]', '', 'test', 'reg', ?)`
     ).run(older, new Date().toISOString());
     await del(`/api/maturity/rounds/${anchorId}`);

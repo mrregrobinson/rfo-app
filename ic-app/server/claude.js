@@ -392,32 +392,31 @@ probabilityLow/probabilityHigh are annual probabilities as decimals (0-1); use n
 // All three use the same web_search tool, extractJson handling and not-configured
 // contract as research() / researchRiskProbability() above.
 
-// Assesses how a comparable family office would operate one service and returns its own
-// 1–5 maturity rating (on the family's own scale), the rationale for how it got there, an
-// explicit recommendation on whether pursuing improvement here is actually worth it for a
-// family office of THIS size right now (not just a generic "what would move up" list —
-// a judgment call on priority), and concrete steps if so. The benchmark LEVEL is assessed
-// independently of the family's self-score (an honest external reference point shouldn't
-// just mirror what the family already believes) — but the RECOMMENDATION and its priority
-// explicitly weigh both readings together: the size of the gap between the family's own
-// score and the benchmark, not the benchmark in isolation, is what should drive urgency.
-// Decision support for an assessment round — the family still scores itself.
+// Two independently-derived 1–5 numbers per service (§7.1), not one ambiguous
+// "benchmark": (1) peerLevel — from web research, where genuinely comparable family
+// offices typically operate this service; (2) assessedLevel — Claude's OWN read of where
+// THIS family likely sits, reasoned from the family's own level descriptors and context
+// rather than simply echoing their self-score (which is supplied for reference only).
+// Plus an explicit recommendation on whether pursuing improvement here is actually worth
+// it for a family office of THIS size right now, weighing all three numbers together —
+// not just a generic "what would move up" list, a judgment call on priority. Decision
+// support for an assessment round — the family still scores itself.
 async function benchmarkMaturityService({ serviceName, description, levelLabels, levelDescriptors, familyContext, selfAssessedLevel }) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
-  const systemPrompt = `You are helping a Canadian single-family office assess the maturity of one of its operating services against how comparable family offices operate, and advise whether it's actually worth investing to improve it. Search the web for family-office operating benchmarks and industry surveys (bank and Big Four family-office practices, Campden/Family Office Exchange, UBS/Citi/BNY family-office reports) and credible practitioner writing. Be explicit about how well external norms fit a family office of THIS size and complexity — a ~CAD $30M single-family office should not be held to a multi-billion-dollar family office's standard, and reaching "Leading Practice" everywhere is not itself the goal; a lower level can be the right, deliberate choice for some services given this family's size and where their real risk concentrates. Today is ${today}.`;
+  const systemPrompt = `You are helping a Canadian single-family office assess the maturity of one of its operating services, producing TWO separate 1-5 numbers, not one: (1) peerLevel — search the web for family-office operating benchmarks and industry surveys (bank and Big Four family-office practices, Campden/Family Office Exchange, UBS/Citi/BNY family-office reports) and credible practitioner writing to find where GENUINELY COMPARABLE family offices (similar size, complexity, region — not the industry as a whole) typically operate this service; (2) assessedLevel — your own independent read of where THIS SPECIFIC family most likely sits today, reasoned from the family's own level descriptors below and what you know of their situation, not a web search (there is no public information about this private family's internal operations) and not simply a mirror of their self-reported score. Be explicit about how well external norms fit a family office of THIS size and complexity — a ~CAD $30M single-family office should not be held to a multi-billion-dollar family office's standard, and reaching "Leading Practice" everywhere is not itself the goal; a lower level can be the right, deliberate choice for some services given this family's size and where their real risk concentrates. Today is ${today}.`;
   const ladder = (levelDescriptors || []).map((t, i) => `${i + 1} (${(levelLabels && levelLabels[i]) || ''}): ${t}`).join('\n');
   const userPrompt = `Service: ${serviceName}.${description ? ' ' + description : ''}
 The family defines five maturity levels for this service as:
 ${ladder}
 Family context: ${familyContext}
-The family's own current self-assessment is ${selfAssessedLevel == null ? 'not yet recorded' : selfAssessedLevel}.
+The family's own current self-assessment is ${selfAssessedLevel == null ? 'not yet recorded' : selfAssessedLevel} — reference only, form your own assessedLevel independently rather than anchoring to it.
 
-First assess your benchmark level independently of that self-assessment — don't just anchor to what the family already believes. THEN, for the recommendation and its priority, explicitly weigh your benchmark TOGETHER with the family's self-assessment: how big is the gap between them, and what's actually at stake if it's left unaddressed? A wide, consequential gap (the family believes it's doing better than it is) deserves urgency; a family that already rates itself at or above your benchmark, or a narrow/low-stakes gap, points toward a lower priority regardless of the absolute level.
+Give three numbers a fair, independent look: the family's own self-assessment, your assessedLevel (your own read of where this family sits), and your peerLevel (researched, for genuinely comparable offices). For the recommendation and its priority, weigh all three together: if your assessedLevel and the family's self-score diverge significantly, say so — that gap in self-awareness matters on its own. Base urgency on how far the family (by your assessedLevel, which you trust more than a self-report alone) sits behind genuinely comparable peers, and what's really at stake if that's left unaddressed. A family already at or ahead of peers, or a narrow/low-stakes gap, points toward a lower priority regardless of the absolute level.
 
 Return ONLY valid JSON, no markdown fences:
-{"benchmarkLevel":3.5,"rationale":"2-4 plain-English sentences on how you arrived at this level — what you compared against and why it lands here, not just what the level means","recommendedPriority":"Immediate|Active|Monitor|Maintain","recommendation":"2-4 sentences: should this family actually prioritize improving this service right now, and why (or why not) — name how the family's own score compares to your benchmark and weigh the size/cost of closing that gap against what's really at stake if it's left as-is, for a family office of this size","whatWouldMoveUp":["concrete action","concrete action","concrete action"],"sources":[{"title":"...","url":"..."}],"caveats":"one sentence on what this external comparison does NOT capture for this family"}
+{"assessedLevel":2.5,"assessedRationale":"2-3 plain-English sentences on why you place THIS family here, grounded in their own level descriptors and context — not the peer research","peerLevel":3.5,"peerRationale":"2-3 plain-English sentences on how you arrived at this — which comparable offices or surveys you weighed and why it lands here","recommendedPriority":"Immediate|Active|Monitor|Maintain","recommendation":"2-4 sentences: should this family actually prioritize improving this service right now, and why (or why not) — name how your assessedLevel compares to peerLevel (and to the family's self-score, if it diverges) and weigh the size/cost of closing that gap against what's really at stake if it's left as-is, for a family office of this size","whatWouldMoveUp":["concrete action","concrete action","concrete action"],"sources":[{"title":"...","url":"..."}],"caveats":"one sentence on what this external comparison does NOT capture for this family"}
 
-benchmarkLevel is 1-5 on the family's scale above, halves allowed. recommendedPriority: 'Immediate' (a real gap with real near-term risk), 'Active' (worth deliberately working on this cycle), 'Monitor' (a gap exists but isn't urgent), or 'Maintain' (the family's own score already meets or exceeds an appropriate bar for this size — investing further isn't the priority right now, even if the benchmark is below Leading Practice). whatWouldMoveUp should be empty or purely optional context when recommendedPriority is 'Maintain'. Include the 2-4 most load-bearing sources.`;
+Both levels are 1-5 on the family's scale above, halves allowed. recommendedPriority: 'Immediate' (a real gap with real near-term risk), 'Active' (worth deliberately working on this cycle), 'Monitor' (a gap exists but isn't urgent), or 'Maintain' (this family already meets or exceeds an appropriate bar for this size — investing further isn't the priority right now, even if peerLevel is below Leading Practice). whatWouldMoveUp should be empty or purely optional context when recommendedPriority is 'Maintain'. sources back peerLevel specifically — include the 2-4 most load-bearing.`;
   const data = await callClaude({
     model: MODEL,
     max_tokens: 3500,

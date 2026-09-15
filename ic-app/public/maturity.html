@@ -199,7 +199,7 @@ function LollipopChart({groups,services,onOpen}){
     els.push(svg('line',{key:'g'+v,x1:x(v),y1:PAD_TOP-6,x2:x(v),y2:H-PAD_BOT,stroke:'#EEF0F3',strokeWidth:1}));
     els.push(svg('text',{key:'gl'+v,x:x(v),y:PAD_TOP-12,textAnchor:'middle',fontSize:9,fill:'#9CA3AF'},v));
   }
-  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},'● family mean   ◆ Claude benchmark   ▭ member spread'));
+  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},'● family mean   ▲ Claude’s read of us   ◆ peer benchmark   ▭ member spread'));
   rows.forEach((r,i)=>{
     const cy=y+RH/2;
     if(r.type==='group'){
@@ -214,9 +214,13 @@ function LollipopChart({groups,services,onOpen}){
         if(st.min!=null&&st.max!=null&&st.max>st.min){
           els.push(svg('rect',{key:'sp'+i,x:x(st.min),y:cy-3,width:Math.max(2,x(st.max)-x(st.min)),height:6,rx:3,fill:'rgba(27,42,74,.14)'}));
         }
-        if(s.benchmark&&s.benchmark.benchmarkLevel!=null){
-          const bx=x(s.benchmark.benchmarkLevel);
+        if(s.benchmark&&s.benchmark.peerLevel!=null){
+          const bx=x(s.benchmark.peerLevel);
           els.push(svg('rect',{key:'bm'+i,x:bx-4.5,y:cy-4.5,width:9,height:9,transform:'rotate(45 '+bx+' '+cy+')',fill:'#fff',stroke:'#C9A84C',strokeWidth:1.6}));
+        }
+        if(s.benchmark&&s.benchmark.assessedLevel!=null){
+          const ax=x(s.benchmark.assessedLevel);
+          els.push(svg('polygon',{key:'as'+i,points:(ax-5)+','+(cy+4)+' '+(ax+5)+','+(cy+4)+' '+ax+','+(cy-5),fill:'#fff',stroke:'#2A7D7B',strokeWidth:1.6}));
         }
         els.push(svg('circle',{key:'m'+i,cx:x(st.mean),cy:cy,r:5,fill:'#1B2A4A',stroke:'#fff',strokeWidth:1.5,style:{cursor:'pointer'},onClick:()=>onOpen&&onOpen(s.id)}));
         els.push(svg('text',{key:'mv'+i,x:Math.min(RX,x(st.mean)+9),y:cy-7,fontSize:8.5,fill:'#6B7280'},st.mean));
@@ -377,14 +381,15 @@ function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
         h('div',{style:{overflowX:'auto'}},h('table',{className:'tbl'},
           h('thead',null,h('tr',null,h('th',null,'#'),h('th',null,'Service'),
             members.map(m=>h('th',{key:m.id,title:m.name},m.name.split(' ')[0])),
-            h('th',null,'Mean'),h('th',null,'Spread'),h('th',null,'Benchmark'),h('th',null,'Gap'),h('th',null,''))),
+            h('th',null,'Mean'),h('th',null,'Spread'),h('th',{title:"Claude's own independent read of where this family sits"},"Claude's read"),h('th',null,'Peer benchmark'),h('th',{title:'Peer benchmark minus family mean'},'Gap'),h('th',null,''))),
           h('tbody',null,svcs.map(s=>h('tr',{key:s.id,style:{cursor:'pointer'},onClick:()=>onOpenService(s.id)},
             h('td',null,s.number),
             h('td',null,s.name),
             members.map(m=>h('td',{key:m.id},s.stats.byUser[m.id]!=null?levelChip(s.stats.byUser[m.id]):h('span',{className:'muted'},'—'))),
             h('td',null,s.stats.mean!=null?h('b',null,s.stats.mean):'—'),
             h('td',null,s.stats.spread!=null?s.stats.spread:'—'),
-            h('td',null,s.benchmark?levelChip(s.benchmark.benchmarkLevel):h('span',{className:'muted'},'—')),
+            h('td',null,s.benchmark&&s.benchmark.assessedLevel!=null?levelChip(s.benchmark.assessedLevel):h('span',{className:'muted'},'—')),
+            h('td',null,s.benchmark?levelChip(s.benchmark.peerLevel):h('span',{className:'muted'},'—')),
             h('td',null,s.gap==null?'—':h('span',{style:{fontWeight:700,color:s.gap>0.5?'#92400E':s.gap<-0.5?'#0F766E':'var(--muted)'}},(s.gap>0?'+':'')+s.gap)),
             h('td',null,s.actionCounts.open>0?h('span',{className:'small muted'},s.actionCounts.open+' action'+(s.actionCounts.open>1?'s':'')):'')
           ))))));
@@ -423,7 +428,8 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
       h('div',null,h('div',{className:'modal-title'},'#'+s.number+' '+s.name),
         h('div',{className:'modal-sub'},d.stats&&d.stats.mean!=null?('Family mean '+d.stats.mean):'Not assessed this round',
-          d.benchmark?('  ·  Benchmark '+d.benchmark.benchmarkLevel):'')),
+          d.benchmark&&d.benchmark.assessedLevel!=null?("  ·  Claude's read "+d.benchmark.assessedLevel):'',
+          d.benchmark?('  ·  Peer benchmark '+d.benchmark.peerLevel):'')),
       h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')),
 
     h('div',{className:'sec'},'The five maturity levels'),
@@ -493,11 +499,19 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
         h('td',null,x.submitted?h('span',{className:'chip chip-l5'},'submitted'):h('span',{className:'small muted'},'draft')))))
     ):h('div',{className:'small muted'},'No scores recorded this round.'),
 
-    h('div',{className:'sec'},'Claude benchmark'),
+    h('div',{className:'sec'},'Claude benchmark — two independent reads'),
     d.benchmark?h('div',null,
-      h('div',null,levelChip(d.benchmark.benchmarkLevel),'  ',h('span',{className:'small muted'},'by '+d.benchmark.searchedByName+' · '+(d.benchmark.searchedAt||'').slice(0,10))),
-      h('div',{className:'small',style:{marginTop:6}},d.benchmark.rationale),
-      d.benchmark.recommendedPriority&&h('div',{style:{marginTop:8}},
+      h('div',{className:'small muted',style:{marginBottom:8}},'by '+d.benchmark.searchedByName+' · '+(d.benchmark.searchedAt||'').slice(0,10)),
+      h('div',{className:'grid2'},
+        h('div',null,
+          h('div',{className:'small muted'},"Claude's read of us"),
+          h('div',{style:{marginTop:2}},levelChip(d.benchmark.assessedLevel)),
+          d.benchmark.assessedRationale&&h('div',{className:'small',style:{marginTop:4}},d.benchmark.assessedRationale)),
+        h('div',null,
+          h('div',{className:'small muted'},'Peer benchmark'),
+          h('div',{style:{marginTop:2}},levelChip(d.benchmark.peerLevel)),
+          d.benchmark.peerRationale&&h('div',{className:'small',style:{marginTop:4}},d.benchmark.peerRationale))),
+      d.benchmark.recommendedPriority&&h('div',{style:{marginTop:10}},
         priorityChip(d.benchmark.recommendedPriority),' ',
         d.benchmark.recommendation&&h('span',{className:'small'},d.benchmark.recommendation)),
       d.benchmark.whatWouldMoveUp&&d.benchmark.whatWouldMoveUp.length?h('div',{style:{marginTop:6}},
@@ -509,8 +523,8 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
     roles.maturityMember&&roundId&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:6},disabled:busy==='bench',onClick:runBenchmark},busy==='bench'?'Running…':(d.benchmark?'Re-run benchmark':'Run benchmark')),
 
     d.trend&&d.trend.length>1?h('div',null,h('div',{className:'sec'},'Trend'),
-      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Round'),h('th',null,'Family mean'),h('th',null,'Benchmark'))),
-        h('tbody',null,d.trend.map(t=>h('tr',{key:t.roundId},h('td',null,t.label),h('td',null,t.mean!=null?t.mean:'—'),h('td',null,t.benchmark!=null?t.benchmark:'—')))))):null,
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Round'),h('th',null,'Family mean'),h('th',null,"Claude's read"),h('th',null,'Peer benchmark'))),
+        h('tbody',null,d.trend.map(t=>h('tr',{key:t.roundId},h('td',null,t.label),h('td',null,t.mean!=null?t.mean:'—'),h('td',null,t.assessed!=null?t.assessed:'—'),h('td',null,t.benchmark!=null?t.benchmark:'—')))))):null,
 
     h('div',{className:'sec'},'Notes / actions'),
     h(ActionList,{actions:d.actions,serviceId:s.id,roundId,members,roles,onChanged:load})
@@ -655,7 +669,7 @@ function ProgressTab({roundId}){
     labels:series.map(s=>s.label),
     datasets:[
       {label:'Family self-reported mean',data:series.map(s=>s.familyMean),borderColor:'#1B2A4A',backgroundColor:'rgba(27,42,74,.1)',tension:.3},
-      {label:'Claude benchmarked mean',data:series.map(s=>s.benchmarkMean),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.1)',borderDash:[5,4],tension:.3},
+      {label:'Peer benchmark mean',data:series.map(s=>s.benchmarkMean),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.1)',borderDash:[5,4],tension:.3},
     ],
   };
   async function synth(){setBusy(true);try{const r=await api.post('/api/maturity/rounds/'+roundId+'/synthesis',{});if(r.configured===false)alert('Claude is not configured on the server.');else setSyn(r.synthesis);}catch(e){alert(e.message);}finally{setBusy(false);}}

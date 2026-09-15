@@ -179,7 +179,9 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const b = db.prepare('SELECT * FROM maturity_benchmarks WHERE round_id = ? AND service_id = ?').get(roundId, serviceId);
     if (!b) return null;
     return {
-      id: b.id, serviceId: b.service_id, benchmarkLevel: b.benchmark_level, rationale: b.rationale,
+      id: b.id, serviceId: b.service_id,
+      peerLevel: b.peer_level, peerRationale: b.peer_rationale,
+      assessedLevel: b.assessed_level, assessedRationale: b.assessed_rationale,
       recommendedPriority: b.recommended_priority, recommendation: b.recommendation,
       whatWouldMoveUp: jsonParse(b.what_would_move_up, []), sources: jsonParse(b.sources, []),
       caveats: b.caveats, model: b.model, searchedBy: b.searched_by, searchedByName: userName(b.searched_by), searchedAt: b.searched_at,
@@ -290,7 +292,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         descriptors: descriptorsFor(s.id),
         stats,
         benchmark: bench,
-        gap: (bench && stats.mean != null) ? Math.round((bench.benchmarkLevel - stats.mean) * 100) / 100 : null,
+        gap: (bench && stats.mean != null) ? Math.round((bench.peerLevel - stats.mean) * 100) / 100 : null,
         actionCounts: openActionCount(roundId, s.id),
       };
     });
@@ -326,7 +328,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       .map((r) => {
         const st = serviceStats(r.id, s.id);
         const b = benchmarkFor(r.id, s.id);
-        return { roundId: r.id, label: r.label, mean: st.mean, benchmark: b ? b.benchmarkLevel : null };
+        return { roundId: r.id, label: r.label, mean: st.mean, benchmark: b ? b.peerLevel : null, assessed: b ? b.assessedLevel : null };
       });
     const suggestions = roundId
       ? db.prepare("SELECT * FROM maturity_descriptor_suggestions WHERE round_id = ? AND service_id = ? ORDER BY level").all(roundId, s.id)
@@ -402,7 +404,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     // aggregate self-reported mean & benchmark mean per closed round
     const aggregateSeries = closedRounds.map((r) => {
       const means = services.map((s) => serviceStats(r.id, s.id).mean).filter((m) => m != null);
-      const benches = services.map((s) => { const b = benchmarkFor(r.id, s.id); return b ? b.benchmarkLevel : null; }).filter((m) => m != null);
+      const benches = services.map((s) => { const b = benchmarkFor(r.id, s.id); return b ? b.peerLevel : null; }).filter((m) => m != null);
       return {
         roundId: r.id, label: r.label,
         familyMean: means.length ? Math.round((means.reduce((a, b) => a + b, 0) / means.length) * 100) / 100 : null,
@@ -414,7 +416,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       const cur = serviceStats(roundId, s.id).mean;
       const prev = prevId ? serviceStats(prevId, s.id).mean : null;
       const b = benchmarkFor(roundId, s.id);
-      return { serviceId: s.id, name: s.name, number: s.number, familyMean: cur, prevMean: prev, benchmark: b ? b.benchmarkLevel : null, delta: (cur != null && prev != null) ? Math.round((cur - prev) * 100) / 100 : null };
+      return { serviceId: s.id, name: s.name, number: s.number, familyMean: cur, prevMean: prev, benchmark: b ? b.peerLevel : null, assessed: b ? b.assessedLevel : null, delta: (cur != null && prev != null) ? Math.round((cur - prev) * 100) / 100 : null };
     });
     res.json({
       roundId, prevRoundId: prevId, anchorRoundId: anchorRound()?.id || null,
@@ -927,24 +929,27 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
           selfAssessedLevel: stat.mean,
         });
         logApiUsage({ callType: 'maturity_benchmark', usage, userId: req.session.userId });
-        const level = clampLevel(Math.round((Number(result.benchmarkLevel) || 3) * 2) / 2) ?? 3;
+        const peerLevel = clampLevel(Math.round((Number(result.peerLevel) || 3) * 2) / 2) ?? 3;
+        const assessedLevel = clampLevel(Math.round((Number(result.assessedLevel) || 0) * 2) / 2);
         const priority = ['Immediate', 'Active', 'Monitor', 'Maintain'].includes(result.recommendedPriority) ? result.recommendedPriority : 'Monitor';
         const now = new Date().toISOString();
         db.prepare(
-          `INSERT INTO maturity_benchmarks (id, round_id, service_id, benchmark_level, rationale, recommended_priority, recommendation, what_would_move_up, sources, caveats, model, searched_by, searched_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(round_id, service_id) DO UPDATE SET benchmark_level = excluded.benchmark_level, rationale = excluded.rationale,
+          `INSERT INTO maturity_benchmarks (id, round_id, service_id, peer_level, peer_rationale, assessed_level, assessed_rationale, recommended_priority, recommendation, what_would_move_up, sources, caveats, model, searched_by, searched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(round_id, service_id) DO UPDATE SET peer_level = excluded.peer_level, peer_rationale = excluded.peer_rationale,
+             assessed_level = excluded.assessed_level, assessed_rationale = excluded.assessed_rationale,
              recommended_priority = excluded.recommended_priority, recommendation = excluded.recommendation,
              what_would_move_up = excluded.what_would_move_up, sources = excluded.sources, caveats = excluded.caveats,
              model = excluded.model, searched_by = excluded.searched_by, searched_at = excluded.searched_at`
         ).run(
-          crypto.randomUUID(), r.id, s.id, level, String(result.rationale || ''),
+          crypto.randomUUID(), r.id, s.id, peerLevel, String(result.peerRationale || ''),
+          assessedLevel, String(result.assessedRationale || ''),
           priority, String(result.recommendation || ''),
           JSON.stringify(Array.isArray(result.whatWouldMoveUp) ? result.whatWouldMoveUp : []),
           JSON.stringify(Array.isArray(result.sources) ? result.sources : []),
           String(result.caveats || ''), 'claude-sonnet-5', req.session.userId, now
         );
-        results.push({ serviceId: s.id, benchmarkLevel: level, recommendedPriority: priority });
+        results.push({ serviceId: s.id, peerLevel, assessedLevel, recommendedPriority: priority });
       } catch (err) {
         if (err instanceof claude.ClaudeNotConfiguredError) return res.json({ configured: false });
         errors.push({ serviceId: s.id, error: err.message });
@@ -964,7 +969,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       const b = benchmarkFor(r.id, s.id);
       const prev = prevId ? serviceStats(prevId, s.id).mean : null;
       const g = db.prepare('SELECT name FROM maturity_service_groups WHERE id = ?').get(s.group_id);
-      return { name: s.name, category: g ? g.name : '', familyMean: st.mean, benchmarkLevel: b ? b.benchmarkLevel : null, prevFamilyMean: prev };
+      return { name: s.name, category: g ? g.name : '', familyMean: st.mean, assessedLevel: b ? b.assessedLevel : null, peerLevel: b ? b.peerLevel : null, prevFamilyMean: prev };
     });
     const lvlNames = ccLevels();
     const ccSummary = consciousnessRoundSummary(r.id);

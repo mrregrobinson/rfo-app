@@ -256,19 +256,25 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   against it — responses, scores, consciousness answers, benchmarks, snapshots —
   reassigning `is_anchor` to the next-earliest closed round with benchmarks if the
   deleted round held it; actions raised in it are kept but detached (`round_id = NULL`).
-- `maturity_benchmarks` — per (round, service) Claude web-search benchmark
-  (`server/claude.js` `benchmarkMaturityService`); besides the benchmark level and its
-  rationale, it carries an explicit `recommended_priority` (`Immediate`/`Active`/
-  `Monitor`/`Maintain`, migration 041 — same vocabulary as `maturity_actions.priority`)
-  and a `recommendation` explaining whether pursuing improvement here is actually worth it
-  for a family office this size. The benchmark LEVEL is assessed independently of the
-  family's own self-score, but the recommendation and its priority are explicitly informed
-  by BOTH readings together — the size of the gap between the family's score and the
-  benchmark (not the benchmark alone) drives urgency, so a family that already rates
-  itself at or above the benchmark gets `Maintain` even if the absolute level is below
-  Leading Practice. `what_would_move_up` stays the list of concrete next steps. The
-  round's written synthesis (`synthesizeMaturityRound`) is stored on
-  `maturity_rounds.synthesis_json`.
+- `maturity_benchmarks` — per (round, service) Claude web-search read
+  (`server/claude.js` `benchmarkMaturityService`), carrying TWO independently-derived
+  1-5 numbers (migration 042), not one: `peer_level` / `peer_rationale` (renamed from the
+  original `benchmark_level` / `rationale`) — from web research, where genuinely
+  comparable family offices typically operate this service; and `assessed_level` /
+  `assessed_rationale` (new, nullable — rows from before migration 042 have no value here)
+  — Claude's OWN independent read of where THIS family likely sits, reasoned from the
+  family's own level descriptors and context rather than a web search (there's no public
+  information about a private family's internal operations) and explicitly NOT just a
+  mirror of their self-reported score. It also carries an explicit `recommended_priority`
+  (`Immediate`/`Active`/`Monitor`/`Maintain`, migration 041 — same vocabulary as
+  `maturity_actions.priority`) and a `recommendation`, both weighing all three numbers
+  together — the family's self-score, Claude's assessed_level, and peer_level — rather
+  than the peer benchmark in isolation: urgency comes from how far assessed_level sits
+  behind genuinely comparable peers (and whether assessed_level and the family's own score
+  diverge, a self-awareness gap worth flagging on its own), so a family already at or
+  ahead of peers gets `Maintain` even if peer_level is below Leading Practice.
+  `what_would_move_up` stays the list of concrete next steps. The round's written
+  synthesis (`synthesizeMaturityRound`) is stored on `maturity_rounds.synthesis_json`.
 - `maturity_cc_levels` / `maturity_consciousness_statements` / `_scores` — Capital
   Consciousness (§5.8 of the build spec), a **standalone instrument answered once per
   round for the family as a whole**, not per service. `maturity_cc_levels` names the

@@ -16,8 +16,10 @@ const chartCanvas = new ChartJSNodeCanvas({
 });
 registerChartFonts(chartCanvas);
 
-// Grouped horizontal bar: one row per assessed service, maturity mean vs. Claude
-// benchmark on a 1–5 scale (replaces the radar — clearer for 16 services).
+// Grouped horizontal bar: one row per assessed service, three reads on a 1–5 scale —
+// family mean, Claude's own independent read of where the family sits (assessedLevel),
+// and Claude's researched peer benchmark (peerLevel) — replaces the radar, clearer for
+// 16 services.
 async function barPng(model) {
   const services = model.services.filter((s) => s.stats && s.stats.mean != null);
   if (!services.length) return null;
@@ -27,12 +29,13 @@ async function barPng(model) {
       labels: services.map((s) => `#${s.number} ${s.name}`),
       datasets: [
         { label: 'Family mean', data: services.map((s) => s.stats.mean), backgroundColor: 'rgba(27,42,74,0.85)', barPercentage: 0.6 },
-        { label: 'Claude benchmark', data: services.map((s) => (s.benchmark ? s.benchmark.benchmarkLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.6 },
+        { label: "Claude's read of us", data: services.map((s) => (s.benchmark ? s.benchmark.assessedLevel : null)), backgroundColor: 'rgba(42,125,123,0.85)', barPercentage: 0.6 },
+        { label: 'Claude benchmark (peers)', data: services.map((s) => (s.benchmark ? s.benchmark.peerLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.6 },
       ],
     },
     options: {
       indexAxis: 'y',
-      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Maturity by service — family mean vs. Claude benchmark (1–5)' } },
+      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Maturity by service — family mean vs. Claude\'s read of us vs. peer benchmark (1–5)' } },
       scales: { x: { min: 0, max: 5, ticks: { stepSize: 1 } } },
     },
   });
@@ -56,10 +59,13 @@ async function buildMaturityReportPdf(model) {
   const scored = services.filter((s) => s.stats && s.stats.mean != null);
   const famMean = scored.length ? scored.reduce((a, s) => a + s.stats.mean, 0) / scored.length : null;
   const benched = services.filter((s) => s.benchmark);
-  const benchMean = benched.length ? benched.reduce((a, s) => a + s.benchmark.benchmarkLevel, 0) / benched.length : null;
+  const peerMean = benched.length ? benched.reduce((a, s) => a + s.benchmark.peerLevel, 0) / benched.length : null;
+  const assessed = services.filter((s) => s.benchmark && s.benchmark.assessedLevel != null);
+  const assessedMean = assessed.length ? assessed.reduce((a, s) => a + s.benchmark.assessedLevel, 0) / assessed.length : null;
   doc.fontSize(11).fillColor('#111').text(
     `Aggregate family mean: ${famMean != null ? famMean.toFixed(2) : '—'}` +
-    `   ·   Aggregate Claude benchmark: ${benchMean != null ? benchMean.toFixed(2) : '—'}` +
+    `   ·   Aggregate Claude's read of us: ${assessedMean != null ? assessedMean.toFixed(2) : '—'}` +
+    `   ·   Aggregate peer benchmark: ${peerMean != null ? peerMean.toFixed(2) : '—'}` +
     `   ·   ${scored.length}/${services.length} services assessed`
   );
   doc.moveDown(0.5);
@@ -82,7 +88,8 @@ async function buildMaturityReportPdf(model) {
     for (const s of rows) {
       if (doc.y > 720) doc.addPage();
       const mean = s.stats && s.stats.mean != null ? s.stats.mean : null;
-      const bench = s.benchmark ? s.benchmark.benchmarkLevel : null;
+      const bench = s.benchmark ? s.benchmark.peerLevel : null;
+      const assessedLvl = s.benchmark ? s.benchmark.assessedLevel : null;
       const gap = mean != null && bench != null ? (bench - mean) : null;
       doc.font('Helvetica-Bold').text(`#${s.number}  ${s.name}`);
       doc.font('Helvetica').fillColor('#374151').text(
@@ -90,9 +97,13 @@ async function buildMaturityReportPdf(model) {
           ? `Family mean ${mean} (${labelName(mean)})   ·   min ${s.stats.min} / max ${s.stats.max} / spread ${s.stats.spread}`
           : 'Not assessed this round'
       );
+      if (assessedLvl != null) {
+        doc.fillColor('#111').text(`Claude's read of us: ${assessedLvl} (${labelName(assessedLvl)})`);
+        if (s.benchmark.assessedRationale) doc.fillColor('#374151').text(s.benchmark.assessedRationale);
+      }
       if (bench != null) {
-        doc.fillColor('#111').text(`Claude benchmark ${bench} (${labelName(bench)})   ·   gap ${gap > 0 ? '+' : ''}${gap.toFixed(1)}`);
-        if (s.benchmark.rationale) doc.fillColor('#374151').text(s.benchmark.rationale);
+        doc.fillColor('#111').text(`Claude benchmark (peers) ${bench} (${labelName(bench)})` + (gap != null ? `   ·   gap vs family ${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : ''));
+        if (s.benchmark.peerRationale) doc.fillColor('#374151').text(s.benchmark.peerRationale);
         if (s.benchmark.recommendedPriority) {
           const pc = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E3A8A', Maintain: '#065F46' }[s.benchmark.recommendedPriority] || '#111';
           doc.font('Helvetica-Bold').fillColor(pc).text(`${s.benchmark.recommendedPriority}. `, { continued: !!s.benchmark.recommendation })
