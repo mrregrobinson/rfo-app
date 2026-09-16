@@ -353,14 +353,17 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   file is touched again: drawing text inside the bottom margin band (e.g. a footer)
   via `.text()` — even with an explicit y — makes pdfkit think the page overflowed
   and silently starts a *new* page instead of drawing on the current one; the fix is
-  to zero `doc.page.margins.bottom` for the duration of that draw call. Each assessed
-  service's write-up also includes "What Claude knows about this service" (gated behind
-  the same `benchmark` flag) — the exact `description` + live evidence text fed into
-  every Claude call for that service (see `buildRoundModel`'s `groundingContext` field,
-  `server/maturity.js`), shown before Claude's own read/benchmark so a reader can judge
-  the conclusion against its source rather than take it on faith. A thin rule separates
-  each service within a category, and each priority bucket in Open Actions, so dense
-  pages read as a sequence of distinct items rather than one run-on block.
+  to zero `doc.page.margins.bottom` for the duration of that draw call. A thin rule
+  separates each service within a category, and each priority bucket in Open Actions, so
+  dense pages read as a sequence of distinct items rather than one run-on block. Within
+  each service's write-up, every distinct statement (family mean, Claude's read, peer
+  benchmark, recommendation, bullets, member breakdown) gets its own `moveDown()` gap and
+  wrapped paragraphs use `lineGap(2)` — an earlier version packed these directly against
+  each other with no vertical space at all, which read as a wall of text. (An earlier
+  version also showed a "What Claude knows about this service" block here, sourced from
+  `description` + live evidence — removed after user feedback that it made the report
+  harder to read, not easier; the underlying grounding is still what feeds every Claude
+  call, just not printed in the report.)
 
 ## Scheduled Task List digest
 

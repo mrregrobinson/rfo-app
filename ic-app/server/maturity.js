@@ -853,10 +853,6 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       scores: db.prepare('SELECT user_id, level, method, rationale, submitted FROM maturity_service_scores WHERE round_id = ? AND service_id = ?').all(roundId, s.id)
         .map((x) => ({ userId: x.user_id, name: userName(x.user_id), level: x.level, method: x.method, rationale: x.rationale, submitted: !!x.submitted })),
       benchmark: benchmarkFor(roundId, s.id),
-      // Same grounding context fed into every Claude call for this service (benchmark,
-      // wording suggestions) — surfaced so a reader can see what Claude actually knew,
-      // not just what it concluded.
-      groundingContext: { description: s.description || null, liveEvidence: liveEvidenceFor(s.id) || null },
     }));
     const prevRoundId = previousClosedRoundId(roundId);
     return {

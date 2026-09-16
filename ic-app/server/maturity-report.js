@@ -242,45 +242,35 @@ async function buildMaturityReportPdf(model, opts = {}) {
       const assessedLvl = s.benchmark ? s.benchmark.assessedLevel : null;
       const gap = mean != null && bench != null ? (bench - mean) : null;
       doc.font('Helvetica-Bold').fontSize(10.5).text(`#${s.number}  ${s.name}`);
-      doc.font('Helvetica').fontSize(9.5).fillColor(SLATE).text(
+      doc.moveDown(0.2);
+      doc.font('Helvetica').fontSize(9.5).lineGap(2).fillColor(SLATE).text(
         mean != null
           ? `Family mean ${fmt(mean)} (${labelName(mean)})   ·   min ${s.stats.min} / max ${s.stats.max} / spread ${s.stats.spread}`
           : 'Not assessed this round'
       );
-      // What Claude actually had to go on — the same description + live evidence fed
-      // into every Claude call for this service — shown before Claude's own conclusions
-      // so a reader can judge the read against its source, not just take it on faith.
-      const gc = s.groundingContext || {};
-      if (showBenchmark && (gc.description || gc.liveEvidence)) {
-        doc.moveDown(0.15);
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(MUTED).text('WHAT CLAUDE KNOWS ABOUT THIS SERVICE', { characterSpacing: 0.3 });
-        doc.font('Helvetica-Oblique').fontSize(9).fillColor(SLATE);
-        if (gc.description) doc.text(gc.description);
-        if (gc.liveEvidence) doc.text(gc.liveEvidence);
-        doc.font('Helvetica').fillColor(INK);
-        doc.moveDown(0.1);
-      }
       if (showBenchmark && assessedLvl != null) {
+        doc.moveDown(0.3);
         doc.fillColor(INK).text(`Claude's read of us: ${fmt(assessedLvl)} (${labelName(assessedLvl)})`);
-        if (s.benchmark.assessedRationale) doc.fillColor(SLATE).text(s.benchmark.assessedRationale);
+        if (s.benchmark.assessedRationale) { doc.moveDown(0.1); doc.fillColor(SLATE).text(s.benchmark.assessedRationale); }
       }
       if (showBenchmark && bench != null) {
+        doc.moveDown(0.3);
         doc.fillColor(INK).text(`Claude benchmark (peers) ${fmt(bench)} (${labelName(bench)})` + (gap != null ? `   ·   gap vs family ${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : ''));
-        if (s.benchmark.peerRationale) doc.fillColor(SLATE).text(s.benchmark.peerRationale);
+        if (s.benchmark.peerRationale) { doc.moveDown(0.1); doc.fillColor(SLATE).text(s.benchmark.peerRationale); }
         if (s.benchmark.recommendedPriority) {
           const pc = PRIORITY_COLOR[s.benchmark.recommendedPriority] || INK;
-          doc.moveDown(0.1);
+          doc.moveDown(0.25);
           doc.font('Helvetica-Bold').fillColor(pc).text(`${s.benchmark.recommendedPriority}. `, { continued: !!s.benchmark.recommendation })
             .font('Helvetica').fillColor(SLATE).text(s.benchmark.recommendation || '');
         }
         if ((s.benchmark.whatWouldMoveUp || []).length) {
-          doc.moveDown(0.15);
+          doc.moveDown(0.25);
           bullets(doc, s.benchmark.whatWouldMoveUp, { color: SLATE, fontSize: 9 });
         }
       }
       const per = (s.scores || []).filter((x) => x.submitted).map((x) => `${x.name.split(' ')[0]} ${x.level}`);
-      if (per.length) { doc.moveDown(0.1); doc.fontSize(8.5).fillColor(MUTED).text('By member — ' + per.join('   ·   ')); }
-      doc.fillColor(INK).moveDown(0.5);
+      if (per.length) { doc.moveDown(0.3); doc.fontSize(8.5).fillColor(MUTED).text('By member — ' + per.join('   ·   ')); }
+      doc.fillColor(INK).lineGap(0).moveDown(0.7);
     }
   }
 
@@ -292,11 +282,12 @@ async function buildMaturityReportPdf(model, opts = {}) {
   const ccPrev = (consciousness && consciousness.prevSummary) || {};
   if (cc.cog != null) {
     doc.font('Helvetica-Bold').text(`Family centre of gravity: level ${cc.cog} (${ccName(cc.cog)})` + (ccPrev.cog != null ? `  (was ${ccPrev.cog})` : ''));
-    doc.font('Helvetica').fillColor(SLATE).text(
+    doc.moveDown(0.2);
+    doc.font('Helvetica').lineGap(2).fillColor(SLATE).text(
       `Range ${cc.min}–${cc.max} across ${cc.count} member${cc.count === 1 ? '' : 's'}, spread ${cc.spread}` +
       (cc.straddlesThreshold ? ' — members on both sides of the Level-4 threshold' : '')
     );
-    doc.fillColor(INK).moveDown(0.4);
+    doc.fillColor(INK).lineGap(0).moveDown(0.5);
     if ((cc.members || []).length) {
       bullets(doc, cc.members.map((m) => `${m.name}: level ${m.level}` + (m.note ? ` — “${m.note}”` : '')), { color: SLATE });
     }
@@ -306,14 +297,15 @@ async function buildMaturityReportPdf(model, opts = {}) {
 
   if (round && round.synthesis) {
     const syn = round.synthesis;
-    doc.moveDown(0.5);
+    doc.moveDown(0.7);
     doc.moveTo(MARGIN.left, doc.y).lineTo(doc.page.width - MARGIN.right, doc.y).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
-    doc.moveDown(0.5);
+    doc.moveDown(0.6);
     subHeader(doc, 'Round synthesis');
-    doc.fontSize(9.5).fillColor(INK);
-    if (syn.doingThingsRight) { doc.font('Helvetica-Bold').text('Doing things right. ', { continued: true }).font('Helvetica').text(syn.doingThingsRight); }
-    if (syn.doingTheRightThings) { doc.moveDown(0.2).font('Helvetica-Bold').text('Doing the right things. ', { continued: true }).font('Helvetica').text(syn.doingTheRightThings); }
-    if ((syn.priorities || []).length) { doc.moveDown(0.25); bullets(doc, syn.priorities, { color: SLATE }); }
+    doc.fontSize(9.5).lineGap(2).fillColor(INK);
+    if (syn.doingThingsRight) { doc.font('Helvetica-Bold').text('Doing things right. ', { continued: true }).font('Helvetica').text(syn.doingThingsRight); doc.moveDown(0.35); }
+    if (syn.doingTheRightThings) { doc.font('Helvetica-Bold').text('Doing the right things. ', { continued: true }).font('Helvetica').text(syn.doingTheRightThings); doc.moveDown(0.35); }
+    doc.lineGap(0);
+    if ((syn.priorities || []).length) { bullets(doc, syn.priorities, { color: SLATE }); }
     doc.fillColor(INK);
   }
 
@@ -324,13 +316,13 @@ async function buildMaturityReportPdf(model, opts = {}) {
   for (const bucket of ['Immediate', 'Active', 'Monitor']) {
     if (!firstBucket) {
       doc.moveTo(MARGIN.left, doc.y).lineTo(doc.page.width - MARGIN.right, doc.y).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
-      doc.moveDown(0.4);
+      doc.moveDown(0.5);
     }
     firstBucket = false;
     const list = open.filter((a) => a.priority === bucket);
     const bc = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E9E5A' }[bucket];
     doc.fontSize(11).font('Helvetica-Bold').fillColor(bc).text(`${bucket} (${list.length})`);
-    doc.moveDown(0.15);
+    doc.moveDown(0.25);
     if (!list.length) {
       doc.fontSize(9.5).font('Helvetica').fillColor(MUTED).text('None.');
     } else {
