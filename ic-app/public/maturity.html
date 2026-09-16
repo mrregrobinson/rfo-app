@@ -333,20 +333,21 @@ function ServiceWorksheet({service,round,levelLabels,onReload}){
   );
 }
 
-function ReportButtons({roundId,members}){
+function ReportButtons({roundId,members,showBenchmark}){
   const [emailing,setEmailing]=useState(false);
   const [to,setTo]=useState('');
   const [msg,setMsg]=useState('');
   const [busy,setBusy]=useState(false);
+  const pdfHref='/api/maturity/report/pdf?round='+(roundId||'')+'&benchmark='+(showBenchmark?1:0);
   async function send(){
     setBusy(true);setMsg('');
     try{
-      await api.post('/api/maturity/report/email',{to:to.split(',').map(s=>s.trim()).filter(Boolean),round:roundId});
+      await api.post('/api/maturity/report/email',{to:to.split(',').map(s=>s.trim()).filter(Boolean),round:roundId,benchmark:showBenchmark});
       setMsg('Sent.');setEmailing(false);setTo('');
     }catch(e){setMsg(e.message);}finally{setBusy(false);}
   }
   return h('span',{style:{display:'inline-flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
-    h('a',{className:'btn btn-outline btn-sm',href:'/api/maturity/report/pdf?round='+(roundId||''),target:'_blank'},'Print / PDF'),
+    h('a',{className:'btn btn-outline btn-sm',href:pdfHref,target:'_blank'},'Print / PDF'),
     h('button',{className:'btn btn-outline btn-sm',onClick:()=>{setEmailing(!emailing);setMsg('');}},'Email PDF'),
     emailing&&h('span',{style:{display:'inline-flex',gap:4,alignItems:'center'}},
       h('input',{placeholder:'email addresses, comma-separated',value:to,onChange:e=>setTo(e.target.value),style:{width:240,border:'0.5px solid var(--border)',borderRadius:7,padding:'6px 10px',fontSize:12}}),
@@ -367,11 +368,11 @@ function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
       h('span',{className:'small muted'},'Round'),
       h('select',{value:roundId||'',onChange:e=>onPickRound(e.target.value)},rounds.map(r=>h('option',{key:r.id,value:r.id},r.label+(r.isAnchor?' ★':'')+' ('+r.status+')'))),
       h('div',{style:{flex:1}}),
-      h(ReportButtons,{roundId,members})),
+      h(ReportButtons,{roundId,members,showBenchmark})),
     h('div',{className:'card'},
       h('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:2}},
         h('div',{className:'sec',style:{marginTop:0,marginBottom:0,flex:1}},'Maturity by service — mean, benchmark and member spread'),
-        h('label',{className:'small muted',style:{display:'inline-flex',alignItems:'center',gap:5,cursor:'pointer',whiteSpace:'nowrap'}},
+        h('label',{className:'small muted',style:{display:'inline-flex',alignItems:'center',gap:5,cursor:'pointer',whiteSpace:'nowrap'},title:'Also controls whether the Print/PDF and emailed report include the benchmark markers on this chart'},
           h('input',{type:'checkbox',checked:showBenchmark,onChange:e=>setShowBenchmark(e.target.checked)}),'Show benchmark')),
       h(LollipopChart,{groups:data.groups,services,onOpen:onOpenService,showBenchmark})),
     data.groups.map(g=>{

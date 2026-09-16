@@ -336,7 +336,14 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
 - Maturity report PDFs are built by `server/maturity-report.js` (`pdfkit` +
   `chartjs-node-canvas`, same stack as the risk/expenditure reports); `GET
   /api/maturity/report/pdf` streams it and `POST /api/maturity/report/email` sends it
-  through the Graph mailer.
+  through the Graph mailer. Both take a `benchmark` flag (`?benchmark=0/1` on the GET,
+  `{benchmark: bool}` in the POST body; defaults to on) — the same "Show benchmark"
+  choice as the Scorecard tab's on-screen chart, carried through to the report so the
+  by-service bar chart can be exported as pure family self-assessment or with Claude's
+  read and the peer benchmark alongside it. The chart gets its own page in the PDF, sized
+  to the number of services actually being plotted (the previous fixed small canvas made
+  it read as a cramped smudge next to the crisp per-service text below it) and labels
+  each bar with its value directly, same as the on-screen chart's numeric labels.
 
 ## Scheduled Task List digest
 

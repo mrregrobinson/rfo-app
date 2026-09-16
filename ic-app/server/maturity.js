@@ -878,11 +878,16 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       db.prepare("SELECT id FROM maturity_rounds WHERE status = 'closed' ORDER BY closed_at DESC LIMIT 1").get()?.id ||
       activeRound()?.id || null;
   }
+  // '0'/'false' turns it off; anything else (including absent, for old links/bookmarks) keeps
+  // the report's default of showing the benchmark.
+  function wantsBenchmark(v) {
+    return v !== '0' && v !== 0 && v !== false && v !== 'false';
+  }
   app.get('/api/maturity/report/pdf', requireAuth, async (req, res) => {
     const rid = reportRoundId(req.query);
     if (!rid) return res.status(404).json({ error: 'No round to report on yet.' });
     try {
-      const pdf = await buildMaturityReportPdf(buildRoundModel(rid));
+      const pdf = await buildMaturityReportPdf(buildRoundModel(rid), { showBenchmark: wantsBenchmark(req.query.benchmark) });
       res.set('Content-Type', 'application/pdf');
       res.set('Content-Disposition', 'inline; filename="RFO-Maturity-Assessment.pdf"');
       res.send(pdf);
@@ -898,7 +903,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const rid = reportRoundId(b);
     if (!rid) return res.status(404).json({ error: 'No round to report on yet.' });
     try {
-      const pdf = await buildMaturityReportPdf(buildRoundModel(rid));
+      const pdf = await buildMaturityReportPdf(buildRoundModel(rid), { showBenchmark: wantsBenchmark(b.benchmark) });
       await mailer.sendMail({
         to,
         subject: b.subject || 'RFO Maturity Assessment',

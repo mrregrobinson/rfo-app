@@ -8,40 +8,95 @@ const PDFDocument = require('pdfkit');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const { FONT_FAMILY, registerChartFonts } = require('./chart-fonts');
 
-const chartCanvas = new ChartJSNodeCanvas({
-  width: 560,
-  height: 520,
-  backgroundColour: 'white',
-  chartCallback: (ChartJS) => { ChartJS.defaults.font.family = FONT_FAMILY; },
-});
-registerChartFonts(chartCanvas);
+// The chart's canvas has to be sized to the number of services being plotted (up to 16) —
+// a fixed small canvas is what made this chart read as a cramped smudge next to the crisp
+// per-service text below it. Instances are cheap to reuse, so cache by exact size instead
+// of re-registering fonts on every report.
+const canvasCache = new Map();
+function getChartCanvas(width, height) {
+  const key = width + 'x' + height;
+  let c = canvasCache.get(key);
+  if (!c) {
+    c = new ChartJSNodeCanvas({
+      width,
+      height,
+      backgroundColour: 'white',
+      chartCallback: (ChartJS) => { ChartJS.defaults.font.family = FONT_FAMILY; },
+    });
+    registerChartFonts(c);
+    canvasCache.set(key, c);
+  }
+  return c;
+}
 
-// Grouped horizontal bar: one row per assessed service, three reads on a 1–5 scale —
-// family mean, Claude's own independent read of where the family sits (assessedLevel),
-// and Claude's researched peer benchmark (peerLevel) — replaces the radar, clearer for
-// 16 services.
-async function barPng(model) {
+// Draws the numeric value beside each bar — the same thing that makes the on-screen
+// Lollipop chart (public/maturity.html) legible at a glance instead of relying on the
+// reader to eyeball bar length against the axis.
+const valueLabelPlugin = {
+  id: 'maturityValueLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    ctx.save();
+    ctx.font = `bold 12px "${FONT_FAMILY}"`;
+    ctx.fillStyle = '#1B2A4A';
+    ctx.textBaseline = 'middle';
+    chart.data.datasets.forEach((ds, di) => {
+      chart.getDatasetMeta(di).data.forEach((bar, i) => {
+        const v = ds.data[i];
+        if (v == null) return;
+        ctx.fillText(String(v), bar.x + 6, bar.y);
+      });
+    });
+    ctx.restore();
+  },
+};
+
+// Grouped horizontal bar: one row per assessed service. Family mean is always shown;
+// Claude's own independent read of where the family sits (assessedLevel) and Claude's
+// researched peer benchmark (peerLevel) are added only when showBenchmark is true — the
+// same "Show benchmark" choice as the Scorecard tab's on-screen chart, carried into the
+// exported report.
+async function barPng(model, showBenchmark) {
   const services = model.services.filter((s) => s.stats && s.stats.mean != null);
   if (!services.length) return null;
-  return chartCanvas.renderToBuffer({
+  const datasets = [
+    { label: 'Family mean', data: services.map((s) => s.stats.mean), backgroundColor: 'rgba(27,42,74,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 },
+  ];
+  if (showBenchmark) {
+    datasets.push(
+      { label: "Claude's read of us", data: services.map((s) => (s.benchmark ? s.benchmark.assessedLevel : null)), backgroundColor: 'rgba(42,125,123,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 },
+      { label: 'Claude benchmark (peers)', data: services.map((s) => (s.benchmark ? s.benchmark.peerLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 }
+    );
+  }
+  const width = 980;
+  const height = 150 + services.length * (showBenchmark ? 46 : 30);
+  const canvas = getChartCanvas(width, height);
+  return canvas.renderToBuffer({
     type: 'bar',
-    data: {
-      labels: services.map((s) => `#${s.number} ${s.name}`),
-      datasets: [
-        { label: 'Family mean', data: services.map((s) => s.stats.mean), backgroundColor: 'rgba(27,42,74,0.85)', barPercentage: 0.6 },
-        { label: "Claude's read of us", data: services.map((s) => (s.benchmark ? s.benchmark.assessedLevel : null)), backgroundColor: 'rgba(42,125,123,0.85)', barPercentage: 0.6 },
-        { label: 'Claude benchmark (peers)', data: services.map((s) => (s.benchmark ? s.benchmark.peerLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.6 },
-      ],
-    },
+    data: { labels: services.map((s) => `#${s.number} ${s.name}`), datasets },
     options: {
       indexAxis: 'y',
-      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Maturity by service — family mean vs. Claude\'s read of us vs. peer benchmark (1–5)' } },
-      scales: { x: { min: 0, max: 5, ticks: { stepSize: 1 } } },
+      layout: { padding: { right: 36 } },
+      plugins: {
+        legend: { display: showBenchmark, position: 'top', labels: { font: { size: 14 } } },
+        title: {
+          display: true, font: { size: 17 },
+          text: showBenchmark
+            ? "Maturity by service — family mean vs. Claude's read of us vs. peer benchmark (1–5)"
+            : 'Maturity by service — family self-assessed mean (1–5)',
+        },
+      },
+      scales: {
+        x: { min: 0, max: 5, ticks: { stepSize: 1, font: { size: 13 } } },
+        y: { ticks: { font: { size: 13 } } },
+      },
     },
+    plugins: [valueLabelPlugin],
   });
 }
 
-async function buildMaturityReportPdf(model) {
+async function buildMaturityReportPdf(model, opts = {}) {
+  const showBenchmark = opts.showBenchmark !== false;
   const { round, groups, levelLabels, services, consciousness, consciousnessLevels, actions, generatedAt } = model;
   const ccName = (lvl) => (consciousnessLevels || []).find((l) => l.level === Math.round(lvl))?.name || '';
   const doc = new PDFDocument({ margin: 44, size: 'LETTER' });
@@ -70,14 +125,24 @@ async function buildMaturityReportPdf(model) {
   );
   doc.moveDown(0.5);
 
+  // The chart gets its own page, sized to the actual number of services being plotted —
+  // cramming it above the per-service text (its old spot) left too little height per row
+  // to read clearly, which is why it looked murkier than the plain text underneath it.
+  doc.addPage();
+  doc.fontSize(13).fillColor('#1B2A4A').text('Maturity by service — at a glance', { underline: true });
+  doc.moveDown(0.3);
   try {
-    const img = await barPng(model);
-    if (img) doc.image(img, { fit: [500, 460] });
+    const img = await barPng(model, showBenchmark);
+    if (img) {
+      doc.image(img, { fit: [524, 700], align: 'center' });
+    } else {
+      doc.fontSize(9).fillColor('#6B7280').text('No services assessed yet this round.');
+    }
   } catch (err) {
     doc.fontSize(9).fillColor('#991B1B').text(`(chart could not be rendered: ${err.message})`);
   }
-  doc.moveDown(0.5);
 
+  doc.addPage();
   for (const g of groups) {
     const rows = services.filter((s) => s.groupId === g.id);
     if (!rows.length) continue;
