@@ -233,6 +233,19 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   nowhere to surface. Directly editable by an admin at any time (`PUT
   /api/maturity/services/:id`, surfaced in the service drawer), same "no Claude review
   required" pattern as questions and level descriptors.
+- Alongside that hand-authored `description`, every benchmark and wording-suggestion call
+  is also grounded in **live evidence pulled fresh from this app's own other modules** at
+  request time — not a static snapshot, so it never goes stale as the family keeps using
+  the app. `liveEvidenceFor(serviceId)` (`server/maturity.js`) queries: the Family Task
+  List (`tasks`/`task_categories`, mapped per service via `TASK_CATEGORY_BY_SERVICE` —
+  completion counts, recently completed and currently open items); the Enterprise Risk
+  Register (`risk_categories`/`risk_actions`, for Risk Management) — active category count
+  and open/incomplete mitigation actions; and the Due Diligence module (`opportunities`,
+  for the Investment services) — every opportunity actually run through the app, with
+  asset class, commitment and status. `recentGovernanceActivity()` adds the most recently
+  *held* (not just scheduled) Family Council/Investment Committee meetings from the
+  Meetings module, appended to `FAMILY_CONTEXT` for every call. Kept strictly factual and
+  quantified (counts, titles, dates) — never a maturity judgment — same as `description`.
 - `POST /api/maturity/rounds/:id/suggest-wording` (admin-only, any round that isn't
   closed — "Ask Claude to refresh wording" on the Manage tab): one Claude web-search call
   per service researches how that specific service ought to be assessed and proposes BOTH

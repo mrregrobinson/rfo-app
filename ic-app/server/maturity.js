@@ -155,6 +155,81 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       .map((q) => ({ id: q.id, serviceId: q.service_id, prompt: q.prompt, helpText: q.help_text, responseKind: q.response_kind, weight: q.weight, sortOrder: q.sort_order, isActive: !!q.is_active }));
   }
 
+  // ---- live evidence from the rest of the app (§7.1 follow-up) ----
+  // A hand-written `description` goes stale the moment the family's real activity moves
+  // on. This pulls FRESH, CURRENT signal — at benchmark/suggestion time, not seeded —
+  // from the same app's other modules (Family Task List, Risk Register, Meetings, Due
+  // Diligence), which all share this one database. Kept factual and quantified
+  // (counts, titles, dates), never a maturity judgment.
+  const TASK_CATEGORY_BY_SERVICE = {
+    'svc-01': ['accountability-succession'],
+    'svc-02': ['maturity', 'conflict-resolution'],
+    'svc-03': ['risk-management'],
+    'svc-04': ['relationships', 'conflict-resolution'],
+    'svc-05': ['learning'],
+    'svc-06': ['wellness'],
+    'svc-07': ['investment'],
+    'svc-08': ['investment'],
+    'svc-09': ['philanthropy'],
+    'svc-10': ['tax-estate'],
+    'svc-11': ['tax-estate'],
+    'svc-12': ['finance'],
+    'svc-13': ['it'],
+    // svc-14 Legal, svc-15 External Relationships, svc-16 External Communication have no
+    // dedicated Family Task List category — no task-list signal for these.
+  };
+  function liveEvidenceFor(serviceId) {
+    const parts = [];
+    const catIds = TASK_CATEGORY_BY_SERVICE[serviceId];
+    if (catIds && catIds.length) {
+      const ph = catIds.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT status FROM tasks WHERE category_id IN (${ph})`).all(...catIds);
+      if (rows.length) {
+        const done = rows.filter((r) => r.status === 'done').length;
+        const recentDone = db.prepare(
+          `SELECT title, completed_at FROM tasks WHERE category_id IN (${ph}) AND status = 'done' ORDER BY completed_at DESC LIMIT 3`
+        ).all(...catIds);
+        const openSoon = db.prepare(
+          `SELECT title, target_quarter FROM tasks WHERE category_id IN (${ph}) AND status != 'done' ORDER BY (priority = 'high') DESC, target_quarter LIMIT 3`
+        ).all(...catIds);
+        parts.push(
+          `Family Task List (live): ${done} of ${rows.length} tracked tasks completed.` +
+          (recentDone.length ? ` Recently completed: ${recentDone.map((t) => `"${t.title}" (${(t.completed_at || '').slice(0, 10)})`).join('; ')}.` : '') +
+          (openSoon.length ? ` Currently open: ${openSoon.map((t) => `"${t.title}"${t.target_quarter ? ' (' + t.target_quarter + ')' : ''}`).join('; ')}.` : '')
+        );
+      }
+    }
+    if (serviceId === 'svc-03') {
+      const catCount = db.prepare('SELECT COUNT(*) n FROM risk_categories WHERE is_active = 1').get().n;
+      const a = db.prepare(
+        "SELECT COUNT(*) n, SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) openA, SUM(CASE WHEN status = 'incomplete' THEN 1 ELSE 0 END) incomplete FROM risk_actions"
+      ).get();
+      if (catCount || a.n) {
+        parts.push(
+          `Enterprise Risk Register (live, this app's Risk module): ${catCount} active risk categories tracked; of ${a.n} identified mitigation actions, ${a.openA || 0} are open and ${a.incomplete || 0} are flagged incomplete.`
+        );
+      }
+    }
+    if (serviceId === 'svc-07' || serviceId === 'svc-08') {
+      const opps = db.prepare('SELECT title, asset_class, commitment, currency, status FROM opportunities ORDER BY created_at DESC').all();
+      if (opps.length) {
+        parts.push(
+          `Due Diligence module (live): ${opps.length} investment opportunit${opps.length === 1 ? 'y' : 'ies'} run through this app's due diligence process — ` +
+          opps.map((o) => `"${o.title}" (${o.asset_class}, ${o.currency} ${Number(o.commitment).toLocaleString()}, ${o.status})`).join('; ') + '.'
+        );
+      }
+    }
+    return parts.join(' ');
+  }
+  // Cross-cutting (not per-service) — recent Family Council / Investment Committee
+  // meetings actually held, from this app's Meetings module. Shows the governance cadence
+  // in action, not just documented as a plan.
+  function recentGovernanceActivity() {
+    const meetings = db.prepare("SELECT title, planned_at FROM meetings WHERE status = 'completed' ORDER BY planned_at DESC LIMIT 3").all();
+    if (!meetings.length) return '';
+    return `Recently held family governance meetings (live, this app's Meetings module): ${meetings.map((m) => `"${m.title}" (${(m.planned_at || '').slice(0, 10)})`).join('; ')}.`;
+  }
+
   const median = (sorted) => (sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : null);
 
   // family stats for one (round, service): mean/min/max/spread over SUBMITTED scores only
@@ -982,15 +1057,17 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const labels = levelLabels().map((l) => l.name);
     const results = [];
     const errors = [];
+    const familyContextWithActivity = [FAMILY_CONTEXT, recentGovernanceActivity()].filter(Boolean).join('\n\n');
     for (const s of targets) {
       try {
         const stat = serviceStats(r.id, s.id);
+        const description = [s.description || '', liveEvidenceFor(s.id)].filter(Boolean).join('\n\n');
         const { result, usage } = await claude.benchmarkMaturityService({
           serviceName: s.name,
-          description: s.description || '',
+          description,
           levelLabels: labels,
           levelDescriptors: descriptorsFor(s.id).map((d) => d.text),
-          familyContext: FAMILY_CONTEXT,
+          familyContext: familyContextWithActivity,
           selfAssessedLevel: stat.mean,
         });
         logApiUsage({ callType: 'maturity_benchmark', usage, userId: req.session.userId });
@@ -1078,14 +1155,16 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const labels = levelLabels().map((l) => l.name);
     const results = [];
     const errors = [];
+    const familyContextWithActivity = [FAMILY_CONTEXT, recentGovernanceActivity()].filter(Boolean).join('\n\n');
     for (const s of targets) {
       try {
         const current = descriptorsFor(s.id);
         const currentQuestions = questionsFor(s.id, false); // already ordered by sort_order
+        const description = [s.description || '', liveEvidenceFor(s.id)].filter(Boolean).join('\n\n');
         const { result, usage } = await claude.suggestServiceWording({
-          serviceName: s.name, description: s.description || '',
+          serviceName: s.name, description,
           levelLabels: labels, currentDescriptors: current.map((d) => d.text),
-          currentQuestions, familyContext: FAMILY_CONTEXT,
+          currentQuestions, familyContext: familyContextWithActivity,
         });
         logApiUsage({ callType: 'maturity_wording_suggest', usage, userId: req.session.userId });
         const now = new Date().toISOString();
