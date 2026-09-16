@@ -181,7 +181,7 @@ const svg=(tag,props,...kids)=>h(tag,props,...kids);
 // ---- Grouped lollipop: one row per service, maturity 1–5 axis. Family mean dot,
 // Claude-benchmark diamond, and a faint band for the member min–max spread. Replaces
 // the radar. ----
-function LollipopChart({groups,services,onOpen}){
+function LollipopChart({groups,services,onOpen,showBenchmark}){
   const W=680, LX=196, RX=W-18, RH=21, PAD_TOP=34, PAD_BOT=10;
   const rows=[]; // {type:'group'|'svc', ...}
   groups.forEach(g=>{
@@ -199,7 +199,7 @@ function LollipopChart({groups,services,onOpen}){
     els.push(svg('line',{key:'g'+v,x1:x(v),y1:PAD_TOP-6,x2:x(v),y2:H-PAD_BOT,stroke:'#EEF0F3',strokeWidth:1}));
     els.push(svg('text',{key:'gl'+v,x:x(v),y:PAD_TOP-12,textAnchor:'middle',fontSize:9,fill:'#9CA3AF'},v));
   }
-  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},'● family mean   ▲ Claude’s read of us   ◆ peer benchmark   ▭ member spread'));
+  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},showBenchmark?'● family mean   ▲ Claude’s read of us   ◆ peer benchmark   ▭ member spread':'● family mean   ▭ member spread'));
   rows.forEach((r,i)=>{
     const cy=y+RH/2;
     if(r.type==='group'){
@@ -214,11 +214,11 @@ function LollipopChart({groups,services,onOpen}){
         if(st.min!=null&&st.max!=null&&st.max>st.min){
           els.push(svg('rect',{key:'sp'+i,x:x(st.min),y:cy-3,width:Math.max(2,x(st.max)-x(st.min)),height:6,rx:3,fill:'rgba(27,42,74,.14)'}));
         }
-        if(s.benchmark&&s.benchmark.peerLevel!=null){
+        if(showBenchmark&&s.benchmark&&s.benchmark.peerLevel!=null){
           const bx=x(s.benchmark.peerLevel);
           els.push(svg('rect',{key:'bm'+i,x:bx-4.5,y:cy-4.5,width:9,height:9,transform:'rotate(45 '+bx+' '+cy+')',fill:'#fff',stroke:'#C9A84C',strokeWidth:1.6}));
         }
-        if(s.benchmark&&s.benchmark.assessedLevel!=null){
+        if(showBenchmark&&s.benchmark&&s.benchmark.assessedLevel!=null){
           const ax=x(s.benchmark.assessedLevel);
           els.push(svg('polygon',{key:'as'+i,points:(ax-5)+','+(cy+4)+' '+(ax+5)+','+(cy+4)+' '+ax+','+(cy-5),fill:'#fff',stroke:'#2A7D7B',strokeWidth:1.6}));
         }
@@ -361,6 +361,7 @@ function ReportButtons({roundId,members}){
 function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
   const rounds=data.rounds||[];
   const services=data.services;
+  const [showBenchmark,setShowBenchmark]=useState(true);
   return h('div',null,
     h('div',{className:'filters'},
       h('span',{className:'small muted'},'Round'),
@@ -368,8 +369,11 @@ function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
       h('div',{style:{flex:1}}),
       h(ReportButtons,{roundId,members})),
     h('div',{className:'card'},
-      h('div',{className:'sec',style:{marginTop:0}},'Maturity by service — mean, benchmark and member spread'),
-      h(LollipopChart,{groups:data.groups,services,onOpen:onOpenService})),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:2}},
+        h('div',{className:'sec',style:{marginTop:0,marginBottom:0,flex:1}},'Maturity by service — mean, benchmark and member spread'),
+        h('label',{className:'small muted',style:{display:'inline-flex',alignItems:'center',gap:5,cursor:'pointer',whiteSpace:'nowrap'}},
+          h('input',{type:'checkbox',checked:showBenchmark,onChange:e=>setShowBenchmark(e.target.checked)}),'Show benchmark')),
+      h(LollipopChart,{groups:data.groups,services,onOpen:onOpenService,showBenchmark})),
     data.groups.map(g=>{
       const svcs=services.filter(s=>s.groupId===g.id);
       if(!svcs.length)return null;
