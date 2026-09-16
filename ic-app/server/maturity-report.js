@@ -229,8 +229,14 @@ async function buildMaturityReportPdf(model, opts = {}) {
     else doc.addPage();
     subHeader(doc, g.name);
     doc.fontSize(9.5).fillColor(INK);
+    let firstService = true;
     for (const s of rows) {
       if (doc.y > 690) doc.addPage();
+      if (!firstService) {
+        doc.moveTo(MARGIN.left, doc.y).lineTo(doc.page.width - MARGIN.right, doc.y).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
+        doc.moveDown(0.4);
+      }
+      firstService = false;
       const mean = s.stats && s.stats.mean != null ? s.stats.mean : null;
       const bench = s.benchmark ? s.benchmark.peerLevel : null;
       const assessedLvl = s.benchmark ? s.benchmark.assessedLevel : null;
@@ -241,6 +247,19 @@ async function buildMaturityReportPdf(model, opts = {}) {
           ? `Family mean ${fmt(mean)} (${labelName(mean)})   ·   min ${s.stats.min} / max ${s.stats.max} / spread ${s.stats.spread}`
           : 'Not assessed this round'
       );
+      // What Claude actually had to go on — the same description + live evidence fed
+      // into every Claude call for this service — shown before Claude's own conclusions
+      // so a reader can judge the read against its source, not just take it on faith.
+      const gc = s.groundingContext || {};
+      if (showBenchmark && (gc.description || gc.liveEvidence)) {
+        doc.moveDown(0.15);
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(MUTED).text('WHAT CLAUDE KNOWS ABOUT THIS SERVICE', { characterSpacing: 0.3 });
+        doc.font('Helvetica-Oblique').fontSize(9).fillColor(SLATE);
+        if (gc.description) doc.text(gc.description);
+        if (gc.liveEvidence) doc.text(gc.liveEvidence);
+        doc.font('Helvetica').fillColor(INK);
+        doc.moveDown(0.1);
+      }
       if (showBenchmark && assessedLvl != null) {
         doc.fillColor(INK).text(`Claude's read of us: ${fmt(assessedLvl)} (${labelName(assessedLvl)})`);
         if (s.benchmark.assessedRationale) doc.fillColor(SLATE).text(s.benchmark.assessedRationale);
@@ -287,7 +306,9 @@ async function buildMaturityReportPdf(model, opts = {}) {
 
   if (round && round.synthesis) {
     const syn = round.synthesis;
-    doc.moveDown(0.9);
+    doc.moveDown(0.5);
+    doc.moveTo(MARGIN.left, doc.y).lineTo(doc.page.width - MARGIN.right, doc.y).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
+    doc.moveDown(0.5);
     subHeader(doc, 'Round synthesis');
     doc.fontSize(9.5).fillColor(INK);
     if (syn.doingThingsRight) { doc.font('Helvetica-Bold').text('Doing things right. ', { continued: true }).font('Helvetica').text(syn.doingThingsRight); }
@@ -299,7 +320,13 @@ async function buildMaturityReportPdf(model, opts = {}) {
   // ---- Open actions -----------------------------------------------------------------
   sectionHeader(doc, 'Open actions');
   const open = (actions || []).filter((a) => a.effectiveStatus !== 'done' && !a.archivedAt);
+  let firstBucket = true;
   for (const bucket of ['Immediate', 'Active', 'Monitor']) {
+    if (!firstBucket) {
+      doc.moveTo(MARGIN.left, doc.y).lineTo(doc.page.width - MARGIN.right, doc.y).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
+      doc.moveDown(0.4);
+    }
+    firstBucket = false;
     const list = open.filter((a) => a.priority === bucket);
     const bc = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E9E5A' }[bucket];
     doc.fontSize(11).font('Helvetica-Bold').fillColor(bc).text(`${bucket} (${list.length})`);

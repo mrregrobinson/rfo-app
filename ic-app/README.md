@@ -353,7 +353,14 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   file is touched again: drawing text inside the bottom margin band (e.g. a footer)
   via `.text()` — even with an explicit y — makes pdfkit think the page overflowed
   and silently starts a *new* page instead of drawing on the current one; the fix is
-  to zero `doc.page.margins.bottom` for the duration of that draw call.
+  to zero `doc.page.margins.bottom` for the duration of that draw call. Each assessed
+  service's write-up also includes "What Claude knows about this service" (gated behind
+  the same `benchmark` flag) — the exact `description` + live evidence text fed into
+  every Claude call for that service (see `buildRoundModel`'s `groundingContext` field,
+  `server/maturity.js`), shown before Claude's own read/benchmark so a reader can judge
+  the conclusion against its source rather than take it on faith. A thin rule separates
+  each service within a category, and each priority bucket in Open Actions, so dense
+  pages read as a sequence of distinct items rather than one run-on block.
 
 ## Scheduled Task List digest
 
