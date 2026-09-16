@@ -220,7 +220,19 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   content is seeded from `server/maturity-seed-data.js` by `ensureSeeded()` (not a
   migration — the reference round's member scores need a user). Descriptors are edited in
   place; each round freezes a copy of the ladder into `maturity_rounds.ladder_json` at
-  the `draft → open` transition.
+  the `draft → open` transition. Each service also carries a `description` — factual,
+  evidence-grounded context (sourced from the family's own Planning & Governance
+  documents: annual meeting decks and notes, 2024-2026) fed into every Claude call for
+  that service (benchmark, wording suggestions) alongside `FAMILY_CONTEXT` (cross-cutting:
+  governance cadence, RACI, advisors). Deliberately kept to observable facts and named
+  artifacts/initiatives, never a judgment of maturity level — that's for Claude and the
+  family to derive. Before migration 043, `description` was always empty on every
+  service (and `FAMILY_CONTEXT` was one generic sentence), which is a real reason earlier
+  benchmarks read shallow — e.g. the family's 2025 addition of an explicit annual
+  discussion on whether it's actually living its values (not just documenting them) had
+  nowhere to surface. Directly editable by an admin at any time (`PUT
+  /api/maturity/services/:id`, surfaced in the service drawer), same "no Claude review
+  required" pattern as questions and level descriptors.
 - `POST /api/maturity/rounds/:id/suggest-wording` (admin-only, any round that isn't
   closed — "Ask Claude to refresh wording" on the Manage tab): one Claude web-search call
   per service researches how that specific service ought to be assessed and proposes BOTH

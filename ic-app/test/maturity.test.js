@@ -373,6 +373,29 @@ describe('direct question editing — no Claude review required (PUT /api/maturi
   });
 });
 
+describe('service grounding context — real evidence feeding the benchmark, not a generic blurb', () => {
+  test('all 16 services seed with a non-empty, distinct description', () => {
+    const rows = db.prepare('SELECT id, description FROM maturity_services ORDER BY number').all();
+    assert.equal(rows.length, 16);
+    for (const r of rows) assert.ok(r.description && r.description.length > 20, `${r.id} should have real description text`);
+    const distinct = new Set(rows.map((r) => r.description));
+    assert.equal(distinct.size, 16, 'every service should have its own description, not a shared placeholder');
+  });
+  test('an admin can edit a service description directly (PUT /api/maturity/services/:id), no Claude review required', async () => {
+    const before = db.prepare("SELECT description FROM maturity_services WHERE id = 'svc-09'").get().description;
+    as('lucas');
+    assert.equal((await send('PUT', '/api/maturity/services/svc-09', { description: 'nope' })).status, 403); // member cannot edit
+    as('reg');
+    const r = await send('PUT', '/api/maturity/services/svc-09', { description: 'Updated directly by an admin, no suggestion involved.' });
+    assert.equal(r.status, 200);
+    assert.equal(db.prepare("SELECT description FROM maturity_services WHERE id = 'svc-09'").get().description, 'Updated directly by an admin, no suggestion involved.');
+    // name is untouched by a description-only partial update
+    assert.equal(db.prepare("SELECT name FROM maturity_services WHERE id = 'svc-09'").get().name, 'Philanthropy');
+    // restore, so other suites relying on the seeded description aren't affected
+    db.prepare("UPDATE maturity_services SET description = ? WHERE id = 'svc-09'").run(before);
+  });
+});
+
 describe('actions <-> Family Task List', () => {
   test('create, promote to a task, read through, unlink', async () => {
     as('reg');

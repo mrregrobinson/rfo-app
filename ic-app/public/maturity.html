@@ -408,6 +408,8 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
   const [editQ,setEditQ]=useState(null);
   const [editQPrompt,setEditQPrompt]=useState('');
   const [editQHelp,setEditQHelp]=useState('');
+  const [editDesc,setEditDesc]=useState(false);
+  const [editDescText,setEditDescText]=useState('');
   function load(){return api.get('/api/maturity/services/'+serviceId+'?round='+(roundId||'')+'&allQuestions=1').then(setD);}
   useEffect(()=>{load();},[serviceId,roundId]);
   if(!d)return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal'},'Loading…'));
@@ -418,6 +420,9 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
   async function saveQuestion(q){
     if(!editQPrompt.trim())return;
     try{await api.put('/api/maturity/questions/'+q.id,{prompt:editQPrompt,helpText:editQHelp});setEditQ(null);await load();onChanged&&onChanged();}catch(e){alert(e.message);}
+  }
+  async function saveServiceDesc(){
+    try{await api.put('/api/maturity/services/'+s.id,{description:editDescText});setEditDesc(false);await load();onChanged&&onChanged();}catch(e){alert(e.message);}
   }
   async function acceptSug(sg,text){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/accept',text!=null?{text}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}}
   async function dismissSug(sg){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
@@ -431,6 +436,16 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
           d.benchmark&&d.benchmark.assessedLevel!=null?("  ·  Claude's read "+d.benchmark.assessedLevel):'',
           d.benchmark?('  ·  Peer benchmark '+d.benchmark.peerLevel):'')),
       h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')),
+    h('div',{style:{marginTop:6,marginBottom:4}},
+      editDesc
+        ?h('div',null,
+            h('textarea',{className:'form-textarea',value:editDescText,onChange:e=>setEditDescText(e.target.value)}),
+            h('button',{className:'btn btn-teal btn-sm',onClick:saveServiceDesc},'Save'),
+            h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>setEditDesc(false)},'Cancel'))
+        :h('div',{className:'small muted'},
+            h('span',{style:{fontWeight:600}},'What Claude knows about this service: '),
+            s.description||h('span',{style:{fontStyle:'italic'}},'nothing yet'),' ',
+            roles.maturityAdmin&&h('button',{className:'linkbtn',onClick:()=>{setEditDesc(true);setEditDescText(s.description||'');}},'edit'))),
 
     h('div',{className:'sec'},'The five maturity levels'),
     d.descriptors.map(dd=>h('div',{key:dd.level,className:'line',style:{alignItems:'flex-start'}},
