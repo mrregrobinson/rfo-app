@@ -95,21 +95,97 @@ async function barPng(model, showBenchmark) {
   });
 }
 
+const NAVY = '#1B2A4A';
+const TEAL = '#2A7D7B';
+const INK = '#111111';
+const SLATE = '#374151';
+const MUTED = '#6B7280';
+const HAIRLINE = '#D9DCE3';
+const PRIORITY_COLOR = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E3A8A', Maintain: '#065F46' };
+
+const MARGIN = { top: 66, bottom: 58, left: 50, right: 50 };
+const PAGE_TITLE = 'Robinson Family Office — Maturity Assessment';
+
+const fmt = (n) => (n == null ? '—' : Number(n).toFixed(2));
+
+// A fresh page for every major section, a consistent title treatment (rule, not the cheap
+// text-underline pdfkit draws hugging the descenders), and a hairline back at the left
+// margin — this is what separates "internal working doc" from something a provider opens.
+function sectionHeader(doc, title, { breakBefore = true } = {}) {
+  if (breakBefore) doc.addPage();
+  doc.x = MARGIN.left;
+  doc.fontSize(16).font('Helvetica-Bold').fillColor(NAVY).text(title, { width: doc.page.width - MARGIN.left - MARGIN.right });
+  doc.moveDown(0.2);
+  const y = doc.y;
+  doc.moveTo(MARGIN.left, y).lineTo(doc.page.width - MARGIN.right, y).lineWidth(1).strokeColor(HAIRLINE).stroke();
+  doc.moveDown(0.5);
+  doc.font('Helvetica').fillColor(INK);
+}
+
+function subHeader(doc, title) {
+  doc.x = MARGIN.left;
+  doc.fontSize(12.5).font('Helvetica-Bold').fillColor(TEAL).text(title.toUpperCase(), { characterSpacing: 0.4 });
+  doc.moveDown(0.25);
+  doc.font('Helvetica').fillColor(INK);
+}
+
+// Four label-over-value stat cards, evenly spaced — a quick executive read of the round
+// before the reader gets to sixteen services of detail.
+function statStrip(doc, stats) {
+  const width = doc.page.width - MARGIN.left - MARGIN.right;
+  const colW = width / stats.length;
+  const top = doc.y;
+  stats.forEach((s, i) => {
+    const x = MARGIN.left + i * colW;
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(MUTED).text(s.label.toUpperCase(), x, top, { width: colW - 10, characterSpacing: 0.3 });
+    doc.fontSize(22).font('Helvetica-Bold').fillColor(NAVY).text(s.value, x, top + 13, { width: colW - 10 });
+  });
+  doc.font('Helvetica').fillColor(INK);
+  doc.y = top + 46;
+  doc.x = MARGIN.left;
+}
+
+// Real bullets with hanging indents (pdfkit's list()), not text lines prefixed with a
+// character — the latter looks fine for one line and collapses the moment an item wraps.
+// pdfkit draws each item's bullet dot and its text in whatever the fill colour is at that
+// moment, both set here, so bullet and text always share one colour per call.
+function bullets(doc, items, { color = SLATE, fontSize = 9.5 } = {}) {
+  if (!items || !items.length) return;
+  doc.fontSize(fontSize).font('Helvetica').fillColor(color);
+  doc.list(items, MARGIN.left + 10, doc.y, {
+    width: doc.page.width - MARGIN.left - MARGIN.right - 10,
+    bulletRadius: 1.6,
+    textIndent: 14,
+    bulletIndent: 0,
+  });
+  // list() leaves doc.x at its own start position (MARGIN.left + 10) rather than the page
+  // margin, which would otherwise creep every paragraph after a bullet list rightward.
+  doc.x = MARGIN.left;
+  doc.fillColor(color);
+}
+
 async function buildMaturityReportPdf(model, opts = {}) {
   const showBenchmark = opts.showBenchmark !== false;
   const { round, groups, levelLabels, services, consciousness, consciousnessLevels, actions, generatedAt } = model;
   const ccName = (lvl) => (consciousnessLevels || []).find((l) => l.level === Math.round(lvl))?.name || '';
-  const doc = new PDFDocument({ margin: 44, size: 'LETTER' });
+  const doc = new PDFDocument({ margins: MARGIN, size: 'LETTER', bufferPages: true });
   const chunks = [];
   doc.on('data', (c) => chunks.push(c));
   const done = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
 
   const labelName = (lvl) => (levelLabels.find((l) => l.level === Math.round(lvl)) || {}).name || '';
 
-  doc.fontSize(18).fillColor('#1B2A4A').text('Robinson Family Office — Maturity Assessment');
-  doc.fontSize(11).fillColor('#374151').text(round ? round.label + (round.isAnchor ? '  (baseline anchor)' : '') + '  ·  ' + round.status : 'No round selected');
-  doc.fontSize(10).fillColor('#6B7280').text(`Generated ${new Date(generatedAt).toLocaleString('en-CA')}`);
-  doc.moveDown(0.4);
+  // ---- Cover ----------------------------------------------------------------------
+  doc.fontSize(20).font('Helvetica-Bold').fillColor(NAVY).text('Robinson Family Office');
+  doc.fontSize(15).font('Helvetica').fillColor(TEAL).text('Maturity Assessment');
+  doc.moveDown(0.5);
+  doc.moveTo(MARGIN.left, doc.y).lineTo(doc.page.width - MARGIN.right, doc.y).lineWidth(1.5).strokeColor(NAVY).stroke();
+  doc.moveDown(0.6);
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(INK).text(round ? round.label + (round.isAnchor ? '  ·  Baseline anchor' : '') : 'No round selected');
+  doc.fontSize(10).font('Helvetica').fillColor(MUTED).text(
+    (round ? 'Status: ' + round.status + '   ·   ' : '') + `Generated ${new Date(generatedAt).toLocaleString('en-CA', { dateStyle: 'long', timeStyle: 'short' })}`
+  );
+  doc.moveDown(1.1);
 
   const scored = services.filter((s) => s.stats && s.stats.mean != null);
   const famMean = scored.length ? scored.reduce((a, s) => a + s.stats.mean, 0) / scored.length : null;
@@ -117,129 +193,152 @@ async function buildMaturityReportPdf(model, opts = {}) {
   const peerMean = benched.length ? benched.reduce((a, s) => a + s.benchmark.peerLevel, 0) / benched.length : null;
   const assessed = services.filter((s) => s.benchmark && s.benchmark.assessedLevel != null);
   const assessedMean = assessed.length ? assessed.reduce((a, s) => a + s.benchmark.assessedLevel, 0) / assessed.length : null;
-  doc.fontSize(11).fillColor('#111').text(
-    `Aggregate family mean: ${famMean != null ? famMean.toFixed(2) : '—'}` +
-    `   ·   Aggregate Claude's read of us: ${assessedMean != null ? assessedMean.toFixed(2) : '—'}` +
-    `   ·   Aggregate peer benchmark: ${peerMean != null ? peerMean.toFixed(2) : '—'}` +
-    `   ·   ${scored.length}/${services.length} services assessed`
-  );
-  doc.moveDown(0.5);
+  const coverStats = [
+    { label: 'Family mean', value: fmt(famMean) },
+    ...(showBenchmark ? [
+      { label: "Claude's read of us", value: fmt(assessedMean) },
+      { label: 'Peer benchmark', value: fmt(peerMean) },
+    ] : []),
+    { label: 'Services assessed', value: `${scored.length}/${services.length}` },
+  ];
+  statStrip(doc, coverStats);
+  doc.moveDown(1);
+  doc.fontSize(9).font('Helvetica').fillColor(MUTED).text('Confidential — prepared for the Robinson Family Office and its advisors.');
 
-  // The chart gets its own page, sized to the actual number of services being plotted —
-  // cramming it above the per-service text (its old spot) left too little height per row
-  // to read clearly, which is why it looked murkier than the plain text underneath it.
-  doc.addPage();
-  doc.fontSize(13).fillColor('#1B2A4A').text('Maturity by service — at a glance', { underline: true });
-  doc.moveDown(0.3);
+  // ---- Chart, on its own page, sized to the number of services actually plotted ----
+  // Cramming it above the per-service text (its old spot) left too little height per row
+  // to read clearly, which is why it used to look murkier than the plain text below it.
+  sectionHeader(doc, 'Maturity by service — at a glance');
   try {
     const img = await barPng(model, showBenchmark);
     if (img) {
-      doc.image(img, { fit: [524, 700], align: 'center' });
+      doc.image(img, { fit: [doc.page.width - MARGIN.left - MARGIN.right, 660], align: 'center' });
     } else {
-      doc.fontSize(9).fillColor('#6B7280').text('No services assessed yet this round.');
+      doc.fontSize(9).fillColor(MUTED).text('No services assessed yet this round.');
     }
   } catch (err) {
     doc.fontSize(9).fillColor('#991B1B').text(`(chart could not be rendered: ${err.message})`);
   }
 
-  doc.addPage();
+  // ---- Scorecard by category — one page per group for a clean, provider-ready layout
+  let firstGroup = true;
   for (const g of groups) {
     const rows = services.filter((s) => s.groupId === g.id);
     if (!rows.length) continue;
-    if (doc.y > 640) doc.addPage();
-    doc.fontSize(12).fillColor('#2A7D7B').text(g.name, { underline: true });
-    doc.moveDown(0.2);
-    doc.fontSize(9).fillColor('#111');
+    if (firstGroup) { sectionHeader(doc, 'Scorecard by service'); firstGroup = false; }
+    else doc.addPage();
+    subHeader(doc, g.name);
+    doc.fontSize(9.5).fillColor(INK);
     for (const s of rows) {
-      if (doc.y > 720) doc.addPage();
+      if (doc.y > 690) doc.addPage();
       const mean = s.stats && s.stats.mean != null ? s.stats.mean : null;
       const bench = s.benchmark ? s.benchmark.peerLevel : null;
       const assessedLvl = s.benchmark ? s.benchmark.assessedLevel : null;
       const gap = mean != null && bench != null ? (bench - mean) : null;
-      doc.font('Helvetica-Bold').text(`#${s.number}  ${s.name}`);
-      doc.font('Helvetica').fillColor('#374151').text(
+      doc.font('Helvetica-Bold').fontSize(10.5).text(`#${s.number}  ${s.name}`);
+      doc.font('Helvetica').fontSize(9.5).fillColor(SLATE).text(
         mean != null
-          ? `Family mean ${mean} (${labelName(mean)})   ·   min ${s.stats.min} / max ${s.stats.max} / spread ${s.stats.spread}`
+          ? `Family mean ${fmt(mean)} (${labelName(mean)})   ·   min ${s.stats.min} / max ${s.stats.max} / spread ${s.stats.spread}`
           : 'Not assessed this round'
       );
-      if (assessedLvl != null) {
-        doc.fillColor('#111').text(`Claude's read of us: ${assessedLvl} (${labelName(assessedLvl)})`);
-        if (s.benchmark.assessedRationale) doc.fillColor('#374151').text(s.benchmark.assessedRationale);
+      if (showBenchmark && assessedLvl != null) {
+        doc.fillColor(INK).text(`Claude's read of us: ${fmt(assessedLvl)} (${labelName(assessedLvl)})`);
+        if (s.benchmark.assessedRationale) doc.fillColor(SLATE).text(s.benchmark.assessedRationale);
       }
-      if (bench != null) {
-        doc.fillColor('#111').text(`Claude benchmark (peers) ${bench} (${labelName(bench)})` + (gap != null ? `   ·   gap vs family ${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : ''));
-        if (s.benchmark.peerRationale) doc.fillColor('#374151').text(s.benchmark.peerRationale);
+      if (showBenchmark && bench != null) {
+        doc.fillColor(INK).text(`Claude benchmark (peers) ${fmt(bench)} (${labelName(bench)})` + (gap != null ? `   ·   gap vs family ${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : ''));
+        if (s.benchmark.peerRationale) doc.fillColor(SLATE).text(s.benchmark.peerRationale);
         if (s.benchmark.recommendedPriority) {
-          const pc = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E3A8A', Maintain: '#065F46' }[s.benchmark.recommendedPriority] || '#111';
+          const pc = PRIORITY_COLOR[s.benchmark.recommendedPriority] || INK;
+          doc.moveDown(0.1);
           doc.font('Helvetica-Bold').fillColor(pc).text(`${s.benchmark.recommendedPriority}. `, { continued: !!s.benchmark.recommendation })
-            .font('Helvetica').fillColor('#374151').text(s.benchmark.recommendation || '');
+            .font('Helvetica').fillColor(SLATE).text(s.benchmark.recommendation || '');
         }
-        for (const w of s.benchmark.whatWouldMoveUp || []) {
-          if (doc.y > 730) doc.addPage();
-          doc.fillColor('#374151').text(`   → ${w}`);
+        if ((s.benchmark.whatWouldMoveUp || []).length) {
+          doc.moveDown(0.15);
+          bullets(doc, s.benchmark.whatWouldMoveUp, { color: SLATE, fontSize: 9 });
         }
       }
       const per = (s.scores || []).filter((x) => x.submitted).map((x) => `${x.name.split(' ')[0]} ${x.level}`);
-      if (per.length) doc.fillColor('#6B7280').text('   by member — ' + per.join('   ·   '));
-      doc.fillColor('#111').moveDown(0.35);
+      if (per.length) { doc.moveDown(0.1); doc.fontSize(8.5).fillColor(MUTED).text('By member — ' + per.join('   ·   ')); }
+      doc.fillColor(INK).moveDown(0.5);
     }
-    doc.moveDown(0.2);
   }
 
   // Capital Consciousness — a standalone, once-per-round family-wide read (not tied to
   // any one service): what level of awareness the family is currently deciding from.
-  doc.addPage();
-  doc.fontSize(13).fillColor('#1B2A4A').text('Capital Consciousness — what level the family is deciding from', { underline: true });
-  doc.moveDown(0.3);
-  doc.fontSize(9).fillColor('#111');
+  sectionHeader(doc, 'Capital Consciousness — what level the family is deciding from');
+  doc.fontSize(9.5).fillColor(INK);
   const cc = (consciousness && consciousness.summary) || {};
   const ccPrev = (consciousness && consciousness.prevSummary) || {};
   if (cc.cog != null) {
     doc.font('Helvetica-Bold').text(`Family centre of gravity: level ${cc.cog} (${ccName(cc.cog)})` + (ccPrev.cog != null ? `  (was ${ccPrev.cog})` : ''));
-    doc.font('Helvetica').fillColor('#374151').text(
+    doc.font('Helvetica').fillColor(SLATE).text(
       `Range ${cc.min}–${cc.max} across ${cc.count} member${cc.count === 1 ? '' : 's'}, spread ${cc.spread}` +
       (cc.straddlesThreshold ? ' — members on both sides of the Level-4 threshold' : '')
     );
-    doc.fillColor('#111').moveDown(0.3);
-    for (const m of (cc.members || [])) {
-      if (doc.y > 720) doc.addPage();
-      doc.fillColor('#374151').text(`   ${m.name}: level ${m.level}` + (m.note ? ` — “${m.note}”` : ''));
+    doc.fillColor(INK).moveDown(0.4);
+    if ((cc.members || []).length) {
+      bullets(doc, cc.members.map((m) => `${m.name}: level ${m.level}` + (m.note ? ` — “${m.note}”` : '')), { color: SLATE });
     }
   } else {
-    doc.fillColor('#6B7280').text('No Capital Consciousness answers recorded this round.').fillColor('#111');
+    doc.fillColor(MUTED).text('No Capital Consciousness answers recorded this round.').fillColor(INK);
   }
-  doc.fillColor('#111');
 
   if (round && round.synthesis) {
     const syn = round.synthesis;
-    if (doc.y > 620) doc.addPage();
-    doc.moveDown(0.3);
-    doc.fontSize(13).fillColor('#1B2A4A').text('Round synthesis', { underline: true });
-    doc.fontSize(9).fillColor('#111');
+    doc.moveDown(0.9);
+    subHeader(doc, 'Round synthesis');
+    doc.fontSize(9.5).fillColor(INK);
     if (syn.doingThingsRight) { doc.font('Helvetica-Bold').text('Doing things right. ', { continued: true }).font('Helvetica').text(syn.doingThingsRight); }
     if (syn.doingTheRightThings) { doc.moveDown(0.2).font('Helvetica-Bold').text('Doing the right things. ', { continued: true }).font('Helvetica').text(syn.doingTheRightThings); }
-    for (const pr of syn.priorities || []) { if (doc.y > 730) doc.addPage(); doc.fillColor('#374151').text(`   • ${pr}`); }
-    doc.fillColor('#111');
+    if ((syn.priorities || []).length) { doc.moveDown(0.25); bullets(doc, syn.priorities, { color: SLATE }); }
+    doc.fillColor(INK);
   }
 
-  // Open actions
-  doc.moveDown(0.4);
-  if (doc.y > 660) doc.addPage();
-  doc.fontSize(13).fillColor('#1B2A4A').text('Open actions', { underline: true });
-  doc.moveDown(0.2);
+  // ---- Open actions -----------------------------------------------------------------
+  sectionHeader(doc, 'Open actions');
   const open = (actions || []).filter((a) => a.effectiveStatus !== 'done' && !a.archivedAt);
   for (const bucket of ['Immediate', 'Active', 'Monitor']) {
     const list = open.filter((a) => a.priority === bucket);
-    doc.fontSize(11).fillColor(bucket === 'Immediate' ? '#9D174D' : bucket === 'Active' ? '#B45309' : '#1E9E5A').text(`${bucket} (${list.length})`);
-    doc.fontSize(9).fillColor('#111');
-    if (!list.length) doc.fillColor('#6B7280').text('  none').fillColor('#111');
-    for (const a of list) {
-      if (doc.y > 720) doc.addPage();
-      const svc = services.find((s) => s.id === a.serviceId);
-      const link = a.taskId && a.task && !a.task.deleted ? ' [Task List]' : '';
-      doc.text(`  ${svc ? '#' + svc.number + ' ' + svc.name + ' — ' : ''}${a.title}${a.ownerText ? '  (' + a.ownerText + ')' : ''}${a.dueQuarter ? '  ' + a.dueQuarter : ''}${link}`);
+    const bc = { Immediate: '#9D174D', Active: '#B45309', Monitor: '#1E9E5A' }[bucket];
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(bc).text(`${bucket} (${list.length})`);
+    doc.moveDown(0.15);
+    if (!list.length) {
+      doc.fontSize(9.5).font('Helvetica').fillColor(MUTED).text('None.');
+    } else {
+      bullets(doc, list.map((a) => {
+        const svc = services.find((s) => s.id === a.serviceId);
+        const link = a.taskId && a.task && !a.task.deleted ? '  [Task List]' : '';
+        return `${svc ? '#' + svc.number + ' ' + svc.name + ' — ' : ''}${a.title}${a.ownerText ? '  (' + a.ownerText + ')' : ''}${a.dueQuarter ? '  ' + a.dueQuarter : ''}${link}`;
+      }), { color: SLATE, fontSize: 9.5 });
     }
-    doc.moveDown(0.3);
+    doc.moveDown(0.5);
+  }
+
+  // ---- Running header + footer with page numbers, applied to every page after the fact
+  // The footer sits inside the bottom margin band, below pdfkit's own auto-pagination
+  // boundary (page.height - margins.bottom) — writing there via .text(), even with an
+  // explicit y, makes pdfkit think the content overflowed and silently starts a *new*
+  // page instead of drawing on the current one. Zeroing the margin for the duration of
+  // the footer draw is pdfkit's own documented workaround for this.
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    const pageNum = i - range.start + 1;
+    const bottom = doc.page.height - MARGIN.bottom + 18;
+    const realBottomMargin = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.moveTo(MARGIN.left, bottom).lineTo(doc.page.width - MARGIN.right, bottom).lineWidth(0.75).strokeColor(HAIRLINE).stroke();
+    doc.fontSize(8).font('Helvetica').fillColor(MUTED)
+      .text('Confidential — Robinson Family Office', MARGIN.left, bottom + 6, { width: 300, lineBreak: false })
+      .text(`Page ${pageNum} of ${range.count}`, doc.page.width - MARGIN.right - 150, bottom + 6, { width: 150, align: 'right', lineBreak: false });
+    doc.page.margins.bottom = realBottomMargin;
+    if (pageNum > 1) {
+      doc.fontSize(8).fillColor(MUTED)
+        .text(PAGE_TITLE, MARGIN.left, 30, { width: 300, lineBreak: false })
+        .text(round ? round.label : '', doc.page.width - MARGIN.right - 250, 30, { width: 250, align: 'right', lineBreak: false });
+    }
   }
 
   doc.end();

@@ -344,6 +344,16 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   to the number of services actually being plotted (the previous fixed small canvas made
   it read as a cramped smudge next to the crisp per-service text below it) and labels
   each bar with its value directly, same as the on-screen chart's numeric labels.
+  Formatting is built for sharing outside the family — a running header and footer
+  (page numbers, "Confidential", round label) on every page via a post-pass over
+  `doc.bufferedPageRange()`, a fresh page for every major section (cover, chart,
+  each Scorecard category, Capital Consciousness, open actions) instead of relying
+  on remaining vertical space, and real hanging-indent bullets (`doc.list()`) instead
+  of text lines prefixed with a character. One pdfkit gotcha worth knowing if this
+  file is touched again: drawing text inside the bottom margin band (e.g. a footer)
+  via `.text()` — even with an explicit y — makes pdfkit think the page overflowed
+  and silently starts a *new* page instead of drawing on the current one; the fix is
+  to zero `doc.page.margins.bottom` for the duration of that draw call.
 
 ## Scheduled Task List digest
 
