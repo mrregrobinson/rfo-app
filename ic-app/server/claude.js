@@ -419,7 +419,13 @@ Return ONLY valid JSON, no markdown fences:
 Both levels are 1-5 on the family's scale above, halves allowed. recommendedPriority: 'Immediate' (a real gap with real near-term risk), 'Active' (worth deliberately working on this cycle), 'Monitor' (a gap exists but isn't urgent), or 'Maintain' (this family already meets or exceeds an appropriate bar for this size — investing further isn't the priority right now, even if peerLevel is below Leading Practice). whatWouldMoveUp should be empty or purely optional context when recommendedPriority is 'Maintain'. sources back peerLevel specifically — include the 2-4 most load-bearing.`;
   const data = await callClaude({
     model: MODEL,
-    max_tokens: 3500,
+    // Was 3500 — fine before the family context/description grew from a couple of
+    // generic sentences to several paragraphs plus live app evidence. The larger prompt
+    // means more web-search tool_use round-trips and longer, more specific rationale
+    // text, both of which count against max_tokens; several services were getting cut
+    // off mid-response (extractJson's "No JSON found" / "cut off ... max_tokens" errors)
+    // once that context landed.
+    max_tokens: 6000,
     system: systemPrompt,
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     messages: [{ role: 'user', content: userPrompt }],
@@ -444,7 +450,9 @@ Return ONLY valid JSON, no markdown fences:
 {"doingThingsRight":"3-5 sentences on operational maturity, the trend, and the widest gaps","doingTheRightThings":"3-5 sentences reading the family's Capital Consciousness centre of gravity, how much members disagree (spread), movement since last round, and whether the family sits below or above the Level 4 threshold","mapOfErrors":[{"domain":"a service or theme","read":"one sentence connecting an operational gap to the family's current level of awareness, e.g. well-run machinery but decisions still made from a scarcity/competition footing"}],"priorities":["the 3-5 highest-value things to work on before the next round"],"peerComparison":"2-3 sentences","sources":[{"title":"...","url":"..."}]}`;
   const data = await callClaude({
     model: MODEL,
-    max_tokens: 4000,
+    // Was 4000 — same headroom issue as benchmarkMaturityService below now that
+    // familyContext is several paragraphs instead of one generic sentence.
+    max_tokens: 6000,
     system: systemPrompt,
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     messages: [{ role: 'user', content: userPrompt }],
@@ -479,7 +487,9 @@ Return ONLY valid JSON, no markdown fences:
 Include all five levels and all four questions. Set changed:false and echo the current wording when it should be kept as-is. sortOrder must match the 1-based position of the question above (do not reorder or add/remove questions). suggestedHelpText may be an empty string.`;
   const data = await callClaude({
     model: MODEL,
-    max_tokens: 4500,
+    // Was 4500 — same headroom issue as benchmarkMaturityService above; this call
+    // generates even more content (5 levels + 4 questions, each with its own rationale).
+    max_tokens: 7000,
     system: systemPrompt,
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     messages: [{ role: 'user', content: userPrompt }],
