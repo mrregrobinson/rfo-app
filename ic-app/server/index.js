@@ -13,7 +13,7 @@ const db = require('./db');
 const { hashSecret, verifySecret, encryptSecret, decryptSecret, requireAuth } = require('./auth');
 const totp = require('./totp');
 const { ensureSeeded, issueSetupCode } = require('./seed');
-const claude = require('./claude');
+const ai = require('./ai');
 const fx = require('./fx');
 const { logAudit, auditRowToJson } = require('./audit');
 const { logApiUsage, usageSummary } = require('./usage');
@@ -282,7 +282,7 @@ app.get('/api/fx-rates', requireAuth, async (req, res) => {
 // Public, non-secret config the frontend needs before login — a Google OAuth Client ID
 // is meant to be embedded in client-side JS (unlike a client secret), so there's nothing
 // sensitive here. Powers the "Add to Google Tasks" button; the button hides itself when
-// this isn't set, same pattern as the Claude/MS Graph "not configured" fallbacks.
+// this isn't set, same pattern as the AI/MS Graph "not configured" fallbacks.
 app.get('/api/config', (req, res) => {
   res.json({ googleTasksClientId: process.env.GOOGLE_TASKS_CLIENT_ID || null });
 });
@@ -755,7 +755,7 @@ function notifyAdminsOfSubmission(opp, submitterId, recommendation) {
   }
 }
 
-// Deterministic governance rule, independent of Claude's own analytical report.recommendation:
+// Deterministic governance rule, independent of the AI's own analytical report.recommendation:
 // any decline is a veto, unanimous approval among those who've submitted is a clean pass,
 // anything else (conditional approvals and/or abstentions mixed in) needs the IC to
 // actually discuss it. Mirrors the client-side Decision section on the report page exactly.
@@ -778,7 +778,7 @@ function notifyFamilyOfClosure(row) {
   const members = db.prepare('SELECT name, email FROM users WHERE is_active = 1').all();
   for (const member of members) {
     if (!member.email) continue;
-    const recLine = report?.recommendation ? paragraph(`Claude's analytical recommendation: <strong>${report.recommendation}</strong>`) : '';
+    const recLine = report?.recommendation ? paragraph(`AI analytical recommendation: <strong>${report.recommendation}</strong>`) : '';
     const summaryLine = report?.executiveSummary ? paragraph(report.executiveSummary) : '';
     mailer.sendMail({
       to: member.email,
@@ -1003,7 +1003,7 @@ app.delete('/api/activities/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- Claude proxy routes ----
+// ---- AI proxy routes ----
 
 const RESEARCH_TYPES = ['manager', 'industry', 'regulatory'];
 
@@ -1024,24 +1024,24 @@ app.post('/api/opportunities/:id/research/:type', requireAuth, async (req, res) 
   }
 
   try {
-    const { result, usage } = await claude.research(type, oppRowToJson(row));
+    const { result, usage } = await ai.research(type, oppRowToJson(row));
     research[type] = result;
     db.prepare('UPDATE opportunities SET research = ? WHERE id = ?').run(JSON.stringify(research), id);
     logApiUsage({ callType: `research:${type}`, usage, opportunityId: id, userId: req.session.userId });
     res.json(result);
   } catch (err) {
-    if (err instanceof claude.ClaudeNotConfiguredError) {
+    if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'Claude request failed' });
+    res.status(502).json({ error: err.message || 'AI request failed' });
   }
 });
 
 // Unlike the original spec, this is never auto-triggered on quorum — any member can pull
 // the current state of the review into a summary at any time, complete or not. The
 // business logic for "what's an auto-answer vs. a human answer" lives in the frontend
-// (computeClaudeAnswers), so the client sends the already-assembled context; this route is
-// just the Claude call + persistence, mirroring the research proxy above.
+// (computeAiAnswers), so the client sends the already-assembled context; this route is
+// just the AI call + persistence, mirroring the research proxy above.
 app.post('/api/opportunities/:id/report', requireAuth, async (req, res) => {
   const { id } = req.params;
   const row = db.prepare('SELECT * FROM opportunities WHERE id = ?').get(id);
@@ -1052,7 +1052,7 @@ app.post('/api/opportunities/:id/report', requireAuth, async (req, res) => {
   }
   try {
     const opp = oppRowToJson(row);
-    const { result: generated, usage } = await claude.generateReport({
+    const { result: generated, usage } = await ai.generateReport({
       opp: {
         title: opp.title,
         assetClass: opp.assetClass,
@@ -1077,31 +1077,31 @@ app.post('/api/opportunities/:id/report', requireAuth, async (req, res) => {
     logAudit({ userId: req.session.userId, action: 'report.generated', entityType: 'opportunity', entityId: id, details: { recommendation: generated.recommendation } });
     res.json(report);
   } catch (err) {
-    if (err instanceof claude.ClaudeNotConfiguredError) {
+    if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'Claude request failed' });
+    res.status(502).json({ error: err.message || 'AI request failed' });
   }
 });
 
-app.post('/api/claude/extract-pdf', requireAuth, async (req, res) => {
+app.post('/api/ai/extract-pdf', requireAuth, async (req, res) => {
   try {
     const { base64 } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'base64 is required' });
-    const { result, usage } = await claude.extractPdf(base64);
+    const { result, usage } = await ai.extractPdf(base64);
     logApiUsage({ callType: 'extract_pdf', usage, userId: req.session.userId });
     res.json(result);
   } catch (err) {
-    if (err instanceof claude.ClaudeNotConfiguredError) {
+    if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'Claude request failed' });
+    res.status(502).json({ error: err.message || 'AI request failed' });
   }
 });
 
 // ---- opportunity documents ----
 // Lets an opportunity accumulate more than one uploaded document over its life (the
-// initial PQ report handled at creation by /api/claude/extract-pdf above, plus later
+// initial PQ report handled at creation by /api/ai/extract-pdf above, plus later
 // follow-ups — side letters, term amendments, updated track record, additional diligence
 // material). Same extract-then-review-then-save shape as the portfolio/income snapshot
 // flow: extract never writes anything, the reviewer decides which fields (if any) actually
@@ -1137,14 +1137,14 @@ app.post('/api/opportunities/:id/documents/extract', requireAuth, async (req, re
   try {
     const { base64 } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'base64 is required' });
-    const { result, usage } = await claude.extractOpportunityDocument(base64, opp.title);
+    const { result, usage } = await ai.extractOpportunityDocument(base64, opp.title);
     logApiUsage({ callType: 'extract_opportunity_document', usage, opportunityId: opp.id, userId: req.session.userId });
     res.json(result);
   } catch (err) {
-    if (err instanceof claude.ClaudeNotConfiguredError) {
+    if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'Claude request failed' });
+    res.status(502).json({ error: err.message || 'AI request failed' });
   }
 });
 
@@ -1189,7 +1189,7 @@ app.delete('/api/opportunities/:id/documents/:docId', requireAuth, (req, res) =>
 
 // ---- portfolio snapshots ----
 // Replaces a hardcoded PORT constant with an admin-updatable, database-backed portfolio
-// snapshot: upload the latest PQ investment report, review/correct what Claude extracted,
+// snapshot: upload the latest PQ investment report, review/correct what the AI extracted,
 // save it. The rest of the app (Section A checks, the report) reads whatever is current
 // via GET /api/portfolio — a new report just means a new upload, never a code change.
 
@@ -1216,18 +1216,18 @@ app.post('/api/admin/portfolio/extract', requireAuth, async (req, res) => {
   try {
     const { base64 } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'base64 is required' });
-    const { result, usage } = await claude.extractPortfolioReport(base64);
+    const { result, usage } = await ai.extractPortfolioReport(base64);
     logApiUsage({ callType: 'extract_portfolio_report', usage, userId: req.session.userId });
     res.json(result);
   } catch (err) {
-    if (err instanceof claude.ClaudeNotConfiguredError) {
+    if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'Claude request failed' });
+    res.status(502).json({ error: err.message || 'AI request failed' });
   }
 });
 
-// Report "asOf" dates come from Claude's extraction as MM-DD-YYYY (see claude.js);
+// Report "asOf" dates come from the AI's extraction as MM-DD-YYYY (see ai.js);
 // server/fx.js expects YYYY-MM-DD. Falls back to today's date if asOf doesn't parse as
 // expected, rather than failing the whole snapshot save over a formatting quirk.
 function mdyToIso(mdy) {
@@ -1279,14 +1279,14 @@ app.post('/api/admin/income/extract', requireAuth, async (req, res) => {
   try {
     const { base64 } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'base64 is required' });
-    const { result, usage } = await claude.extractIncomeReport(base64);
+    const { result, usage } = await ai.extractIncomeReport(base64);
     logApiUsage({ callType: 'extract_income_report', usage, userId: req.session.userId });
     res.json(result);
   } catch (err) {
-    if (err instanceof claude.ClaudeNotConfiguredError) {
+    if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'Claude request failed' });
+    res.status(502).json({ error: err.message || 'AI request failed' });
   }
 });
 

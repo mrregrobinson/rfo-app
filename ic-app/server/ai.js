@@ -14,15 +14,15 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 // finish in a couple seconds either way — a higher ceiling doesn't slow them down).
 setGlobalDispatcher(new Agent({ headersTimeout: 20 * 60 * 1000, bodyTimeout: 20 * 60 * 1000 }));
 
-class ClaudeNotConfiguredError extends Error {}
+class AiNotConfiguredError extends Error {}
 
 function apiKey() {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new ClaudeNotConfiguredError('ANTHROPIC_API_KEY is not set on the server');
+  if (!key) throw new AiNotConfiguredError('ANTHROPIC_API_KEY is not set on the server');
   return key;
 }
 
-async function callClaude(body) {
+async function callAi(body) {
   const resp = await fetch(API_URL, {
     method: 'POST',
     headers: {
@@ -34,19 +34,19 @@ async function callClaude(body) {
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw new Error(`Claude API error ${resp.status}${text ? ': ' + text.slice(0, 300) : ''}`);
+    throw new Error(`AI API error ${resp.status}${text ? ': ' + text.slice(0, 300) : ''}`);
   }
   return resp.json();
 }
 
 function extractJson(data) {
   const raw = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  if (!raw.trim()) throw new Error('Empty response from Claude');
+  if (!raw.trim()) throw new Error('Empty response from AI');
   const match = raw.replace(/```json|```/gi, '').trim().match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No JSON found in Claude response');
+  if (!match) throw new Error('No JSON found in AI response');
   try {
     const parsed = JSON.parse(match[0]);
-    // Claude occasionally emits a stray leading/trailing space in a top-level key (e.g.
+    // The model occasionally emits a stray leading/trailing space in a top-level key (e.g.
     // " unresolvedItems" instead of "unresolvedItems"), which would otherwise silently
     // fail to match what the frontend reads and drop that section from the UI.
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -57,7 +57,7 @@ function extractJson(data) {
     return parsed;
   } catch (err) {
     if (data.stop_reason === 'max_tokens') {
-      throw new Error('Claude response was cut off before finishing (max_tokens reached) — try again or raise max_tokens');
+      throw new Error('AI response was cut off before finishing (max_tokens reached) — try again or raise max_tokens');
     }
     console.error('--- JSON parse failed. stop_reason:', data.stop_reason, '---');
     console.error(match[0]);
@@ -77,7 +77,7 @@ async function research(type, opp) {
     industry: `Search the web for current industry dynamics for a ${assetClass} investment in "${manager}". Find: macro trends, valuation phenomena (e.g. sports franchise reset, PE secondary discounts, cap rate shifts), comparable fund performance, regulatory changes. Return ONLY valid JSON: {"summary":"1-2 short, plain-English sentences","overallSignal":"GREEN","findings":[{"type":"CAUTION","headline":"short, plain-English headline","detail":"one plain-English sentence, no jargon","source":"source"}],"searchedAt":"${today}"}. ${findingsSpec} overallSignal: GREEN/AMBER/RED. type: FLAG/CAUTION/POSITIVE/NEUTRAL.`,
     regulatory: `Search the web for Canadian regulatory and tax considerations for a Canadian family office LP investment in a ${assetClass} fund (${manager}). Find: CRA guidance, OSC/OSFI guidance, FAPI/anti-avoidance rules, Ontario-specific considerations. Return ONLY valid JSON: {"summary":"1-2 short, plain-English sentences","overallSignal":"GREEN","findings":[{"type":"NEUTRAL","headline":"short, plain-English headline","detail":"one plain-English sentence, no jargon","source":"source"}],"searchedAt":"${today}"}. ${findingsSpec} overallSignal: GREEN/AMBER/RED. type: FLAG/CAUTION/POSITIVE/NEUTRAL.`,
   };
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 4096,
     system: systemPrompt,
@@ -98,7 +98,7 @@ async function research(type, opp) {
 async function suggestCategory(description, categoryNames) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
   const categoryList = categoryNames.map((c) => `"${c}"`).join(', ');
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 2048,
     system: `You are helping categorize a household's bank and credit-card transactions for a personal expenditure tracker. Today is ${today}.`,
@@ -123,7 +123,7 @@ Return ONLY valid JSON, no markdown fences: {"payeeSummary":"one short sentence 
 
 async function extractPdf(base64Data) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 3000,
     messages: [
@@ -148,7 +148,7 @@ async function extractPdf(base64Data) {
 // This sidesteps a real problem with these particular statements: RBC lays them out in
 // two visual columns (the transaction table plus a sidebar of promotional/points/rate
 // content), so a plain text-extraction library interleaves the two and produces garbage
-// — Claude reads the layout visually instead of depending on text order, so this doesn't
+// — the model reads the layout visually instead of depending on text order, so this doesn't
 // arise. accountType is 'chequing' or 'credit_card' since the two layouts differ
 // (chequing: running balance, no separate post date; credit card: transaction + posting
 // date, grouped by cardholder, paginated).
@@ -165,7 +165,7 @@ async function extractStatement(base64Data, accountType) {
   const summaryShape = isCard
     ? `"previousBalance":0,"newBalance":0,"paymentsAndCredits":0,"purchasesAndDebits":0,"interest":0,"fees":0`
     : `"openingBalance":0,"closingBalance":0,"totalDeposits":0,"totalWithdrawals":0`;
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     // These statements can run several pages (the credit card statement paginates as
     // "1 OF 9" etc.) with a transaction on nearly every line. Verified empirically against
@@ -206,7 +206,7 @@ Return ONLY valid JSON, no markdown fences, no extra prose: {"periodStart":"YYYY
 // commitments/uses, not as a source of liquidity. Returned for admin review, never saved
 // directly — see /api/admin/portfolio/extract.
 async function extractPortfolioReport(base64Data) {
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 16000,
     messages: [
@@ -241,7 +241,7 @@ Return ONLY valid JSON, no markdown fences, no extra prose:
 // income isn't freely available without tax consequences and shouldn't be counted as
 // liquidity on tap for a capital call. Returned for admin review, never saved directly.
 async function extractIncomeReport(base64Data) {
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 8000,
     messages: [
@@ -273,7 +273,7 @@ Return ONLY valid JSON, no markdown fences, no extra prose:
 // only what actually changed. Returned for admin/initiator review, never saved directly.
 async function extractOpportunityDocument(base64Data, opportunityTitle) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     // A follow-up document can itself be a full research report (this field set matches
     // extractPdf's), and unlike a brand-new upload, this one also carries a documentSummary
@@ -305,7 +305,7 @@ Return ONLY valid JSON (no markdown fences): {"documentSummary":"one plain-Engli
 
 // Synthesizes IC member checklist responses (whatever has been submitted so far — the
 // caller may trigger this before everyone has responded) into a governance-style summary,
-// per the original build spec's "Claude's Recommendation" logic (system prompt below).
+// per the original build spec's "AI Recommendation" logic (system prompt below).
 async function generateReport({ opp, questions, autoAnswers, members, totalCAD }) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
   const aumM = totalCAD ? Math.round(totalCAD / 1e6) : 30;
@@ -347,7 +347,7 @@ Asset class: ${opp.assetClass}
 Proposed commitment: ${opp.currency} ${Number(opp.commitment || 0).toLocaleString()}
 PQ summary: ${opp.pqSummary || '(none)'}
 
-CLAUDE / DATA-DRIVEN ANSWERS (established context — not a member's personal judgment):
+AI / DATA-DRIVEN ANSWERS (established context — not a member's personal judgment):
 ${autoAnswerBlock || '(none)'}
 
 IC MEMBER RESPONSES:
@@ -355,7 +355,7 @@ ${memberBlocks || '(no members)'}
 
 Format your response as a JSON object with exactly these keys, in this order: {"executiveSummary":"2 short sentences","recommendation":"APPROVE" | "CONDITIONAL APPROVAL" | "DECLINE" | "DEFER PENDING INFORMATION","rationale":"1 short paragraph, 3-4 sentences max","keyStrengths":["short bullet, max 3", ...],"keyRisks":["short bullet, max 3", ...],"memberSentiment":[{"member":"name","sentence":"one short sentence"}],"unresolvedItems":["short item", ...],"requiredActions":["short action", ...]}. Use empty arrays where there's nothing to list. Every key listed must be present in your output, even if brief — never omit a key. Return ONLY valid JSON, no markdown formatting.`;
 
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 6000,
     system: systemPrompt,
@@ -378,7 +378,7 @@ Return ONLY valid JSON, no markdown fences:
 {"estimateText":"2-4 plain-English sentences a non-expert can follow","probabilityLow":0.05,"probabilityHigh":0.20,"mappedScore":2,"rationale":"one sentence on why this score, including any adjustment for the family's specifics","sources":[{"title":"...","url":"..."}],"caveats":"one sentence on what the external data does NOT capture"}
 
 probabilityLow/probabilityHigh are annual probabilities as decimals (0-1); use null for both only if genuinely not estimable. mappedScore is 1-4 on this scale: 1 = under 5%/yr, 2 = 5-20%/yr, 3 = 20-50%/yr, 4 = over 50%/yr — pick the band the probability range mostly falls in. Include the 2-4 most load-bearing sources.`;
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     max_tokens: 3000,
     system: systemPrompt,
@@ -394,7 +394,7 @@ probabilityLow/probabilityHigh are annual probabilities as decimals (0-1); use n
 
 // Two independently-derived 1–5 numbers per service (§7.1), not one ambiguous
 // "benchmark": (1) peerLevel — from web research, where genuinely comparable family
-// offices typically operate this service; (2) assessedLevel — Claude's OWN read of where
+// offices typically operate this service; (2) assessedLevel — the AI's OWN read of where
 // THIS family likely sits, reasoned from the family's own level descriptors and context
 // rather than simply echoing their self-score (which is supplied for reference only).
 // Plus an explicit recommendation on whether pursuing improvement here is actually worth
@@ -417,7 +417,7 @@ Return ONLY valid JSON, no markdown fences:
 {"assessedLevel":2.5,"assessedRationale":"2-3 plain-English sentences on why you place THIS family here, grounded in their own level descriptors and context — not the peer research","peerLevel":3.5,"peerRationale":"2-3 plain-English sentences on how you arrived at this — which comparable offices or surveys you weighed and why it lands here","recommendedPriority":"Immediate|Active|Monitor|Maintain","recommendation":"2-4 sentences: should this family actually prioritize improving this service right now, and why (or why not) — name how your assessedLevel compares to peerLevel (and to the family's self-score, if it diverges) and weigh the size/cost of closing that gap against what's really at stake if it's left as-is, for a family office of this size","whatWouldMoveUp":["concrete action","concrete action","concrete action"],"sources":[{"title":"...","url":"..."}],"caveats":"one sentence on what this external comparison does NOT capture for this family"}
 
 Both levels are 1-5 on the family's scale above, halves allowed. recommendedPriority: 'Immediate' (a real gap with real near-term risk), 'Active' (worth deliberately working on this cycle), 'Monitor' (a gap exists but isn't urgent), or 'Maintain' (this family already meets or exceeds an appropriate bar for this size — investing further isn't the priority right now, even if peerLevel is below Leading Practice). whatWouldMoveUp should be empty or purely optional context when recommendedPriority is 'Maintain'. sources back peerLevel specifically — include the 2-4 most load-bearing.`;
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     // Was 3500 — fine before the family context/description grew from a couple of
     // generic sentences to several paragraphs plus live app evidence. The larger prompt
@@ -448,7 +448,7 @@ Capital Consciousness (family-wide, once per round): ${JSON.stringify(consciousn
 
 Return ONLY valid JSON, no markdown fences:
 {"doingThingsRight":"3-5 sentences on operational maturity, the trend, and the widest gaps","doingTheRightThings":"3-5 sentences reading the family's Capital Consciousness centre of gravity, how much members disagree (spread), movement since last round, and whether the family sits below or above the Level 4 threshold","mapOfErrors":[{"domain":"a service or theme","read":"one sentence connecting an operational gap to the family's current level of awareness, e.g. well-run machinery but decisions still made from a scarcity/competition footing"}],"priorities":["the 3-5 highest-value things to work on before the next round"],"peerComparison":"2-3 sentences","sources":[{"title":"...","url":"..."}]}`;
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     // Was 4000 — same headroom issue as benchmarkMaturityService below now that
     // familyContext is several paragraphs instead of one generic sentence.
@@ -485,7 +485,7 @@ Return ONLY valid JSON, no markdown fences:
  "sources":[{"title":"...","url":"..."}]}
 
 Include all five levels and all four questions. Set changed:false and echo the current wording when it should be kept as-is. sortOrder must match the 1-based position of the question above (do not reorder or add/remove questions). suggestedHelpText may be an empty string.`;
-  const data = await callClaude({
+  const data = await callAi({
     model: MODEL,
     // Was 4500 — same headroom issue as benchmarkMaturityService above; this call
     // generates even more content (5 levels + 4 questions, each with its own rationale).
@@ -497,4 +497,4 @@ Include all five levels and all four questions. Set changed:false and echo the c
   return { result: extractJson(data), usage: data.usage };
 }
 
-module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, benchmarkMaturityService, synthesizeMaturityRound, suggestServiceWording, ClaudeNotConfiguredError };
+module.exports = { research, researchRiskProbability, extractPdf, extractOpportunityDocument, extractPortfolioReport, extractIncomeReport, extractStatement, suggestCategory, generateReport, benchmarkMaturityService, synthesizeMaturityRound, suggestServiceWording, AiNotConfiguredError };

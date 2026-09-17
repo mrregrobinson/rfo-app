@@ -24,7 +24,7 @@ applications under it —
   by domain (both admin-editable), seeded initially from the family's risk-register
   spreadsheet + notes, point-in-time assessments (inherent/residual P×I) with history, a
   risk-event log, a 4×4 heatmap and
-  profile dashboard, a Family-Council PDF report, an optional Claude web-search base-rate
+  profile dashboard, a Family-Council PDF report, an optional AI web-search base-rate
   lookup, and "Required Actions" that promote to real tasks in the Family Task List's
   `02. Risk Management` category. Everything about a risk — details, scoring, rationale,
   mitigations, actions, notes — is edited from its drawer; each risk has exactly one
@@ -36,9 +36,9 @@ applications under it —
   worksheet per service on **two axes**: a 1–5 **maturity** level (how well it is run —
   "doing things right", from a short questionnaire) and a 1–7 **consciousness** level
   (from what level of awareness it is run — "doing the right things", one question on the
-  same worksheet). Every service in every round also gets a Claude web-search
+  same worksheet). Every service in every round also gets an AI web-search
   **benchmark** (1–5, "what would move us up") and the round gets a written
-  **synthesis**. Rounds run `draft → open → closed`; at the start of a cycle Claude can
+  **synthesis**. Rounds run `draft → open → closed`; at the start of a cycle the AI can
   propose refreshed wording for the editable level descriptors, reviewed by an admin
   before the round opens. The Appendix B spreadsheet is seeded as a closed,
   benchmark-free reference round; the first in-app cycle becomes the trend anchor.
@@ -56,11 +56,11 @@ login.
   different family member open the link, now shows the same shared state.
 - **Login**: each member (Reg, Sheri-Dawn, Ross, Lucas) has their own passcode instead of
   a "pick your name from a dropdown" switcher. See "First run" below.
-- **Claude features (web research + PDF auto-extraction)**: these used to call
+- **AI features (web research + PDF auto-extraction)**: these used to call
   `api.anthropic.com` directly from the browser, which only works inside claude.ai. The
   server now proxies these calls using your own Anthropic API key. If you don't set one,
   the app still works — those specific fields just show "not configured" and you fill
-  them in manually instead of Claude auto-filling them.
+  them in manually instead of the AI auto-filling them.
 
 ## Local setup
 
@@ -88,7 +88,7 @@ someone loses theirs, delete their row from the `users` table and restart the se
 regenerate it, or update the `passcode_hash` column directly using
 `server/auth.js`'s `hashPasscode()`.
 
-### Enabling live Claude research / PDF extraction
+### Enabling live AI research / PDF extraction
 
 Copy `.env.example` to `.env` and set:
 
@@ -209,8 +209,8 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   point (`POST /api/risk/snapshots`), so a past review can be pulled up or re-printed
   verbatim (`GET /api/risk/snapshots/:id[/pdf]`). `GET /api/risk/report/pdf?asOf=<date>`
   reconstructs a report for an arbitrary past date from the history columns.
-- `risk_probability_lookups` — cached Claude web-search base-rate estimates
-  (`server/claude.js` `researchRiskProbability`), referenced from an assessment via
+- `risk_probability_lookups` — cached AI web-search base-rate estimates
+  (`server/ai.js` `researchRiskProbability`), referenced from an assessment via
   `external_probability_id`.
 - Risk report PDFs are built by `server/risk-report.js` (`pdfkit` + `chartjs-node-canvas`,
   same stack as the expenditure report) and emailed through the existing Graph mailer.
@@ -222,16 +222,16 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   place; each round freezes a copy of the ladder into `maturity_rounds.ladder_json` at
   the `draft → open` transition. Each service also carries a `description` — factual,
   evidence-grounded context (sourced from the family's own Planning & Governance
-  documents: annual meeting decks and notes, 2024-2026) fed into every Claude call for
+  documents: annual meeting decks and notes, 2024-2026) fed into every AI call for
   that service (benchmark, wording suggestions) alongside `FAMILY_CONTEXT` (cross-cutting:
   governance cadence, RACI, advisors). Deliberately kept to observable facts and named
-  artifacts/initiatives, never a judgment of maturity level — that's for Claude and the
+  artifacts/initiatives, never a judgment of maturity level — that's for the AI and the
   family to derive. Before migration 043, `description` was always empty on every
   service (and `FAMILY_CONTEXT` was one generic sentence), which is a real reason earlier
   benchmarks read shallow — e.g. the family's 2025 addition of an explicit annual
   discussion on whether it's actually living its values (not just documenting them) had
   nowhere to surface. Directly editable by an admin at any time (`PUT
-  /api/maturity/services/:id`, surfaced in the service drawer), same "no Claude review
+  /api/maturity/services/:id`, surfaced in the service drawer), same "no AI review
   required" pattern as questions and level descriptors.
 - Alongside that hand-authored `description`, every benchmark and wording-suggestion call
   is also grounded in **live evidence pulled fresh from this app's own other modules** at
@@ -247,10 +247,10 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   Meetings module, appended to `FAMILY_CONTEXT` for every call. Kept strictly factual and
   quantified (counts, titles, dates) — never a maturity judgment — same as `description`.
 - `POST /api/maturity/rounds/:id/suggest-wording` (admin-only, any round that isn't
-  closed — "Ask Claude to refresh wording" on the Manage tab): one Claude web-search call
+  closed — "Ask AI to refresh wording" on the Manage tab): one AI web-search call
   per service researches how that specific service ought to be assessed and proposes BOTH
   refreshed level-descriptor language AND refreshed wording for its four assessment
-  questions (`claude.js` `suggestServiceWording`) — nothing applied without an admin
+  questions (`ai.js` `suggestServiceWording`) — nothing applied without an admin
   reviewing and accepting each suggestion. `GET /api/maturity/rounds/:id/wording-suggestions`
   lists every pending suggestion for the round, across all 16 services, in one call — the
   Manage tab renders these directly (`WordingSuggestionsPanel`) so an admin doesn't have
@@ -269,7 +269,7 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   which. The latest submitted row per (round, service, member) is what the scorecard
   averages / rolls up. Like the level descriptors, a question's `prompt`/`helpText` is
   directly editable by an admin from the service drawer (`PUT /api/maturity/questions/:qid`)
-  at any time, regardless of round status and with no dependency on Claude having reviewed
+  at any time, regardless of round status and with no dependency on the AI having reviewed
   it first — the wording-suggestions flow (below) is an optional research aid, never a
   gate on editing.
 - `maturity_rounds` — an assessment cycle (`draft` → `open` → `closed`); one active at a
@@ -290,19 +290,19 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   own progress (`roundCompletion()`) and an optional admin note, sent one Graph call per
   recipient via `server/mailer.js` `sendMail`. The Manage tab's `InvitePanel` surfaces this
   as a checklist of members with their completion status.
-- `maturity_benchmarks` — per (round, service) Claude web-search read
-  (`server/claude.js` `benchmarkMaturityService`), carrying TWO independently-derived
+- `maturity_benchmarks` — per (round, service) AI web-search read
+  (`server/ai.js` `benchmarkMaturityService`), carrying TWO independently-derived
   1-5 numbers (migration 042), not one: `peer_level` / `peer_rationale` (renamed from the
   original `benchmark_level` / `rationale`) — from web research, where genuinely
   comparable family offices typically operate this service; and `assessed_level` /
   `assessed_rationale` (new, nullable — rows from before migration 042 have no value here)
-  — Claude's OWN independent read of where THIS family likely sits, reasoned from the
+  — the AI's OWN independent read of where THIS family likely sits, reasoned from the
   family's own level descriptors and context rather than a web search (there's no public
   information about a private family's internal operations) and explicitly NOT just a
   mirror of their self-reported score. It also carries an explicit `recommended_priority`
   (`Immediate`/`Active`/`Monitor`/`Maintain`, migration 041 — same vocabulary as
   `maturity_actions.priority`) and a `recommendation`, both weighing all three numbers
-  together — the family's self-score, Claude's assessed_level, and peer_level — rather
+  together — the family's self-score, the AI's assessed_level, and peer_level — rather
   than the peer benchmark in isolation: urgency comes from how far assessed_level sits
   behind genuinely comparable peers (and whether assessed_level and the family's own score
   diverge, a self-awareness gap worth flagging on its own), so a family already at or
@@ -339,7 +339,7 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   through the Graph mailer. Both take a `benchmark` flag (`?benchmark=0/1` on the GET,
   `{benchmark: bool}` in the POST body; defaults to on) — the same "Show benchmark"
   choice as the Scorecard tab's on-screen chart, carried through to the report so the
-  by-service bar chart can be exported as pure family self-assessment or with Claude's
+  by-service bar chart can be exported as pure family self-assessment or with the AI's
   read and the peer benchmark alongside it. The chart gets its own page in the PDF, sized
   to the number of services actually being plotted (the previous fixed small canvas made
   it read as a cramped smudge next to the crisp per-service text below it) and labels
@@ -356,13 +356,13 @@ Safe to re-run — it no-ops if the `tasks` table already has rows.
   to zero `doc.page.margins.bottom` for the duration of that draw call. A thin rule
   separates each service within a category, and each priority bucket in Open Actions, so
   dense pages read as a sequence of distinct items rather than one run-on block. Within
-  each service's write-up, every distinct statement (family mean, Claude's read, peer
+  each service's write-up, every distinct statement (family mean, AI's read, peer
   benchmark, recommendation, bullets, member breakdown) gets its own `moveDown()` gap and
   wrapped paragraphs use `lineGap(2)` — an earlier version packed these directly against
   each other with no vertical space at all, which read as a wall of text. (An earlier
-  version also showed a "What Claude knows about this service" block here, sourced from
+  version also showed a "What the AI knows about this service" block here, sourced from
   `description` + live evidence — removed after user feedback that it made the report
-  harder to read, not easier; the underlying grounding is still what feeds every Claude
+  harder to read, not easier; the underlying grounding is still what feeds every AI
   call, just not printed in the report.)
 
 ## Scheduled Task List digest

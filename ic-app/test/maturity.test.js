@@ -10,7 +10,7 @@ const express = require('express');
 
 const tmpDbPath = path.join(os.tmpdir(), `ic-maturity-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 process.env.IC_DB_PATH = tmpDbPath;
-process.env.ANTHROPIC_API_KEY = ''; // force the not-configured path for Claude endpoints
+process.env.ANTHROPIC_API_KEY = ''; // force the not-configured path for AI endpoints
 
 const db = require('../server/db');
 const { ensureSeeded } = require('../server/seed');
@@ -180,20 +180,20 @@ describe('carry-forward pre-fill', () => {
   });
 });
 
-describe('Claude endpoints degrade when not configured', () => {
+describe('AI endpoints degrade when not configured', () => {
   test('benchmark returns configured:false', async () => {
     as('reg');
     const r = await send('POST', '/api/maturity/rounds/round-2026-baseline/benchmark', { serviceId: 'svc-01' });
     assert.equal(r.body.configured, false);
   });
-  test('wording suggestions work for a draft OR an open round, refuse a closed one, and degrade without Claude configured', async () => {
+  test('wording suggestions work for a draft OR an open round, refuse a closed one, and degrade without AI configured', async () => {
     as('reg');
     const draft = (await send('POST', '/api/maturity/rounds', { label: 'draft-for-suggest' })).body.id;
     const draftResult = await send('POST', `/api/maturity/rounds/${draft}/suggest-wording`, { serviceId: 'svc-01' });
     assert.equal(draftResult.body.configured, false);
     await send('POST', `/api/maturity/rounds/${draft}/open`, {});
     const openResult = await send('POST', `/api/maturity/rounds/${draft}/suggest-wording`, { serviceId: 'svc-01' });
-    assert.equal(openResult.body.configured, false); // still reaches the Claude call, just degrades — not refused for being open
+    assert.equal(openResult.body.configured, false); // still reaches the AI call, just degrades — not refused for being open
     // a closed round refuses
     const bad = await send('POST', '/api/maturity/rounds/round-2026-baseline/suggest-wording', {});
     assert.equal(bad.status, 400);
@@ -227,7 +227,7 @@ describe('invite family to assess — admin-triggered only, never automatic', ()
   });
 });
 
-describe('Claude benchmark — two independent numbers (peer + assessed), and a recommendation weighing them', () => {
+describe('AI benchmark — two independent numbers (peer + assessed), and a recommendation weighing them', () => {
   test('the service detail endpoint surfaces both levels, both rationales, and the recommendation', async () => {
     const now = new Date().toISOString();
     db.prepare(
@@ -305,7 +305,7 @@ describe('question wording suggestions — tailored per service, not the standar
     const svc = db.prepare("SELECT id FROM maturity_services WHERE id = 'svc-04'").get();
     const q = db.prepare('SELECT id, prompt, help_text FROM maturity_questions WHERE service_id = ? ORDER BY sort_order LIMIT 1').get(svc.id);
     const now = new Date().toISOString();
-    // stub what suggestServiceWording would have produced — Claude isn't configured in
+    // stub what suggestServiceWording would have produced — AI isn't configured in
     // tests, so this exercises the review-queue schema and the accept/dismiss routes
     // directly, the same way maturity_benchmarks rows are stubbed elsewhere in this file
     const sugId = 'qsug-1';
@@ -347,17 +347,17 @@ describe('question wording suggestions — tailored per service, not the standar
   });
 });
 
-describe('direct question editing — no Claude review required (PUT /api/maturity/questions/:qid)', () => {
+describe('direct question editing — no AI review required (PUT /api/maturity/questions/:qid)', () => {
   test('an admin can edit a question\'s wording directly, with no suggestion involved and regardless of round status', async () => {
     const q = db.prepare("SELECT id, prompt, help_text, weight, sort_order, response_kind FROM maturity_questions WHERE service_id = 'svc-07' ORDER BY sort_order LIMIT 1").get();
     as('lucas');
     assert.equal((await send('PUT', `/api/maturity/questions/${q.id}`, { prompt: 'nope' })).status, 403); // member cannot edit
 
     as('reg');
-    const r = await send('PUT', `/api/maturity/questions/${q.id}`, { prompt: 'Edited directly, no Claude involved', helpText: 'a hand-written help text' });
+    const r = await send('PUT', `/api/maturity/questions/${q.id}`, { prompt: 'Edited directly, no AI involved', helpText: 'a hand-written help text' });
     assert.equal(r.status, 200);
     const updated = db.prepare('SELECT prompt, help_text, weight, sort_order, response_kind FROM maturity_questions WHERE id = ?').get(q.id);
-    assert.equal(updated.prompt, 'Edited directly, no Claude involved');
+    assert.equal(updated.prompt, 'Edited directly, no AI involved');
     assert.equal(updated.help_text, 'a hand-written help text');
     // untouched fields survive a partial update
     assert.equal(updated.weight, q.weight);
@@ -381,7 +381,7 @@ describe('service grounding context — real evidence feeding the benchmark, not
     const distinct = new Set(rows.map((r) => r.description));
     assert.equal(distinct.size, 16, 'every service should have its own description, not a shared placeholder');
   });
-  test('an admin can edit a service description directly (PUT /api/maturity/services/:id), no Claude review required', async () => {
+  test('an admin can edit a service description directly (PUT /api/maturity/services/:id), no AI review required', async () => {
     const before = db.prepare("SELECT description FROM maturity_services WHERE id = 'svc-09'").get().description;
     as('lucas');
     assert.equal((await send('PUT', '/api/maturity/services/svc-09', { description: 'nope' })).status, 403); // member cannot edit

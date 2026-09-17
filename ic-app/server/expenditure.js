@@ -10,7 +10,7 @@
 const crypto = require('node:crypto');
 const AdmZip = require('adm-zip');
 const { requireAuth } = require('./auth');
-const claude = require('./claude');
+const ai = require('./ai');
 const fx = require('./fx');
 const mailer = require('./mailer');
 const { logApiUsage } = require('./usage');
@@ -474,12 +474,12 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
       "SELECT name FROM expenditure_categories WHERE ledger_id = ? AND is_expenditure = 1 ORDER BY sort_order"
     ).all(req.expenditureLedger.id).map((r) => r.name);
     try {
-      const { result, usage } = await claude.suggestCategory(description, categoryNames);
+      const { result, usage } = await ai.suggestCategory(description, categoryNames);
       logApiUsage({ callType: 'expenditure_suggest_category', usage, userId: req.session.userId });
       const categoryRow = db.prepare('SELECT id FROM expenditure_categories WHERE ledger_id = ? AND name = ?').get(req.expenditureLedger.id, result.category);
       res.json({ ...result, categoryId: categoryRow ? categoryRow.id : null });
     } catch (err) {
-      if (err instanceof claude.ClaudeNotConfiguredError) {
+      if (err instanceof ai.AiNotConfiguredError) {
         return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
       }
       res.status(502).json({ error: err.message || 'Research failed' });
@@ -533,7 +533,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
 
   // Body: { files: [{ filename, base64 }] }. A .zip is expanded server-side (skipping
   // non-PDF entries and macOS __MACOSX junk); a .pdf is used as-is. Each resulting
-  // statement PDF is extracted via Claude (server/claude.js#extractStatement — see its
+  // statement PDF is extracted via the AI (server/ai.js#extractStatement — see its
   // header comment for why: these statements' two-column layout breaks plain text
   // extraction), reconciled against its own reported totals, and — if the account
   // pattern isn't recognized — skipped with an error the caller can surface, rather than
@@ -611,7 +611,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     if (!detected) return { filename, ok: false, error: 'Unrecognized statement filename — this account pattern isn\'t known yet.' };
     const account = findOrCreateAccount(ledgerId, detected);
 
-    // Fast-path dedup, before spending a Claude call: this household's real statement
+    // Fast-path dedup, before spending an AI call: this household's real statement
     // filenames end in the statement's own period-end date (confirmed against real RBC
     // exports), so a re-uploaded or overlapping-zip duplicate can usually be caught for
     // free. This is a guess only — a renamed or differently-formatted filename just falls
@@ -629,9 +629,9 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
 
     let extraction;
     try {
-      extraction = await claude.extractStatement(base64, account.account_type);
+      extraction = await ai.extractStatement(base64, account.account_type);
     } catch (err) {
-      if (err instanceof claude.ClaudeNotConfiguredError) {
+      if (err instanceof ai.AiNotConfiguredError) {
         return { filename, ok: false, error: 'Statement extraction is not configured (ANTHROPIC_API_KEY missing on the server).' };
       }
       return { filename, ok: false, error: `Extraction failed: ${err.message}` };

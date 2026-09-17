@@ -1,7 +1,7 @@
 // Regression test for the bug reported after the first real deploy: importing a zip of
 // several statements timed out at the hosting platform's reverse-proxy layer, because the
 // whole import ran inline inside one HTTP request/response cycle — fine locally, but
-// Railway's edge proxy kills a request long before a multi-statement Claude extraction
+// Railway's edge proxy kills a request long before a multi-statement AI extraction
 // finishes. This exercises the actual Express routes (not just the pure helpers) to prove
 // the fix's real property: the POST responds immediately with a job id, and the
 // extraction work — mocked here to a short delay, since this must run fast and offline —
@@ -18,7 +18,7 @@ const tmpDbPath = path.join(os.tmpdir(), `ic-expimport-test-${Date.now()}-${Math
 process.env.IC_DB_PATH = tmpDbPath;
 
 const db = require('../server/db');
-const claude = require('../server/claude');
+const ai = require('../server/ai');
 const registerExpenditureRoutes = require('../server/expenditure');
 
 const USER_ID = 'test-user';
@@ -61,8 +61,8 @@ describe('POST /api/expenditure/import', () => {
     // though the actual property under test (the POST doesn't wait for extraction) never
     // changes.
     let extractionFinished = false;
-    const extractMock = mock.method(claude, 'extractStatement', async () => {
-      await delay(300); // stands in for a real multi-minute Claude call
+    const extractMock = mock.method(ai, 'extractStatement', async () => {
+      await delay(300); // stands in for a real multi-minute AI call
       extractionFinished = true;
       return {
         result: {
@@ -109,8 +109,8 @@ describe('POST /api/expenditure/import', () => {
     }
   });
 
-  test('re-importing the same statement filename skips it without calling Claude again', async () => {
-    const extractMock = mock.method(claude, 'extractStatement', async () => ({
+  test('re-importing the same statement filename skips it without calling the AI again', async () => {
+    const extractMock = mock.method(ai, 'extractStatement', async () => ({
       result: {
         periodStart: '2026-02-01', periodEnd: '2026-02-28',
         summary: { openingBalance: 500, closingBalance: 400, totalDeposits: 0, totalWithdrawals: 100 },

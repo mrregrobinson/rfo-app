@@ -110,7 +110,7 @@ function levelChip(level,extra){
   if(level==null)return h('span',{className:'chip chip-none'},'—');
   return h('span',{className:'chip chip-'+levelClass(level),title:extra||''},Number(level).toFixed(1).replace(/\.0$/,''));
 }
-// Claude's benchmark recommendation on whether pursuing improvement here is worth it —
+// AI's benchmark recommendation on whether pursuing improvement here is worth it —
 // same vocabulary as action priorities (Immediate/Active/Monitor), plus Maintain for
 // "already appropriate for a family office this size, don't invest further right now".
 function priorityChip(p){
@@ -179,7 +179,7 @@ function ccChip(level,levels){
 const svg=(tag,props,...kids)=>h(tag,props,...kids);
 
 // ---- Grouped lollipop: one row per service, maturity 1–5 axis. Family mean dot,
-// Claude-benchmark diamond, and a faint band for the member min–max spread. Replaces
+// AI-benchmark diamond, and a faint band for the member min–max spread. Replaces
 // the radar. ----
 function LollipopChart({groups,services,onOpen,showBenchmark}){
   const W=680, LX=196, RX=W-18, RH=21, PAD_TOP=34, PAD_BOT=10;
@@ -199,7 +199,7 @@ function LollipopChart({groups,services,onOpen,showBenchmark}){
     els.push(svg('line',{key:'g'+v,x1:x(v),y1:PAD_TOP-6,x2:x(v),y2:H-PAD_BOT,stroke:'#EEF0F3',strokeWidth:1}));
     els.push(svg('text',{key:'gl'+v,x:x(v),y:PAD_TOP-12,textAnchor:'middle',fontSize:9,fill:'#9CA3AF'},v));
   }
-  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},showBenchmark?'● family mean   ▲ Claude’s read of us   ◆ peer benchmark   ▭ member spread':'● family mean   ▭ member spread'));
+  els.push(svg('text',{key:'lgd',x:LX,y:12,fontSize:9,fill:'#6B7280'},showBenchmark?'● family mean   ▲ AI’s read of us   ◆ peer benchmark   ▭ member spread':'● family mean   ▭ member spread'));
   rows.forEach((r,i)=>{
     const cy=y+RH/2;
     if(r.type==='group'){
@@ -386,7 +386,7 @@ function ScorecardTab({data,members,roles,onOpenService,roundId,onPickRound}){
         h('div',{style:{overflowX:'auto'}},h('table',{className:'tbl'},
           h('thead',null,h('tr',null,h('th',null,'#'),h('th',null,'Service'),
             members.map(m=>h('th',{key:m.id,title:m.name},m.name.split(' ')[0])),
-            h('th',null,'Mean'),h('th',null,'Spread'),h('th',{title:"Claude's own independent read of where this family sits"},"Claude's read"),h('th',null,'Peer benchmark'),h('th',{title:'Peer benchmark minus family mean'},'Gap'),h('th',null,''))),
+            h('th',null,'Mean'),h('th',null,'Spread'),h('th',{title:"AI's own independent read of where this family sits"},"AI's read"),h('th',null,'Peer benchmark'),h('th',{title:'Peer benchmark minus family mean'},'Gap'),h('th',null,''))),
           h('tbody',null,svcs.map(s=>h('tr',{key:s.id,style:{cursor:'pointer'},onClick:()=>onOpenService(s.id)},
             h('td',null,s.number),
             h('td',null,s.name),
@@ -433,12 +433,12 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
   async function dismissSug(sg){try{await api.post('/api/maturity/descriptor-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
   async function acceptQSug(sg,prompt,helpText){try{await api.post('/api/maturity/question-suggestions/'+sg.id+'/accept',(prompt!=null||helpText!=null)?{prompt,helpText}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}}
   async function dismissQSug(sg){try{await api.post('/api/maturity/question-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}}
-  async function runBenchmark(){setBusy('bench');try{const r=await api.post('/api/maturity/rounds/'+roundId+'/benchmark',{serviceId:s.id});if(r.configured===false)alert('Claude is not configured on the server — benchmark unavailable.');await load();onChanged&&onChanged();}catch(e){alert(e.message);}finally{setBusy('');}}
+  async function runBenchmark(){setBusy('bench');try{const r=await api.post('/api/maturity/rounds/'+roundId+'/benchmark',{serviceId:s.id});if(r.configured===false)alert('AI is not configured on the server — benchmark unavailable.');await load();onChanged&&onChanged();}catch(e){alert(e.message);}finally{setBusy('');}}
   return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',onClick:e=>e.stopPropagation()},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
       h('div',null,h('div',{className:'modal-title'},'#'+s.number+' '+s.name),
         h('div',{className:'modal-sub'},d.stats&&d.stats.mean!=null?('Family mean '+d.stats.mean):'Not assessed this round',
-          d.benchmark&&d.benchmark.assessedLevel!=null?("  ·  Claude's read "+d.benchmark.assessedLevel):'',
+          d.benchmark&&d.benchmark.assessedLevel!=null?("  ·  AI's read "+d.benchmark.assessedLevel):'',
           d.benchmark?('  ·  Peer benchmark '+d.benchmark.peerLevel):'')),
       h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'Close')),
     h('div',{style:{marginTop:6,marginBottom:4}},
@@ -448,7 +448,7 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
             h('button',{className:'btn btn-teal btn-sm',onClick:saveServiceDesc},'Save'),
             h('button',{className:'btn btn-outline btn-sm',style:{marginLeft:6},onClick:()=>setEditDesc(false)},'Cancel'))
         :h('div',{className:'small muted'},
-            h('span',{style:{fontWeight:600}},'What Claude knows about this service: '),
+            h('span',{style:{fontWeight:600}},'What the AI knows about this service: '),
             s.description||h('span',{style:{fontStyle:'italic'}},'nothing yet'),' ',
             roles.maturityAdmin&&h('button',{className:'linkbtn',onClick:()=>{setEditDesc(true);setEditDescText(s.description||'');}},'edit'))),
 
@@ -464,7 +464,7 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
       roles.maturityAdmin&&editLvl!==dd.level&&h('button',{className:'linkbtn',onClick:()=>{setEditLvl(dd.level);setEditText(dd.text);}},'edit'))),
 
     (d.suggestions&&d.suggestions.length)?h('div',null,
-      h('div',{className:'sec'},'Proposed level wording (Claude) — review before the round opens'),
+      h('div',{className:'sec'},'Proposed level wording (AI) — review before the round opens'),
       d.suggestions.filter(sg=>sg.status==='pending').map(sg=>h('div',{key:sg.id,className:'card',style:{background:'var(--gold-l)',padding:10}},
         h('div',{className:'small'},h('b',null,'Level '+sg.level),' — ',sg.rationale),
         h('div',{className:'grid2',style:{marginTop:6}},
@@ -491,7 +491,7 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
       roles.maturityAdmin&&editQ!==q.id&&h('button',{className:'linkbtn',onClick:()=>{setEditQ(q.id);setEditQPrompt(q.prompt);setEditQHelp(q.helpText||'');}},'edit'))),
 
     (d.questionSuggestions&&d.questionSuggestions.length)?h('div',null,
-      h('div',{className:'sec'},'Proposed question wording (Claude) — tailored to this service, review before the round opens'),
+      h('div',{className:'sec'},'Proposed question wording (AI) — tailored to this service, review before the round opens'),
       d.questionSuggestions.filter(sg=>sg.status==='pending').map(sg=>h('div',{key:sg.id,className:'card',style:{background:'var(--gold-l)',padding:10}},
         sg.rationale&&h('div',{className:'small'},sg.rationale),
         h('div',{className:'grid2',style:{marginTop:6}},
@@ -519,12 +519,12 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
         h('td',null,x.submitted?h('span',{className:'chip chip-l5'},'submitted'):h('span',{className:'small muted'},'draft')))))
     ):h('div',{className:'small muted'},'No scores recorded this round.'),
 
-    h('div',{className:'sec'},'Claude benchmark — two independent reads'),
+    h('div',{className:'sec'},'AI benchmark — two independent reads'),
     d.benchmark?h('div',null,
       h('div',{className:'small muted',style:{marginBottom:8}},'by '+d.benchmark.searchedByName+' · '+(d.benchmark.searchedAt||'').slice(0,10)),
       h('div',{className:'grid2'},
         h('div',null,
-          h('div',{className:'small muted'},"Claude's read of us"),
+          h('div',{className:'small muted'},"AI's read of us"),
           h('div',{style:{marginTop:2}},levelChip(d.benchmark.assessedLevel)),
           d.benchmark.assessedRationale&&h('div',{className:'small',style:{marginTop:4}},d.benchmark.assessedRationale)),
         h('div',null,
@@ -543,7 +543,7 @@ function ServiceDrawer({serviceId,roundId,members,roles,levelLabels,onClose,onCh
     roles.maturityMember&&roundId&&h('button',{className:'btn btn-outline btn-sm',style:{marginTop:6},disabled:busy==='bench',onClick:runBenchmark},busy==='bench'?'Running…':(d.benchmark?'Re-run benchmark':'Run benchmark')),
 
     d.trend&&d.trend.length>1?h('div',null,h('div',{className:'sec'},'Trend'),
-      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Round'),h('th',null,'Family mean'),h('th',null,"Claude's read"),h('th',null,'Peer benchmark'))),
+      h('table',{className:'tbl'},h('thead',null,h('tr',null,h('th',null,'Round'),h('th',null,'Family mean'),h('th',null,"AI's read"),h('th',null,'Peer benchmark'))),
         h('tbody',null,d.trend.map(t=>h('tr',{key:t.roundId},h('td',null,t.label),h('td',null,t.mean!=null?t.mean:'—'),h('td',null,t.assessed!=null?t.assessed:'—'),h('td',null,t.benchmark!=null?t.benchmark:'—')))))):null,
 
     h('div',{className:'sec'},'Notes / actions'),
@@ -692,10 +692,10 @@ function ProgressTab({roundId}){
       {label:'Peer benchmark mean',data:series.map(s=>s.benchmarkMean),borderColor:'#C9A84C',backgroundColor:'rgba(201,168,76,.1)',borderDash:[5,4],tension:.3},
     ],
   };
-  async function synth(){setBusy(true);try{const r=await api.post('/api/maturity/rounds/'+roundId+'/synthesis',{});if(r.configured===false)alert('Claude is not configured on the server.');else setSyn(r.synthesis);}catch(e){alert(e.message);}finally{setBusy(false);}}
+  async function synth(){setBusy(true);try{const r=await api.post('/api/maturity/rounds/'+roundId+'/synthesis',{});if(r.configured===false)alert('AI is not configured on the server.');else setSyn(r.synthesis);}catch(e){alert(e.message);}finally{setBusy(false);}}
   const improved=p.radar.filter(r=>r.delta>0).length, declined=p.radar.filter(r=>r.delta<0).length;
   return h('div',null,
-    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Are we improving? — self-reported vs. Claude benchmark'),
+    h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Are we improving? — self-reported vs. AI benchmark'),
       series.length>1?h(ChartCanvas,{type:'line',height:240,data:trend,options:{scales:{y:{min:0,max:5}}}}):h('div',{className:'small muted'},'A trend line appears once two or more rounds are closed with benchmarks.')),
     h('div',{className:'card'},
       h('div',{className:'sec',style:{marginTop:0}},'Movement by service — previous round → this round'),
@@ -794,7 +794,7 @@ function WordingSuggestionsPanel({roundId,onChanged}){
   async function acceptQ(sg,promptText,helpText){setBusy(sg.id);try{await api.post('/api/maturity/question-suggestions/'+sg.id+'/accept',(promptText!=null||helpText!=null)?{prompt:promptText,helpText}:{});await load();onChanged&&onChanged();}catch(e){alert(e.message);}finally{setBusy('');}}
   async function dismissQ(sg){setBusy(sg.id);try{await api.post('/api/maturity/question-suggestions/'+sg.id+'/dismiss',{});await load();}catch(e){alert(e.message);}finally{setBusy('');}}
   if(!total)return h('div',{className:'card'},h('div',{className:'sec',style:{marginTop:0}},'Wording suggestions'),
-    h('div',{className:'small muted'},'None pending. Use "Ask Claude to refresh wording" above to generate some.'));
+    h('div',{className:'small muted'},'None pending. Use "Ask AI to refresh wording" above to generate some.'));
   return h('div',{className:'card'},
     h('div',{className:'sec',style:{marginTop:0}},'Wording suggestions — '+total+' pending review'),
     d.descriptors.map(sg=>h('div',{key:'d-'+sg.id,className:'card',style:{background:'var(--gold-l)',padding:10}},
@@ -832,7 +832,7 @@ function ManageTab({data,members,onReload}){
   const [msg,setMsg]=useState('');
   const closed=(data.rounds||[]).filter(r=>r.status==='closed');
   async function startRound(){setBusy('start');setMsg('');try{await api.post('/api/maturity/rounds',{label,carryFrom:carryFrom||undefined});setLabel('');await onReload();}catch(e){setMsg(e.message);}finally{setBusy('');}}
-  async function act(path,label){setBusy(path);setMsg('');try{const r=await api.post('/api/maturity/rounds/'+active.id+'/'+path,{});if(r.configured===false)setMsg('Claude is not configured on the server.');else setMsg(label+' done.');await onReload();}catch(e){setMsg(e.message);}finally{setBusy('');}}
+  async function act(path,label){setBusy(path);setMsg('');try{const r=await api.post('/api/maturity/rounds/'+active.id+'/'+path,{});if(r.configured===false)setMsg('AI is not configured on the server.');else setMsg(label+' done.');await onReload();}catch(e){setMsg(e.message);}finally{setBusy('');}}
   async function del(r){
     if(!confirm('Delete "'+r.label+'"? This permanently removes every answer, score, and benchmark recorded in it. This cannot be undone.'))return;
     setBusy('delete-'+r.id);setMsg('');
@@ -845,9 +845,9 @@ function ManageTab({data,members,onReload}){
       active?h('div',null,
         h('div',null,h('b',null,active.label),' ',h('span',{className:'pill pill-'+active.status},active.status)),
         h('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}},
-          h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('suggest-wording','Wording suggestions')},busy==='suggest-wording'?'Asking Claude…':'Ask Claude to refresh wording — levels & questions (all 16)'),
+          h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('suggest-wording','Wording suggestions')},busy==='suggest-wording'?'Asking AI…':'Ask AI to refresh wording — levels & questions (all 16)'),
           active.status==='draft'&&h('button',{className:'btn btn-teal btn-sm',disabled:busy,onClick:()=>act('open','Open round')},'Open the round for assessment'),
-          active.status==='open'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('benchmark','Benchmark')},busy==='benchmark'?'Benchmarking…':'Run Claude benchmark (all 16)'),
+          active.status==='open'&&h('button',{className:'btn btn-outline btn-sm',disabled:busy,onClick:()=>act('benchmark','Benchmark')},busy==='benchmark'?'Benchmarking…':'Run AI benchmark (all 16)'),
           active.status==='open'&&h('button',{className:'btn btn-navy btn-sm',disabled:busy,onClick:()=>{if(confirm('Close this round? It becomes read-only and, if it has benchmarks, the comparison anchor.'))act('close','Close round');}},'Close the round'),
           h('button',{className:'btn btn-danger btn-sm',disabled:busy,onClick:()=>del(active)},busy==='delete-'+active.id?'Deleting…':'Delete this round')),
         h('div',{className:'small muted',style:{marginTop:6}},'Review proposed wording below, or per service from the Scorecard tab → open a service.')

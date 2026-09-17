@@ -52,7 +52,7 @@ const valueLabelPlugin = {
 };
 
 // Grouped horizontal bar: one row per assessed service. Family mean is always shown;
-// Claude's own independent read of where the family sits (assessedLevel) and Claude's
+// the AI's own independent read of where the family sits (assessedLevel) and its
 // researched peer benchmark (peerLevel) are added only when showBenchmark is true — the
 // same "Show benchmark" choice as the Scorecard tab's on-screen chart, carried into the
 // exported report.
@@ -64,8 +64,8 @@ async function barPng(model, showBenchmark) {
   ];
   if (showBenchmark) {
     datasets.push(
-      { label: "Claude's read of us", data: services.map((s) => (s.benchmark ? s.benchmark.assessedLevel : null)), backgroundColor: 'rgba(42,125,123,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 },
-      { label: 'Claude benchmark (peers)', data: services.map((s) => (s.benchmark ? s.benchmark.peerLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 }
+      { label: "AI's read of us", data: services.map((s) => (s.benchmark ? s.benchmark.assessedLevel : null)), backgroundColor: 'rgba(42,125,123,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 },
+      { label: 'AI benchmark (peers)', data: services.map((s) => (s.benchmark ? s.benchmark.peerLevel : null)), backgroundColor: 'rgba(201,168,76,0.85)', barPercentage: 0.7, categoryPercentage: 0.8 }
     );
   }
   const width = 980;
@@ -82,7 +82,7 @@ async function barPng(model, showBenchmark) {
         title: {
           display: true, font: { size: 17 },
           text: showBenchmark
-            ? "Maturity by service — family mean vs. Claude's read of us vs. peer benchmark (1–5)"
+            ? "Maturity by service — family mean vs. AI's read of us vs. peer benchmark (1–5)"
             : 'Maturity by service — family self-assessed mean (1–5)',
         },
       },
@@ -196,7 +196,7 @@ async function buildMaturityReportPdf(model, opts = {}) {
   const coverStats = [
     { label: 'Family mean', value: fmt(famMean) },
     ...(showBenchmark ? [
-      { label: "Claude's read of us", value: fmt(assessedMean) },
+      { label: "AI's read of us", value: fmt(assessedMean) },
       { label: 'Peer benchmark', value: fmt(peerMean) },
     ] : []),
     { label: 'Services assessed', value: `${scored.length}/${services.length}` },
@@ -250,12 +250,12 @@ async function buildMaturityReportPdf(model, opts = {}) {
       );
       if (showBenchmark && assessedLvl != null) {
         doc.moveDown(0.3);
-        doc.fillColor(INK).text(`Claude's read of us: ${fmt(assessedLvl)} (${labelName(assessedLvl)})`);
+        doc.fillColor(INK).text(`AI's read of us: ${fmt(assessedLvl)} (${labelName(assessedLvl)})`);
         if (s.benchmark.assessedRationale) { doc.moveDown(0.1); doc.fillColor(SLATE).text(s.benchmark.assessedRationale); }
       }
       if (showBenchmark && bench != null) {
         doc.moveDown(0.3);
-        doc.fillColor(INK).text(`Claude benchmark (peers) ${fmt(bench)} (${labelName(bench)})` + (gap != null ? `   ·   gap vs family ${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : ''));
+        doc.fillColor(INK).text(`AI benchmark (peers) ${fmt(bench)} (${labelName(bench)})` + (gap != null ? `   ·   gap vs family ${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : ''));
         if (s.benchmark.peerRationale) { doc.moveDown(0.1); doc.fillColor(SLATE).text(s.benchmark.peerRationale); }
         if (s.benchmark.recommendedPriority) {
           const pc = PRIORITY_COLOR[s.benchmark.recommendedPriority] || INK;

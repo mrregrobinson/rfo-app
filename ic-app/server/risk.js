@@ -12,7 +12,7 @@
 // task row is authoritative for status/owner/target and the action reads through to it.
 const crypto = require('node:crypto');
 const { requireAuth } = require('./auth');
-const claude = require('./claude');
+const ai = require('./ai');
 const mailer = require('./mailer');
 const { logApiUsage } = require('./usage');
 const { contentRow, paragraph, emailShell } = require('./email-template');
@@ -627,7 +627,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
     let categoryId = null;
     if (b.categoryId && db.prepare('SELECT id FROM risk_categories WHERE id = ?').get(b.categoryId)) categoryId = b.categoryId;
     try {
-      const { result, usage } = await claude.researchRiskProbability({ title, description, context: (b.context || '').trim() });
+      const { result, usage } = await ai.researchRiskProbability({ title, description, context: (b.context || '').trim() });
       logApiUsage({ callType: 'risk_probability_lookup', usage, userId: req.session.userId });
       const id = crypto.randomUUID();
       db.prepare(
@@ -646,7 +646,7 @@ module.exports = function registerRiskRoutes(app, { db, logAudit }) {
       logAudit({ userId: req.session.userId, action: 'risk.probability_lookup', entityType: 'risk_category', entityId: categoryId || 'ad-hoc', details: { mappedScore: result.mappedScore } });
       res.json({ configured: true, lookup: lookupRowToJson(db.prepare('SELECT * FROM risk_probability_lookups WHERE id = ?').get(id)) });
     } catch (err) {
-      if (err instanceof claude.ClaudeNotConfiguredError) return res.json({ configured: false });
+      if (err instanceof ai.AiNotConfiguredError) return res.json({ configured: false });
       console.error('risk probability lookup failed:', err.message);
       res.status(502).json({ error: err.message || 'Lookup failed' });
     }

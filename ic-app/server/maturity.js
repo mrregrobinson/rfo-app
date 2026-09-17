@@ -18,7 +18,7 @@
 // benchmarks becomes is_anchor and the comparison baseline.
 const crypto = require('node:crypto');
 const { requireAuth } = require('./auth');
-const claude = require('./claude');
+const ai = require('./ai');
 const mailer = require('./mailer');
 const { logApiUsage } = require('./usage');
 const { contentRow, paragraph, emailShell, escapeHtml } = require('./email-template');
@@ -1047,7 +1047,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   });
 
   // ===================================================================================
-  // CLAUDE — benchmark / synthesis / descriptor suggestions (member+, degrade gracefully)
+  // AI — benchmark / synthesis / descriptor suggestions (member+, degrade gracefully)
   // ===================================================================================
 
   app.post('/api/maturity/rounds/:id/benchmark', requireAuth, async (req, res) => {
@@ -1067,7 +1067,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       try {
         const stat = serviceStats(r.id, s.id);
         const description = [s.description || '', liveEvidenceFor(s.id)].filter(Boolean).join('\n\n');
-        const { result, usage } = await claude.benchmarkMaturityService({
+        const { result, usage } = await ai.benchmarkMaturityService({
           serviceName: s.name,
           description,
           levelLabels: labels,
@@ -1098,7 +1098,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         );
         results.push({ serviceId: s.id, peerLevel, assessedLevel, recommendedPriority: priority });
       } catch (err) {
-        if (err instanceof claude.ClaudeNotConfiguredError) return res.json({ configured: false });
+        if (err instanceof ai.AiNotConfiguredError) return res.json({ configured: false });
         errors.push({ serviceId: s.id, error: err.message });
       }
     }
@@ -1122,7 +1122,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
     const ccSummary = consciousnessRoundSummary(r.id);
     const ccPrevSummary = consciousnessRoundSummary(prevId);
     try {
-      const { result, usage } = await claude.synthesizeMaturityRound({
+      const { result, usage } = await ai.synthesizeMaturityRound({
         services,
         consciousness: {
           scale: lvlNames.map((l) => `${l.level} ${l.name} (${l.tagline})`),
@@ -1139,7 +1139,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
       logAudit({ userId: req.session.userId, action: 'maturity.synthesis_run', entityType: 'maturity_round', entityId: r.id });
       res.json({ configured: true, synthesis: result });
     } catch (err) {
-      if (err instanceof claude.ClaudeNotConfiguredError) return res.json({ configured: false });
+      if (err instanceof ai.AiNotConfiguredError) return res.json({ configured: false });
       res.status(502).json({ error: err.message });
     }
   });
@@ -1166,7 +1166,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         const current = descriptorsFor(s.id);
         const currentQuestions = questionsFor(s.id, false); // already ordered by sort_order
         const description = [s.description || '', liveEvidenceFor(s.id)].filter(Boolean).join('\n\n');
-        const { result, usage } = await claude.suggestServiceWording({
+        const { result, usage } = await ai.suggestServiceWording({
           serviceName: s.name, description,
           levelLabels: labels, currentDescriptors: current.map((d) => d.text),
           currentQuestions, familyContext: familyContextWithActivity,
@@ -1196,7 +1196,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         for (const qs of questions) {
           const sortOrder = Number(qs.sortOrder);
           const target = currentQuestions.find((q) => q.sortOrder === sortOrder);
-          if (!target) continue; // Claude returned a slot that doesn't match a real question — skip rather than guess
+          if (!target) continue; // the AI returned a slot that doesn't match a real question — skip rather than guess
           insQ.run(
             crypto.randomUUID(), r.id, s.id, target.id, target.prompt, target.helpText || '',
             String(qs.suggestedPrompt || target.prompt), String(qs.suggestedHelpText ?? target.helpText ?? ''),
@@ -1205,7 +1205,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         }
         results.push({ serviceId: s.id, levels: levels.length, questions: questions.length });
       } catch (err) {
-        if (err instanceof claude.ClaudeNotConfiguredError) return res.json({ configured: false });
+        if (err instanceof ai.AiNotConfiguredError) return res.json({ configured: false });
         errors.push({ serviceId: s.id, error: err.message });
       }
     }

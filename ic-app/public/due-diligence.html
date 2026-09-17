@@ -77,12 +77,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .src-prefill{background:var(--teal-l);color:#085041}
 .src-human{background:var(--gold-l);color:#633806}
 .src-gating{background:var(--red-l);color:#991B1B}
-.claude-answer{background:var(--purple-l);border:0.5px solid #C4B5FD;border-radius:8px;padding:10px 12px;margin-bottom:10px}
-.claude-answer-header{font-size:10px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.claude-answer-value{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px}
-.claude-answer-rationale{font-size:11px;color:#5B21B6;line-height:1.6;white-space:pre-line}
-.claude-answer.prefill{background:var(--teal-l);border-color:#9FE1CB}
-.claude-answer.prefill .claude-answer-header,.claude-answer.prefill .claude-answer-rationale{color:#085041}
+.ai-answer{background:var(--purple-l);border:0.5px solid #C4B5FD;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.ai-answer-header{font-size:10px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.ai-answer-value{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px}
+.ai-answer-rationale{font-size:11px;color:#5B21B6;line-height:1.6;white-space:pre-line}
+.ai-answer.prefill{background:var(--teal-l);border-color:#9FE1CB}
+.ai-answer.prefill .ai-answer-header,.ai-answer.prefill .ai-answer-rationale{color:#085041}
 .ctx-box{background:var(--navy-l);border:0.5px solid #C5CEDF;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11px;color:var(--navy);line-height:1.65;white-space:pre-line}
 .ctx-box-label{font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
 .q-id{font-size:10px;font-weight:600;color:var(--teal);margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -208,7 +208,7 @@ function fmtMoney(n,c){return new Intl.NumberFormat('en-CA',{style:'currency',cu
 function fmtDate(d){return new Date(d).toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'})}
 function pct(n){return n.toFixed(1)+'%'}
 
-function computeClaudeAnswers(opp,activities){
+function computeAiAnswers(opp,activities){
   const p=opp.pqData||{};const cur=opp.currency;const cadCommit=opp.commitment*(CURRENT_FX[cur]||1.35);const ac=opp.assetClass;const ips=PORT.ips[ac]||{min:0,target:10,max:20};
   const nonCompleted=(activities||[]).filter(a=>a.status!=='Completed');const effAll=getEffectivePort(nonCompleted);
   const curPct=effAll.alloc[ac]||0;const projPct=curPct+(cadCommit/effAll.totalCAD)*100;const manPct=(cadCommit/effAll.totalCAD)*100;const oddR=p.oddRatings||{};const highF=Object.entries(oddR).filter(([,v])=>v==='High').map(([k])=>k);const medF=Object.entries(oddR).filter(([,v])=>v==='Medium').map(([k])=>k);const govR=oddR.governance||'Low';const compR=oddR.compliance||'Low';const addUSD=cur==='USD';const usdAfter=addUSD?(PORT.fx.USD.val+cadCommit)/(PORT.totalCAD+cadCommit)*100:PORT.fx.USD.pct;const ans={};
@@ -231,7 +231,7 @@ function computeClaudeAnswers(opp,activities){
       :'No liquidity tier data has been uploaded yet — an admin needs to upload the latest investment report (👤 menu → Update Portfolio Data) before this chart can be computed. Uses (capital-call pacing) are shown below regardless; sources will read as $0 until then.',
     chart:liquidityPlan};
   ans.A5={value:null,locked:false,display:null,rationale:`FX: USD ${PORT.fx.USD.pct.toFixed(1)}%, CAD ${PORT.fx.CAD.pct.toFixed(1)}%, EUR ${PORT.fx.EUR.pct.toFixed(1)}%, GBP ${PORT.fx.GBP.pct.toFixed(1)}%.\n${addUSD?`USD exposure: ${PORT.fx.USD.pct.toFixed(1)}% → ~${usdAfter.toFixed(1)}% after commitment.`:`${cur} commitment — USD exposure unchanged.`}\nNo formal IPS currency ceiling.`};
-  ans.B1={value:p.thesisRating||4,display:`Claude suggests ${p.thesisRating||4}/5`,rationale:(p.thesisSummary||'Adjust based on your read of the PQ document.')+'\n\nTrack record: '+(p.hasTrackRecord?(p.trackRecordDetail||'per PQ report'):'Not cited — first-time fund or new strategy.'),locked:false,prefill:true};
+  ans.B1={value:p.thesisRating||4,display:`AI suggests ${p.thesisRating||4}/5`,rationale:(p.thesisSummary||'Adjust based on your read of the PQ document.')+'\n\nTrack record: '+(p.hasTrackRecord?(p.trackRecordDetail||'per PQ report'):'Not cited — first-time fund or new strategy.'),locked:false,prefill:true};
   ans.C1={value:govR==='Low'?'Yes':govR==='Medium'?'Uncertain':'No',display:`${govR==='Low'?'Yes — no concerns':'Uncertain — flagged'} (PQ ODD Governance: ${govR})`,rationale:`PQ ODD Governance: ${govR}. ${govR==='Low'?'No concerns.':govR==='Medium'?'⚠ Noteworthy item — see PQ ODD for details.':'⛔ High concern — must be resolved.'}${p.oddGovernanceNote?'\n\nPQ note: '+p.oddGovernanceNote:''}`,locked:true,warning:govR!=='Low'};
   ans.C2={value:compR==='Low'?'Yes':'Uncertain',display:`${compR==='Low'?'Yes':'Uncertain'} (PQ ODD Compliance: ${compR})`,rationale:`PQ ODD Compliance: ${compR}. ${compR==='Low'?'No deficiencies.':'⚠ Compliance concern — see PQ ODD.'}`,locked:true,warning:compR!=='Low'};
   const oddLines=Object.entries(oddR).map(([k,v])=>`• ${k}: ${v}`).join('\n')||'• All: Low';
@@ -260,7 +260,7 @@ function ResearchPanel({type,oppId,label,icon,colorClass}){
       h('div',{className:'rp-header-left'},h('div',{className:`rp-icon rp-icon-${colorClass}`},icon),h('div',null,h('div',{className:'rp-title'},label),h('div',{className:'rp-subtitle'},state==='loading'?'Searching the web…':state==='error'?'Could not load — expand for detail':state==='done'?'Shared across all reviewers — click ↻ to re-run':''))),
       state==='loading'&&h('span',null,h('span',{className:'spin'}),'Loading…'),
       state==='done'&&data&&h('div',{style:{display:'flex',alignItems:'center',gap:8}},h('span',{className:`rp-badge ${sigBadge[data.overallSignal]||'rp-badge-caution'}`},sigLabel[data.overallSignal]||data.overallSignal),h('button',{className:'btn btn-outline btn-sm',title:'Re-run live research',onClick:(e)=>{e.stopPropagation();load(true);}},'↻'),h('span',{style:{fontSize:16,color:'var(--muted)'}},open?'▾':'▸')),
-      state==='error'&&h('span',{style:{fontSize:11,color:'#DC2626'}},error==='NOT_CONFIGURED'?'No Anthropic API key set':'Error — expand')
+      state==='error'&&h('span',{style:{fontSize:11,color:'#DC2626'}},error==='NOT_CONFIGURED'?'No AI API key set':'Error — expand')
     ),
     open&&h('div',{className:'rp-body'},
       state==='error'&&h('div',null,
@@ -271,7 +271,7 @@ function ResearchPanel({type,oppId,label,icon,colorClass}){
       state==='done'&&data&&h('div',null,
         h('div',{className:'rf-summary-box'},h('div',{className:'rf-summary-label'},'Research summary'),data.summary),
         data.findings&&data.findings.length>0&&data.findings.map((f,i)=>h('div',{key:i,className:`rf-item ${iClass[f.type]||'rf-item-neutral'}`},h('div',{className:'rf-headline'},[{FLAG:'🚩',CAUTION:'⚠',POSITIVE:'✓',NEUTRAL:'·'}[f.type]||'·'],' '+f.headline),h('div',{className:'rf-detail'},f.detail),f.source&&h('div',{className:'rf-source'},'Source: '+f.source))),
-        h('div',{className:'rf-timestamp'},'Searched '+data.searchedAt+' via Claude web search')
+        h('div',{className:'rf-timestamp'},'Searched '+data.searchedAt+' via AI web search')
       )
     )
   );
@@ -289,15 +289,15 @@ function ResearchPanelGroup({opp,sections}){
 }
 
 const SECTIONS=[
-  {id:'A',label:'IPS & Portfolio Fit',color:'#2A7D7B',researchGroup:null,purpose:'Claude auto-answers A1–A3 from IPS data. A4 and A5 give you the live liquidity and FX picture — you confirm.',questions:[
+  {id:'A',label:'IPS & Portfolio Fit',color:'#2A7D7B',researchGroup:null,purpose:'AI auto-answers A1–A3 from IPS data. A4 and A5 give you the live liquidity and FX picture — you confirm.',questions:[
     {id:'A1',text:'Does this investment fall within an IPS-approved asset class?',type:'yn',mode:'auto'},
     {id:'A2',text:'Is the post-commitment allocation within the IPS band, and does it move toward target?',type:'yn',mode:'auto'},
     {id:'A3',text:'Does the commitment respect the ≤10% single-manager concentration limit?',type:'yn',mode:'auto'},
     {id:'A4',text:'Is the liquidity profile acceptable given existing unfunded commitments and near-term capital calls?',type:'yn3',mode:'auto_data',hint:'Review the chart above. Confirm whether the additional obligation is manageable given available liquidity.'},
     {id:'A5',text:'Is the additional currency exposure acceptable given current portfolio FX concentration?',type:'yn3',mode:'auto_data',ctxKey:'A5',hint:'Review the current portfolio FX exposure above and the derivation notes below, then confirm whether further concentration is within your comfort range.'},
   ]},
-  {id:'B',label:'Strategy & Return',color:'#1B2A4A',researchGroup:'BC',purpose:'Live web research (above) covers industry dynamics. Claude pre-fills the thesis rating and summarizes PQ\'s downside scenarios. B2 is your judgment.',questions:[
-    {id:'B1',text:'How compelling is the investment thesis, and does the manager have a track record to support it?',type:'rating',mode:'prefill',hint:"Claude's rating is pre-filled from PQ. Adjust based on your own read and the industry research above."},
+  {id:'B',label:'Strategy & Return',color:'#1B2A4A',researchGroup:'BC',purpose:'Live web research (above) covers industry dynamics. AI pre-fills the thesis rating and summarizes PQ\'s downside scenarios. B2 is your judgment.',questions:[
+    {id:'B1',text:'How compelling is the investment thesis, and does the manager have a track record to support it?',type:'rating',mode:'prefill',hint:"AI's rating is pre-filled from PQ. Adjust based on your own read and the industry research above."},
     {id:'B2',text:"Is PQ's net return expectation realistic given current industry conditions and the track record?",type:'yn3',mode:'human',ctxKey:'B2',hint:'Factor in both the PQ data above and any industry headwinds or tailwinds surfaced by the live research.'},
   ]},
   {id:'C',label:'Manager & Governance',color:'#2A7D7B',researchGroup:null,purpose:'Live web research above covers reputational flags. Governance and compliance are auto-answered from PQ Operational Due Diligence (ODD). Compensation alignment is now assessed under F1.',questions:[
@@ -333,12 +333,12 @@ function getCtxSummary(ctxKey,opp,activities){
 
 function ModeTag({mode,gating}){
   if(gating)return h('span',{className:'source-tag src-gating'},'⛔ Gating');
-  if(mode==='auto')return h('span',{className:'source-tag src-auto'},'✦ Claude auto');
-  if(mode==='auto_data')return h('span',{className:'source-tag src-prefill'},'✦ Claude data — confirm');
-  if(mode==='prefill')return h('span',{className:'source-tag src-prefill'},'✦ Claude suggests');
+  if(mode==='auto')return h('span',{className:'source-tag src-auto'},'✦ AI auto');
+  if(mode==='auto_data')return h('span',{className:'source-tag src-prefill'},'✦ AI data — confirm');
+  if(mode==='prefill')return h('span',{className:'source-tag src-prefill'},'✦ AI suggests');
   return h('span',{className:'source-tag src-human'},'◎ Your judgment');
 }
-function ClaudeBox({ca,isPrefill}){if(!ca)return null;return h('div',{className:`claude-answer${isPrefill?' prefill':''}`},h('div',{className:'claude-answer-header'},isPrefill?'✦ Claude pre-fill':'✦ Claude auto-answer'),ca.display&&h('div',{className:'claude-answer-value'},ca.display),h('div',{className:'claude-answer-rationale'},ca.rationale),ca.chart&&h(LiquidityChart,{plan:ca.chart}),ca.warning&&h('div',{className:'warn-flag'},'⚠ Flag — IC must discuss before proceeding'));}
+function AiBox({ca,isPrefill}){if(!ca)return null;return h('div',{className:`ai-answer${isPrefill?' prefill':''}`},h('div',{className:'ai-answer-header'},isPrefill?'✦ AI pre-fill':'✦ AI auto-answer'),ca.display&&h('div',{className:'ai-answer-value'},ca.display),h('div',{className:'ai-answer-rationale'},ca.rationale),ca.chart&&h(LiquidityChart,{plan:ca.chart}),ca.warning&&h('div',{className:'warn-flag'},'⚠ Flag — IC must discuss before proceeding'));}
 
 // Cumulative sources-vs-uses view for A4 — each bucket includes everything from earlier
 // buckets too, so a shortfall shows up the moment the red (uses) bar would overtake the
@@ -370,8 +370,8 @@ function QuestionRow({q,ca,response,onChange,opp,readOnly,activities}){
   return h('div',{className:`q-row${ca&&isLocked?' auto-answered':q.mode==='human'?' human-only':''}`},
     h('div',{className:'q-id'},q.id,h(ModeTag,{mode:q.mode,gating:q.gating})),
     h('div',{className:'q-text'},q.text),
-    ca&&(q.mode==='auto'||isAutoData)&&h(ClaudeBox,{ca,isPrefill:isAutoData}),
-    ca&&isPrefill&&h(ClaudeBox,{ca,isPrefill:true}),
+    ca&&(q.mode==='auto'||isAutoData)&&h(AiBox,{ca,isPrefill:isAutoData}),
+    ca&&isPrefill&&h(AiBox,{ca,isPrefill:true}),
     ctx&&h(CtxBox,{text:ctx}),
     isLocked?h('div',{style:{fontSize:11,color:'var(--purple)',fontWeight:600,opacity:.6,paddingTop:4}},'Locked — no input required')
     :h('div',null,
@@ -393,7 +393,7 @@ function SectionAPanel({opp,activities}){
   const unfundedRows=PORT.unfunded.map(u=>{const fx=ACTIVITY_FX[u.currency]||1;const unfundedCAD=(u.unfunded!=null?u.unfunded:(u.unfundedCAD||0))*fx;const commitmentCAD=(u.commitment||0)*fx;return{...u,unfundedCAD,commitmentCAD,near:capitalCallSchedule(commitmentCAD,unfundedCAD)['0-6 months']};});
   const total=unfundedRows.reduce((a,u)=>a+u.unfundedCAD,0);const totalNear=unfundedRows.reduce((a,u)=>a+u.near,0);
   return h('div',{style:{padding:'12px 16px',background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},
-    nonCompleted.length>0&&h('div',{className:'ctx-box',style:{marginBottom:12}},h('div',{className:'ctx-box-label'},'Adjusted for pending family planning activities'),`${nonCompleted.length} activit${nonCompleted.length===1?'y':'ies'} shift the Allocation Impact baseline below (only those tagged with an asset class) — see raw PQ-reported figures in each question's Claude box. FX Exposure and the Unfunded Commitments table below are unaffected by activities; A4's liquidity chart further down applies its own adjustment, for activities tagged with a liquidity category.`),
+    nonCompleted.length>0&&h('div',{className:'ctx-box',style:{marginBottom:12}},h('div',{className:'ctx-box-label'},'Adjusted for pending family planning activities'),`${nonCompleted.length} activit${nonCompleted.length===1?'y':'ies'} shift the Allocation Impact baseline below (only those tagged with an asset class) — see raw PQ-reported figures in each question's AI box. FX Exposure and the Unfunded Commitments table below are unaffected by activities; A4's liquidity chart further down applies its own adjustment, for activities tagged with a liquidity category.`),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:14}},
       h('div',null,h('div',{className:'card-title',style:{fontSize:12,marginBottom:8}},'Allocation Impact'),h('div',{className:'ips-bar-wrap'},h('div',{className:'ips-label-row'},h('span',null,opp.assetClass),h('span',null,pct(cur)+' → '+pct(cur+(cadCommit/effAll.totalCAD)*100))),h('div',{className:'ips-track'},h('div',{className:'ips-fill-cur',style:{width:`${(cur/scale)*100}%`,background:'#2A7D7B'}}),h('div',{className:'ips-fill-proj',style:{width:`${(proj/scale)*100}%`,background:'#2A7D7B'}}),h('div',{className:'ips-m-target',style:{left:`${(ips.target/scale)*100}%`}}),h('div',{className:'ips-m-max',style:{left:`${(ips.max/scale)*100}%`}})),h('div',{className:'ips-legend'},h('span',null,'Min '+ips.min+'%'),h('span',{style:{color:'#059669'}},'Target '+ips.target+'%'),h('span',{style:{color:'#DC2626'}},'Max '+ips.max+'%')))),
       h('div',null,h('div',{className:'card-title',style:{fontSize:12,marginBottom:8}},'Portfolio FX Exposure'),Object.entries(PORT.fx).map(([c,d])=>h('div',{key:c,className:'currency-row'},h('span',{style:{minWidth:32,fontWeight:600,fontSize:12,color:'var(--navy)'}},c),h('div',{className:'currency-bar',style:{width:`${d.pct*1.8}px`}}),h('span',{style:{minWidth:38,fontSize:12}},pct(d.pct)),h('span',{style:{fontSize:11,color:'var(--muted)'}},fmtCAD(d.val)))))
@@ -404,11 +404,11 @@ function SectionAPanel({opp,activities}){
   );
 }
 
-function SectionCard({section,responses,claudeAnswers,onChange,initialOpen,opp,readOnly,activities}){
+function SectionCard({section,responses,aiAnswers,onChange,initialOpen,opp,readOnly,activities}){
   const [open,setOpen]=useState(!!initialOpen);const autoQ=section.questions.filter(q=>q.mode==='auto').length;const humanQ=section.questions.filter(q=>q.mode!=='auto');const answered=humanQ.filter(q=>responses[q.id]?.v!=null).length;
   return h('div',{className:'section-card'},
     h('div',{className:'section-header',onClick:()=>setOpen(!open)},h('div',{className:'section-letter',style:{background:section.color}},section.id),h('div',{className:'section-title-wrap'},h('div',{className:'section-title'},section.label),h('div',{className:'section-sub'},section.purpose)),h('div',{className:'section-stats'},autoQ>0&&h('span',{style:{fontSize:10,color:'var(--purple)',background:'var(--purple-l)',padding:'2px 7px',borderRadius:8,fontWeight:600}},autoQ+' auto'),h('span',{style:{fontSize:11,color:'var(--muted)'}},answered+'/'+humanQ.length+' yours'),h('span',{style:{fontSize:16,color:'var(--muted)',marginLeft:4}},open?'▾':'▸'))),
-    open&&h('div',{className:'section-body'},section.id==='A'&&h(SectionAPanel,{opp,activities}),section.researchGroup&&h(ResearchPanelGroup,{opp,sections:section.researchGroup}),section.questions.map(q=>h(QuestionRow,{key:q.id,q,ca:claudeAnswers[q.id],response:responses[q.id],onChange,opp,readOnly,activities})))
+    open&&h('div',{className:'section-body'},section.id==='A'&&h(SectionAPanel,{opp,activities}),section.researchGroup&&h(ResearchPanelGroup,{opp,sections:section.researchGroup}),section.questions.map(q=>h(QuestionRow,{key:q.id,q,ca:aiAnswers[q.id],response:responses[q.id],onChange,opp,readOnly,activities})))
   );
 }
 
@@ -468,7 +468,7 @@ function FamilyActivitiesPanel({activities,onCreate,onUpdate,onDelete}){
 }
 
 function ChecklistPage({opp,currentUser,onSave,onSubmit,onBack,activities,onCreateActivity,onUpdateActivity,onDeleteActivity,onUpdateOpportunity,onToggleStatus,onViewReport,onSendTo}){
-  const myR=opp.responses[currentUser.id]||{submitted:false,responses:{}};const [responses,setResponses]=useState(myR.responses||{});const [rec,setRec]=useState(myR.recommendation||null);const [comments,setComments]=useState(myR.overall||'');const [followUp,setFollowUp]=useState(myR.followUp||[]);const [newFU,setNewFU]=useState('');const [saving,setSaving]=useState(false);const [submitted,setSubmitted]=useState(myR.submitted||false);const [showEdit,setShowEdit]=useState(false);const ca=computeClaudeAnswers(opp,activities);const humanQs=SECTIONS.flatMap(s=>s.questions).filter(q=>q.mode!=='auto');const answered=humanQs.filter(q=>responses[q.id]?.v!=null).length;const closed=opp.status==='closed';const canEdit=!closed&&(currentUser.ddAdmin||currentUser.id===opp.initiatedBy);const isDraft=opp.status==='draft';const canPublish=isDraft&&(opp.initiatedBy===currentUser.id||currentUser.ddAdmin);
+  const myR=opp.responses[currentUser.id]||{submitted:false,responses:{}};const [responses,setResponses]=useState(myR.responses||{});const [rec,setRec]=useState(myR.recommendation||null);const [comments,setComments]=useState(myR.overall||'');const [followUp,setFollowUp]=useState(myR.followUp||[]);const [newFU,setNewFU]=useState('');const [saving,setSaving]=useState(false);const [submitted,setSubmitted]=useState(myR.submitted||false);const [showEdit,setShowEdit]=useState(false);const ca=computeAiAnswers(opp,activities);const humanQs=SECTIONS.flatMap(s=>s.questions).filter(q=>q.mode!=='auto');const answered=humanQs.filter(q=>responses[q.id]?.v!=null).length;const closed=opp.status==='closed';const canEdit=!closed&&(currentUser.ddAdmin||currentUser.id===opp.initiatedBy);const isDraft=opp.status==='draft';const canPublish=isDraft&&(opp.initiatedBy===currentUser.id||currentUser.ddAdmin);
   function publish(){if(!window.confirm('Publish this opportunity? It becomes active, and you can then send it to each family member individually, on your own schedule.'))return;onToggleStatus(opp.id,'open');}
   function upd(qid,val){if(closed)return;setResponses(r=>({...r,[qid]:val}))}
   async function save(){if(closed)return;setSaving(true);await onSave(currentUser.id,{responses,recommendation:rec,overall:comments,followUp,submitted});setSaving(false);}
@@ -487,7 +487,7 @@ function ChecklistPage({opp,currentUser,onSave,onSubmit,onBack,activities,onCrea
       h(SharingPanel,{opp,currentUser,onSend:onSendTo}),
       h(FamilyActivitiesPanel,{activities,onCreate:onCreateActivity,onUpdate:onUpdateActivity,onDelete:onDeleteActivity}),
       h(OpportunityDocumentsPanel,{opp,currentUser,onUpdateOpportunity}),
-      SECTIONS.map((s,i)=>h(SectionCard,{key:s.id,section:s,responses,claudeAnswers:ca,onChange:upd,initialOpen:i===0,opp,readOnly:closed,activities})),
+      SECTIONS.map((s,i)=>h(SectionCard,{key:s.id,section:s,responses,aiAnswers:ca,onChange:upd,initialOpen:i===0,opp,readOnly:closed,activities})),
       h('div',{className:'card'},h('div',{className:'card-title'},'Your Overall Recommendation'),h('p',{style:{fontSize:12,color:'var(--muted)',marginBottom:10}},'Anchor in D4 (risk-return) and E1 (values). Factor in any red flags from the live research.'),h('div',{className:'overall-wrap'},['Approve','Conditional Approval','Decline','Abstain'].map(r=>h('button',{key:r,className:`overall-btn sel-${rec===r?r.replace(' ','-'):''}`,disabled:closed,onClick:()=>!closed&&setRec(r)},r))),
         h('div',{style:{marginTop:14}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Overall comments'),h('textarea',{className:'textarea',style:{minHeight:80},placeholder:'Key reasons for your recommendation…',value:comments,disabled:closed,onChange:e=>setComments(e.target.value)})),
         h('div',{style:{marginTop:14}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Conditions / Follow-up items'),followUp.length>0&&h('div',{style:{marginBottom:8}},followUp.map((fu,i)=>h('span',{key:i,className:'tag'},fu,!closed&&h('button',{onClick:()=>setFollowUp(f=>f.filter((_,j)=>j!==i))},'×')))),!closed&&h('div',{style:{display:'flex',gap:8}},h('input',{className:'form-input',style:{fontSize:12},placeholder:'Add a condition…',value:newFU,onChange:e=>setNewFU(e.target.value),onKeyDown:e=>e.key==='Enter'&&addFU()}),h('button',{className:'btn btn-outline btn-sm',onClick:addFU},'Add')))),
@@ -497,7 +497,7 @@ function ChecklistPage({opp,currentUser,onSave,onSubmit,onBack,activities,onCrea
 }
 
 async function extractFromPDF(base64Data){
-  const resp=await fetch('/api/claude/extract-pdf',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({base64:base64Data})});
+  const resp=await fetch('/api/ai/extract-pdf',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({base64:base64Data})});
   if(resp.status===503)throw new Error('NOT_CONFIGURED');
   if(!resp.ok){const b=await resp.json().catch(()=>({}));throw new Error(b.error||'API error '+resp.status);}
   return resp.json();
@@ -625,7 +625,7 @@ function OpportunityDocumentsPanel({opp,currentUser,onUpdateOpportunity}){
   async function removeDoc(d){if(!window.confirm(`Delete "${d.filename||'this document'}"? This only removes the upload record — it does not undo any fields it applied.`))return;await api.del(`/api/opportunities/${opp.id}/documents/${d.id}`);load();}
   return h('div',{className:'card'},
     h('div',{className:'card-title'},'Documents'),
-    h('p',{style:{fontSize:11,color:'var(--muted)',marginBottom:10}},'The original PQ document is captured at creation. Upload anything that comes in afterward — side letters, term amendments, updated track record, extra diligence material — and Claude will read it and highlight what it changes.'),
+    h('p',{style:{fontSize:11,color:'var(--muted)',marginBottom:10}},'The original PQ document is captured at creation. Upload anything that comes in afterward — side letters, term amendments, updated track record, extra diligence material — and the AI will read it and highlight what it changes.'),
     canEdit&&!extracted&&h('div',null,
       h('label',{className:`upload-zone${fileB64?' has-file':''}`,style:{marginBottom:10,display:'block',padding:'14px'}},fileB64?h('div',{style:{fontSize:13}},'📄 '+fileName):h('div',{style:{fontSize:13}},'☁ Upload a follow-up document (PDF)'),h('input',{type:'file',accept:'.pdf',style:{display:'none'},onChange:handleFile})),
       h('button',{className:'btn btn-gold btn-sm',disabled:!fileB64||extracting,onClick:extract},extracting?'Reading document…':'✦ Extract & Review')
@@ -650,7 +650,7 @@ const RECOMMENDATION_STYLE={
   'DEFER PENDING INFORMATION':{alert:'alert-purple',label:'⏸ Defer Pending Information'},
 };
 
-// Deterministic governance rule, independent of Claude's own analytical recommendation
+// Deterministic governance rule, independent of the AI's own analytical recommendation
 // above: any decline is a veto, unanimous approval among those who've submitted is a
 // clean pass, anything else (conditional approvals and/or abstentions mixed in) needs
 // the IC to actually discuss it before a call is made.
@@ -676,7 +676,7 @@ function ReportSectionLabel({children}){
 function ReportPage({opp,activities,onBack,onGenerateReport,quorumThreshold,roster}){
   const [loading,setLoading]=useState(false);const [error,setError]=useState('');
   const report=opp.report;
-  const ca=computeClaudeAnswers(opp,activities);
+  const ca=computeAiAnswers(opp,activities);
   const allQuestions=SECTIONS.flatMap(s=>s.questions);
   const submittedCount=IC_MEMBERS.filter(m=>opp.responses[m.id]?.submitted).length;
   const pending=IC_MEMBERS.filter(m=>!opp.responses[m.id]?.submitted).map(m=>m.name.split(' ')[0]);
@@ -750,7 +750,7 @@ function UsagePage({onBack}){
   function memberName(id){const m=IC_MEMBERS.find(x=>x.id===id);return m?m.name.split(' ')[0]:(id||'—');}
   function fmtUsd(n){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:4}).format(n||0);}
   return h('div',{className:'page'},
-    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'Claude API Usage')),
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:14}},h('button',{className:'btn btn-outline btn-sm',onClick:onBack},'← Dashboard'),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',flex:1}},'AI API Usage')),
     loading&&h('div',{style:{textAlign:'center',padding:30,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
     error&&h('div',{className:'alert alert-danger'},'Error: '+error),
     data&&h('div',null,
@@ -759,7 +759,7 @@ function UsagePage({onBack}){
         h('div',{className:'card',style:{textAlign:'center'}},h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:4}},'Total Calls'),h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)'}},data.totals.calls)),
         h('div',{className:'card',style:{textAlign:'center'}},h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:4}},'Total Tokens'),h('div',{style:{fontSize:22,fontWeight:700,color:'var(--navy)'}},(data.totals.inputTokens+data.totals.outputTokens).toLocaleString()))
       ),
-      h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Estimates use standard Claude Sonnet 5 pricing ($3/$15 per million input/output tokens) — actual invoiced cost may differ slightly, e.g. during Anthropic promotional pricing windows.'),
+      h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Estimates use standard AI pricing ($3/$15 per million input/output tokens) — actual invoiced cost may differ slightly, e.g. during provider promotional pricing windows.'),
       h('div',{className:'card-title',style:{marginBottom:8}},'By Call Type'),
       h('div',{className:'card',style:{padding:0,overflow:'hidden',marginBottom:16}},h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
         h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['Call Type','Calls','Input Tokens','Output Tokens','Est. Cost'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
@@ -830,7 +830,7 @@ function DDRoleSelect({value,onChange,disabled}){
 const PORT_ALLOC_KEYS=['Cash','Fixed Income','Public Equity','Private Credit','Diversifying Strategies','Real Assets','Private Equity','Monetary Hedge'];
 const PORT_FX_KEYS=['CAD','USD','EUR','GBP'];
 
-// Upload the latest PQ investment report → Claude extracts a portfolio snapshot → admin
+// Upload the latest PQ investment report → the AI extracts a portfolio snapshot → admin
 // reviews/corrects it here → save. Fixed-shape fields (as-of, total, allocation %, FX)
 // get real inputs; the variable-length arrays (unfunded commitments, liquidity tiers) are
 // edited as JSON text — still fully reviewable/correctable, just not one input per cell.
@@ -1007,10 +1007,10 @@ function NewOpportunityModal({onClose,onSubmit,currentUser}){
   const oddDims=['governance','compliance','operations','alignment','reporting'];
   return h('div',{className:'modal-overlay',onClick:onClose},h('div',{className:'modal',style:{maxWidth:600},onClick:e=>e.stopPropagation()},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},h('div',{className:'modal-title'},'Initiate New IC Review'),h('button',{className:'btn btn-outline btn-sm',onClick:onClose},'✕')),
-    h('div',{style:{display:'flex',gap:0,borderBottom:'0.5px solid var(--border)',marginBottom:18}},[{n:1,l:'1 · Upload PQ Document'},{n:2,l:'2 · Claude Reads'},{n:3,l:'3 · Confirm & Create Draft'}].map(t=>h('div',{key:t.n,style:{padding:'6px 14px',fontSize:12,borderBottom:`2px solid ${step===t.n?'var(--teal)':'transparent'}`,color:step===t.n?'var(--navy)':'var(--muted)',fontWeight:step===t.n?600:400,cursor:step>t.n?'pointer':'default'},onClick:()=>step>t.n&&setStep(t.n)},t.l))),
+    h('div',{style:{display:'flex',gap:0,borderBottom:'0.5px solid var(--border)',marginBottom:18}},[{n:1,l:'1 · Upload PQ Document'},{n:2,l:'2 · AI Reads'},{n:3,l:'3 · Confirm & Create Draft'}].map(t=>h('div',{key:t.n,style:{padding:'6px 14px',fontSize:12,borderBottom:`2px solid ${step===t.n?'var(--teal)':'transparent'}`,color:step===t.n?'var(--navy)':'var(--muted)',fontWeight:step===t.n?600:400,cursor:step>t.n?'pointer':'default'},onClick:()=>step>t.n&&setStep(t.n)},t.l))),
     step===1&&h('div',null,
-      h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ Upload the PQ research PDF — Claude reads it and pre-populates every field. You only confirm what it cannot know.'),
-      h('label',{className:`upload-zone${fileB64?' has-file':''}`,style:{marginBottom:16,display:'block'}},fileB64?h('div',null,h('div',{style:{fontSize:24,marginBottom:6}},'📄'),h('div',{style:{fontWeight:600,color:'var(--teal)',fontSize:13}},fileName),h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:4}},'Click to replace')):h('div',null,h('div',{style:{fontSize:32,marginBottom:8}},'☁'),h('div',{style:{fontWeight:600,color:'var(--navy)',fontSize:14}},'Upload PQ Research PDF'),h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:4}},'PDF only · max 50 MB · Claude extracts all data automatically')),h('input',{type:'file',accept:'.pdf',style:{display:'none'},onChange:handleFile})),
+      h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ Upload the PQ research PDF — the AI reads it and pre-populates every field. You only confirm what it cannot know.'),
+      h('label',{className:`upload-zone${fileB64?' has-file':''}`,style:{marginBottom:16,display:'block'}},fileB64?h('div',null,h('div',{style:{fontSize:24,marginBottom:6}},'📄'),h('div',{style:{fontWeight:600,color:'var(--teal)',fontSize:13}},fileName),h('div',{style:{fontSize:11,color:'var(--muted)',marginTop:4}},'Click to replace')):h('div',null,h('div',{style:{fontSize:32,marginBottom:8}},'☁'),h('div',{style:{fontWeight:600,color:'var(--navy)',fontSize:14}},'Upload PQ Research PDF'),h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:4}},'PDF only · max 50 MB · AI extracts all data automatically')),h('input',{type:'file',accept:'.pdf',style:{display:'none'},onChange:handleFile})),
       extractError==='NOT_CONFIGURED'&&h('div',{style:{marginBottom:14}},h('div',{style:{padding:'12px 16px',background:'#FEF3C7',border:'0.5px solid #FCD34D',borderRadius:8,fontSize:12,color:'#92400E',marginBottom:10,lineHeight:1.7}},h('strong',null,'PDF extraction is not configured. '),'The server has no ANTHROPIC_API_KEY set. Ask your admin to add one, or use manual entry below.'),h('button',{className:'btn btn-teal',style:{width:'100%',padding:'10px',fontSize:13},onClick:()=>{setForm({title:'',assetClass:'',commitment:'',currency:'USD',pqData:blankPqData()});setExtractError('');setStep(3);}},'Enter Details Manually →')),
       extractError&&extractError!=='NOT_CONFIGURED'&&h('div',{style:{marginBottom:14}},h('div',{style:{padding:'12px 16px',background:'#FEE2E2',border:'0.5px solid #FCA5A5',borderRadius:8,fontSize:12,color:'#991B1B',marginBottom:10}},h('strong',null,'Extraction failed: '),extractError),h('button',{className:'btn btn-teal',style:{width:'100%',padding:'10px',fontSize:13},onClick:()=>{setForm({title:'',assetClass:'',commitment:'',currency:'USD',pqData:blankPqData()});setExtractError('');setStep(3);}},'Enter Details Manually Instead →')),
       h('button',{className:'btn btn-gold',style:{width:'100%',padding:'10px',fontSize:13},onClick:handleExtract,disabled:!fileB64||extracting},extracting?h('span',null,h('span',{className:'spin',style:{width:14,height:14,borderWidth:2,display:'inline-block',verticalAlign:'middle',marginRight:8}}),'Reading PQ document…'):'✦ Read Document & Pre-populate Fields →'),
@@ -1018,7 +1018,7 @@ function NewOpportunityModal({onClose,onSubmit,currentUser}){
     ),
     step===2&&h('div',{style:{textAlign:'center',padding:'40px 20px'}},h('span',{className:'spin',style:{width:36,height:36,borderWidth:3,display:'inline-block',marginBottom:16}}),h('div',{style:{fontSize:15,fontWeight:600,color:'var(--navy)',marginBottom:6}},'Reading PQ document…'),h('div',{style:{fontSize:12,color:'var(--muted)'}},'Extracting fund details, Operational Due Diligence (ODD) ratings, fees, team data, and ESG information.')),
     step===3&&form&&h('div',null,
-      h('div',{className:'alert alert-success',style:{marginBottom:14}},'✦ ',h('strong',null,'Pre-populated from PQ document. '),'Review, correct anything wrong, then complete the fields at the bottom Claude cannot determine.'),
+      h('div',{className:'alert alert-success',style:{marginBottom:14}},'✦ ',h('strong',null,'Pre-populated from PQ document. '),'Review, correct anything wrong, then complete the fields at the bottom the AI cannot determine.'),
       h('div',{style:{background:'var(--purple-l)',border:'0.5px solid #C4B5FD',borderRadius:10,padding:'14px 16px',marginBottom:14}},
         h('div',{style:{fontSize:11,fontWeight:700,color:'var(--purple)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},'✦ Extracted from PQ document — edit if needed'),
         h('div',{className:'form-group'},h('label',{className:'form-label'},'Fund / Manager Name'),h('input',{className:'form-input',value:form.title,onChange:e=>upd('title',e.target.value)})),
@@ -1040,8 +1040,8 @@ function NewOpportunityModal({onClose,onSubmit,currentUser}){
         )
       ),
       h('div',{style:{background:'var(--gold-l)',border:'0.5px solid #e8d5a0',borderRadius:10,padding:'14px 16px',marginBottom:14}},
-        h('div',{style:{fontSize:11,fontWeight:700,color:'#633806',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},"◎ Your input required — Claude can't determine these"),
-        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Response Deadline'),h('input',{className:'form-input',type:'date',value:deadline,onChange:e=>setDeadline(e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Proposed Commitment (if not in doc)'),h('input',{className:'form-input',type:'number',placeholder:'Enter if Claude left blank',value:form.commitment,onChange:e=>upd('commitment',e.target.value)}))),
+        h('div',{style:{fontSize:11,fontWeight:700,color:'#633806',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:12}},"◎ Your input required — the AI can't determine these"),
+        h('div',{className:'form-row'},h('div',{className:'form-group'},h('label',{className:'form-label'},'Response Deadline'),h('input',{className:'form-input',type:'date',value:deadline,onChange:e=>setDeadline(e.target.value)})),h('div',{className:'form-group'},h('label',{className:'form-label'},'Proposed Commitment (if not in doc)'),h('input',{className:'form-input',type:'number',placeholder:'Enter if the AI left blank',value:form.commitment,onChange:e=>upd('commitment',e.target.value)}))),
         h('div',{className:'form-group'},h('label',{className:'form-label'},'Additional Context'),h('textarea',{className:'form-textarea',placeholder:'Verbal context from PQ not in the document — prior fund relationship, call notes, special terms discussed…',value:additionalContext,onChange:e=>setAdditionalContext(e.target.value)})),
         h('label',{style:{display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,padding:'10px 0'}},h('input',{type:'checkbox',checked:notifyLucas,onChange:e=>setNotifyLucas(e.target.checked),style:{width:16,height:16,accentColor:'var(--teal)',cursor:'pointer'}}),h('div',null,h('div',{style:{fontWeight:600,color:'var(--navy)'}},'Notify Lucas Robinson'),h('div',{style:{fontSize:11,color:'var(--muted)'}},'Optional IC member — included in report if submitted before generation')))
       ),
@@ -1095,7 +1095,7 @@ function OppCard({opp,currentUser,setPage,setActiveOpp,onToggleStatus,onDelete,q
 function Dashboard({currentUser,opportunities,loading,setPage,setActiveOpp,openNewModal,onToggleStatus,onDelete,quorumThreshold,roster}){
   return h('div',{className:'page'},
     h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20}},h('div',null,h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)'}},'PQ Introduced Due Diligence'),h('div',{style:{fontSize:12,color:'var(--muted)',marginTop:2}},'Robinson Family Office \u00b7 23 questions \u00b7 Live web research')),h('button',{className:'btn btn-gold',onClick:openNewModal},'+ Initiate New Opportunity')),
-    h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ ',h('strong',null,'Live Intelligence: '),'When you open a checklist, Claude automatically searches the web for manager reputation, industry dynamics (e.g. sports valuation reset), and the Canadian regulatory environment. Results load in the relevant sections.'),
+    h('div',{className:'alert alert-purple',style:{marginBottom:16}},'✦ ',h('strong',null,'Live Intelligence: '),'When you open a checklist, the AI automatically searches the web for manager reputation, industry dynamics (e.g. sports valuation reset), and the Canadian regulatory environment. Results load in the relevant sections.'),
     loading&&h('div',{style:{textAlign:'center',padding:'30px',color:'var(--muted)'}},h('span',{className:'spin'}),'Loading opportunities…'),
     !loading&&opportunities.length===0&&h('div',{style:{textAlign:'center',padding:'30px',color:'var(--muted)',fontSize:13}},'No opportunities yet. Click "+ Initiate New Opportunity" to start one.'),
     !loading&&opportunities.map(opp=>h(OppCard,{key:opp.id,opp,currentUser,setPage,setActiveOpp,onToggleStatus,onDelete,quorumThreshold,roster}))
@@ -1253,7 +1253,7 @@ function App(){
       const target=opportunities.find(o=>o.id===id)||(opp&&opp.id===id?opp:null);
       if(target){
         try{
-          const ca=computeClaudeAnswers(target,activities);
+          const ca=computeAiAnswers(target,activities);
           const allQuestions=SECTIONS.flatMap(s=>s.questions);
           const autoAnswers={};
           allQuestions.filter(q=>q.mode!=='human').forEach(q=>{const a=ca[q.id];if(a)autoAnswers[q.id]={display:a.display,rationale:a.rationale};});
@@ -1283,7 +1283,7 @@ function App(){
         h('a',{href:'/',style:{display:'block',borderTop:'0.5px solid var(--border)',padding:'8px 10px',fontSize:12,color:'var(--navy)',fontWeight:600,textDecoration:'none'}},'🏠 RFO Home'),
         h('div',{style:{padding:'8px 10px',cursor:'pointer',fontSize:12,color:'#991B1B',fontWeight:600},onClick:logout},'Sign out'))
     ),
-    h('div',{className:'legend-bar'},h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)'}}),h('span',null,'Claude auto-answered')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--teal)'}}),h('span',null,'Claude data / suggests')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--gold)'}}),h('span',null,'Your judgment')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'#DC2626'}}),h('span',null,'Gating')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)',opacity:.5}}),h('span',null,'🔍 Live web research'))),
+    h('div',{className:'legend-bar'},h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)'}}),h('span',null,'AI auto-answered')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--teal)'}}),h('span',null,'AI data / suggests')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--gold)'}}),h('span',null,'Your judgment')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'#DC2626'}}),h('span',null,'Gating')),h('div',{className:'legend-item'},h('div',{className:'legend-dot',style:{background:'var(--purple)',opacity:.5}}),h('span',null,'🔍 Live web research'))),
     h('div',{onClick:()=>showMenu&&setShowMenu(false)},page==='dashboard'&&h(Dashboard,{currentUser:user,opportunities,loading:loadingOpps,setPage,setActiveOpp:setOpp,openNewModal:()=>setShowNew(true),onToggleStatus:toggleStatus,onDelete:deleteOpportunity,quorumThreshold,roster}),page==='checklist'&&opp&&h(ChecklistPage,{opp,currentUser:user,onSave:save,onSubmit:submit,onBack:()=>setPage('dashboard'),activities,onCreateActivity:createActivity,onUpdateActivity:updateActivity,onDeleteActivity:deleteActivity,onUpdateOpportunity:updateOpportunity,onToggleStatus:toggleStatus,onViewReport:()=>setPage('report'),onSendTo:sendToMember}),page==='report'&&opp&&h(ReportPage,{opp,activities,onBack:()=>setPage('dashboard'),onGenerateReport:generateReport,quorumThreshold,roster}),page==='usage'&&h(UsagePage,{onBack:()=>setPage('dashboard')}),page==='dd-settings'&&h(DDSettingsPage,{onBack:()=>setPage('dashboard'),roster,onQuorumChange:setQuorumThreshold,onRosterUpdated:u=>setRoster(list=>list.map(x=>x.id===u.id?u:x))})),
     showNew&&h(NewOpportunityModal,{onClose:()=>setShowNew(false),onSubmit:createOpportunity,currentUser:user})
   );
