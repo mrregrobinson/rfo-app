@@ -588,7 +588,7 @@ function AssessForm({category,latest,probScale,impScale,roles,onSaved}){
     Sel({val:rp,set:setRp,sc:probScale,lbl:'Probability'}),
     h('div',{style:{margin:'-4px 0 10px'}},
       h('button',{className:'btn btn-outline btn-sm',onClick:doLookup,disabled:lookupState==='loading'},lookupState==='loading'?'Searching…':'🔎 Look up base rate'),
-      lookupState==='unconfigured'&&h('span',{className:'small muted',style:{marginLeft:8}},'AI web search is not configured on the server — enter Probability manually.'),
+      lookupState==='unconfigured'&&h('span',{className:'small muted',style:{marginLeft:8}},'Web search is not configured on the server — enter Probability manually.'),
       lookup&&h('div',{className:'alert alert-info',style:{marginTop:8}},
         h('div',null,h('strong',null,'External base rate: '),lookup.probabilityLow!=null?`${Math.round(lookup.probabilityLow*100)}–${Math.round(lookup.probabilityHigh*100)}%/yr`:'not estimable',
           lookup.mappedScore?h('span',null,' → suggests Probability ',h('strong',null,lookup.mappedScore)):null),

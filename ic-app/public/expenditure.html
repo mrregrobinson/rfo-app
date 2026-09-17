@@ -241,7 +241,7 @@ function trailingTwelveMonthTotals(byMonth){
 function ImportPanel({onImported}){
   const [busy,setBusy]=useState(false);const [progress,setProgress]=useState(null);const [results,setResults]=useState(null);const [error,setError]=useState('');
   // Import runs as a background job on the server (see server/expenditure.js) — a zip of
-  // many statements can take many minutes overall (each one is a separate AI call),
+  // many statements can take many minutes overall (each one is a separate extraction call),
   // well past what a hosting platform's own reverse-proxy timeout allows for one
   // synchronous request. Kick it off, get a jobId back immediately, then poll for
   // progress instead of holding one long request open.
@@ -269,7 +269,7 @@ function ImportPanel({onImported}){
   return h('div',{className:'card no-print'},
     h('div',{className:'section-title'},'Import statements'),
     h('div',{className:'import-drop'},
-      busy?`Importing${progress?` — ${progress.completed} of ${progress.total} statement${progress.total===1?'':'s'} done`:''}… each statement is read by AI and can take a minute or two; safe to leave this page open or come back later.`:
+      busy?`Importing${progress?` — ${progress.completed} of ${progress.total} statement${progress.total===1?'':'s'} done`:''}… each statement is read automatically and can take a minute or two; safe to leave this page open or come back later.`:
         h('div',null,
           h('div',{style:{marginBottom:8}},'Select one or more statement PDFs, or a zip of statements'),
           h('input',{type:'file',accept:'.pdf,.zip',multiple:true,onChange:e=>e.target.files.length&&handleFiles(e.target.files)})
@@ -850,7 +850,7 @@ function CategoriesModal({categories,rules,exclusionRules,onClose,onAdd,onRename
 
 // ---- payee research (web search) ----
 // One row per distinct payee still sitting in Miscellaneous/Unknown. "Research" calls
-// the AI (with web search) to identify the payee and suggest a category + a stable
+// an automated web search to identify the payee and suggest a category + a stable
 // match pattern; the suggestion is only ever a starting point — the category and
 // pattern stay editable, and nothing is applied until "Create Rule" is clicked
 // (applyToExisting reclassifies every other transaction from the same payee at once).
@@ -906,7 +906,7 @@ function PayeeRow({payee,categories,onResearched,onAffected}){
     )
   );
 }
-// Add a rule by hand, without going through AI research or a specific transaction's
+// Add a rule by hand, without going through automated research or a specific transaction's
 // "+Rule" button — for when you already know the payee/category mapping you want.
 function ManualRuleForm({categories,onAdd}){
   const [pattern,setPattern]=useState('');
@@ -957,7 +957,7 @@ function ResearchModal({categories,onClose,onChanged,onAffected}){
     h('div',{className:'modal',style:{maxWidth:640},onClick:e=>e.stopPropagation()},
       h('div',{className:'modal-title'},'Research uncategorized payees'),
       h(ManualRuleForm,{categories,onAdd:addManualRule}),
-      h('div',{className:'muted',style:{marginBottom:12}},'Or, each "Research" below looks the payee up on the web via AI and suggests a category — review it, adjust if needed, then create a rule to apply it (including to every other transaction from the same payee already sitting in Miscellaneous/Unknown).'),
+      h('div',{className:'muted',style:{marginBottom:12}},'Or, each "Research" below looks the payee up on the web and suggests a category — review it, adjust if needed, then create a rule to apply it (including to every other transaction from the same payee already sitting in Miscellaneous/Unknown).'),
       error&&h('div',{className:'alert alert-danger'},error),
       !payees?h('div',{className:'muted'},'Loading…'):
       payees.length===0?h('div',{className:'muted'},'Nothing in Miscellaneous/Unknown right now.'):
@@ -1193,7 +1193,7 @@ function ExpenditureApp({ledger}){
   async function deleteExclusionRule(id){await api.del('/api/expenditure/exclusion-rules/'+id);loadExclusionRules();}
 
   // A rule created via the "+Rule" button, or from the Research Unknown Payees panel
-  // (manually or from an AI suggestion) — every path that turns "categorize this one
+  // (manually or from an automated suggestion) — every path that turns "categorize this one
   // transaction" into a rule applied across the whole ledger, so every path gets the
   // same undo coverage.
   function recordRuleAffected(pattern,res){

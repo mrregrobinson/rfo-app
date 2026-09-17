@@ -12,7 +12,7 @@ const PRICE_PER_TOKEN = {
 const MODEL = 'claude-sonnet-5';
 
 // Never throws — a usage-logging failure should never break the request that
-// triggered the underlying AI call.
+// triggered the underlying call.
 function logApiUsage({ callType, usage, opportunityId, userId }) {
   try {
     const inputTokens = usage?.input_tokens || 0;

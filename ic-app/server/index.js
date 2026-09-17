@@ -282,7 +282,7 @@ app.get('/api/fx-rates', requireAuth, async (req, res) => {
 // Public, non-secret config the frontend needs before login — a Google OAuth Client ID
 // is meant to be embedded in client-side JS (unlike a client secret), so there's nothing
 // sensitive here. Powers the "Add to Google Tasks" button; the button hides itself when
-// this isn't set, same pattern as the AI/MS Graph "not configured" fallbacks.
+// this isn't set, same pattern as the other "not configured" fallbacks.
 app.get('/api/config', (req, res) => {
   res.json({ googleTasksClientId: process.env.GOOGLE_TASKS_CLIENT_ID || null });
 });
@@ -755,7 +755,7 @@ function notifyAdminsOfSubmission(opp, submitterId, recommendation) {
   }
 }
 
-// Deterministic governance rule, independent of the AI's own analytical report.recommendation:
+// Deterministic governance rule, independent of the analytical report's own recommendation:
 // any decline is a veto, unanimous approval among those who've submitted is a clean pass,
 // anything else (conditional approvals and/or abstentions mixed in) needs the IC to
 // actually discuss it. Mirrors the client-side Decision section on the report page exactly.
@@ -778,7 +778,7 @@ function notifyFamilyOfClosure(row) {
   const members = db.prepare('SELECT name, email FROM users WHERE is_active = 1').all();
   for (const member of members) {
     if (!member.email) continue;
-    const recLine = report?.recommendation ? paragraph(`AI analytical recommendation: <strong>${report.recommendation}</strong>`) : '';
+    const recLine = report?.recommendation ? paragraph(`Analytical recommendation: <strong>${report.recommendation}</strong>`) : '';
     const summaryLine = report?.executiveSummary ? paragraph(report.executiveSummary) : '';
     mailer.sendMail({
       to: member.email,
@@ -1003,7 +1003,7 @@ app.delete('/api/activities/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- AI proxy routes ----
+// ---- research/extraction proxy routes ----
 
 const RESEARCH_TYPES = ['manager', 'industry', 'regulatory'];
 
@@ -1033,7 +1033,7 @@ app.post('/api/opportunities/:id/research/:type', requireAuth, async (req, res) 
     if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'AI request failed' });
+    res.status(502).json({ error: err.message || 'Request failed' });
   }
 });
 
@@ -1041,7 +1041,7 @@ app.post('/api/opportunities/:id/research/:type', requireAuth, async (req, res) 
 // the current state of the review into a summary at any time, complete or not. The
 // business logic for "what's an auto-answer vs. a human answer" lives in the frontend
 // (computeAiAnswers), so the client sends the already-assembled context; this route is
-// just the AI call + persistence, mirroring the research proxy above.
+// just the extraction call + persistence, mirroring the research proxy above.
 app.post('/api/opportunities/:id/report', requireAuth, async (req, res) => {
   const { id } = req.params;
   const row = db.prepare('SELECT * FROM opportunities WHERE id = ?').get(id);
@@ -1080,7 +1080,7 @@ app.post('/api/opportunities/:id/report', requireAuth, async (req, res) => {
     if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'AI request failed' });
+    res.status(502).json({ error: err.message || 'Request failed' });
   }
 });
 
@@ -1095,7 +1095,7 @@ app.post('/api/ai/extract-pdf', requireAuth, async (req, res) => {
     if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'AI request failed' });
+    res.status(502).json({ error: err.message || 'Request failed' });
   }
 });
 
@@ -1144,7 +1144,7 @@ app.post('/api/opportunities/:id/documents/extract', requireAuth, async (req, re
     if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'AI request failed' });
+    res.status(502).json({ error: err.message || 'Request failed' });
   }
 });
 
@@ -1189,7 +1189,7 @@ app.delete('/api/opportunities/:id/documents/:docId', requireAuth, (req, res) =>
 
 // ---- portfolio snapshots ----
 // Replaces a hardcoded PORT constant with an admin-updatable, database-backed portfolio
-// snapshot: upload the latest PQ investment report, review/correct what the AI extracted,
+// snapshot: upload the latest PQ investment report, review/correct what was extracted,
 // save it. The rest of the app (Section A checks, the report) reads whatever is current
 // via GET /api/portfolio — a new report just means a new upload, never a code change.
 
@@ -1223,11 +1223,11 @@ app.post('/api/admin/portfolio/extract', requireAuth, async (req, res) => {
     if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'AI request failed' });
+    res.status(502).json({ error: err.message || 'Request failed' });
   }
 });
 
-// Report "asOf" dates come from the AI's extraction as MM-DD-YYYY (see ai.js);
+// Report "asOf" dates come from the extraction as MM-DD-YYYY (see ai.js);
 // server/fx.js expects YYYY-MM-DD. Falls back to today's date if asOf doesn't parse as
 // expected, rather than failing the whole snapshot save over a formatting quirk.
 function mdyToIso(mdy) {
@@ -1286,7 +1286,7 @@ app.post('/api/admin/income/extract', requireAuth, async (req, res) => {
     if (err instanceof ai.AiNotConfiguredError) {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
-    res.status(502).json({ error: err.message || 'AI request failed' });
+    res.status(502).json({ error: err.message || 'Request failed' });
   }
 });
 

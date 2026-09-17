@@ -34,16 +34,16 @@ async function callAi(body) {
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw new Error(`AI API error ${resp.status}${text ? ': ' + text.slice(0, 300) : ''}`);
+    throw new Error(`Request error ${resp.status}${text ? ': ' + text.slice(0, 300) : ''}`);
   }
   return resp.json();
 }
 
 function extractJson(data) {
   const raw = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  if (!raw.trim()) throw new Error('Empty response from AI');
+  if (!raw.trim()) throw new Error('Empty response received');
   const match = raw.replace(/```json|```/gi, '').trim().match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No JSON found in AI response');
+  if (!match) throw new Error('No JSON found in the response');
   try {
     const parsed = JSON.parse(match[0]);
     // The model occasionally emits a stray leading/trailing space in a top-level key (e.g.
@@ -57,7 +57,7 @@ function extractJson(data) {
     return parsed;
   } catch (err) {
     if (data.stop_reason === 'max_tokens') {
-      throw new Error('AI response was cut off before finishing (max_tokens reached) — try again or raise max_tokens');
+      throw new Error('Response was cut off before finishing (max_tokens reached) — try again or raise max_tokens');
     }
     console.error('--- JSON parse failed. stop_reason:', data.stop_reason, '---');
     console.error(match[0]);
@@ -305,7 +305,7 @@ Return ONLY valid JSON (no markdown fences): {"documentSummary":"one plain-Engli
 
 // Synthesizes IC member checklist responses (whatever has been submitted so far — the
 // caller may trigger this before everyone has responded) into a governance-style summary,
-// per the original build spec's "AI Recommendation" logic (system prompt below).
+// per the original build spec's "Recommendation" logic (system prompt below).
 async function generateReport({ opp, questions, autoAnswers, members, totalCAD }) {
   const today = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
   const aumM = totalCAD ? Math.round(totalCAD / 1e6) : 30;
@@ -347,7 +347,7 @@ Asset class: ${opp.assetClass}
 Proposed commitment: ${opp.currency} ${Number(opp.commitment || 0).toLocaleString()}
 PQ summary: ${opp.pqSummary || '(none)'}
 
-AI / DATA-DRIVEN ANSWERS (established context — not a member's personal judgment):
+PRE-FILLED / DATA-DRIVEN ANSWERS (established context — not a member's personal judgment):
 ${autoAnswerBlock || '(none)'}
 
 IC MEMBER RESPONSES:
@@ -394,7 +394,7 @@ probabilityLow/probabilityHigh are annual probabilities as decimals (0-1); use n
 
 // Two independently-derived 1–5 numbers per service (§7.1), not one ambiguous
 // "benchmark": (1) peerLevel — from web research, where genuinely comparable family
-// offices typically operate this service; (2) assessedLevel — the AI's OWN read of where
+// offices typically operate this service; (2) assessedLevel — an independent read of where
 // THIS family likely sits, reasoned from the family's own level descriptors and context
 // rather than simply echoing their self-score (which is supplied for reference only).
 // Plus an explicit recommendation on whether pursuing improvement here is actually worth

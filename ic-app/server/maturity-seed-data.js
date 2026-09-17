@@ -34,7 +34,7 @@ const LEVEL_LABELS = [
 // ---- 16 services, each with its 5 level descriptors (Appendix B columns C..G) ----
 // levels: [ level 1 (Ad Hoc) ... level 5 (Leading Practice) ]
 // Each service's `description` is factual, evidence-grounded context fed into every
-// AI call for that service (benchmark, wording suggestions) — see §7.1. Sourced from
+// benchmark call for that service (benchmark, wording suggestions) — see §7.1. Sourced from
 // the family's own Planning & Governance documents — primarily the "Robinson Family
 // Office 2026-01 Overview" (the current "Governance and Scope of Services" deck, with a
 // formal Service Description + Summary of Approach per service) and its lettered
@@ -44,8 +44,8 @@ const LEVEL_LABELS = [
 // Policy Statement, Estate Framework, Living Estate Framework) — supplemented by earlier
 // annual meeting decks/notes (2024-2026) for history and items that have since moved on
 // (e.g. the mid-2026 addition of a Monetary Hedge asset class). Deliberately kept to
-// observable facts and named artifacts, not a judgment of maturity level — that's for
-// the AI (and the family) to derive. Before this, `description` was always empty on every
+// observable facts and named artifacts, not a judgment of maturity level — that's derived
+// separately (and by the family). Before this, `description` was always empty on every
 // service, which is a real reason earlier benchmarks read shallow — and an earlier draft
 // of this content, written from a less complete set of documents, got some of these
 // wrong in the conservative direction (e.g. describing the conflict-resolution framework
@@ -241,13 +241,13 @@ const SERVICES = [
 //
 // The "Leading Practice" question below is explicitly about the family's OWN habit of
 // comparing and improving — not about having commissioned outside benchmarking. This
-// module's AI benchmark (run per service, see §7.1) is what supplies the external
+// module's own benchmark (run per service, see §7.1) is what supplies the external
 // comparison; scoring yourself a 5 here does not require you to have done that yourselves.
 function questionsForService(svc) {
   return [
     {
       prompt: `Which of the five descriptions best matches where the family office is today on ${svc.name}?`,
-      help_text: 'Pick the single description that fits best overall, even if some details differ. "Leading Practice" describes a habit of comparing and improving — it does not require you to have hired outside benchmarking yourselves; this assessment\'s own AI benchmark supplies that external comparison.',
+      help_text: 'Pick the single description that fits best overall, even if some details differ. "Leading Practice" describes a habit of comparing and improving — it does not require you to have hired outside benchmarking yourselves; this assessment\'s own benchmark supplies that external comparison.',
       response_kind: 'level_pick', weight: 2,
     },
     {
@@ -260,7 +260,7 @@ function questionsForService(svc) {
     },
     {
       prompt: `We deliberately compare how we approach ${svc.name} against how well-run peer family offices do it, and adjust as a result.`,
-      help_text: 'This is about the habit of comparing and improving, not about having run your own external benchmarking study — that\'s what this tool\'s AI benchmark is for.',
+      help_text: 'This is about the habit of comparing and improving, not about having run your own external benchmarking study — that\'s what this tool\'s own benchmark is for.',
       response_kind: 'scale_1_5', weight: 1,
     },
   ];
@@ -350,8 +350,8 @@ const REFERENCE_ROUND = {
   notAssessed: ['svc-01', 'svc-08', 'svc-11', 'svc-14', 'svc-15', 'svc-16'],
 };
 
-// Family context string reused by every AI call (§7) so they stay consistent.
-// Cross-cutting context passed into every AI call in this module (benchmark, wording
+// Family context string reused by every benchmark call (§7) so they stay consistent.
+// Cross-cutting context passed into every benchmark call in this module (benchmark, wording
 // suggestions, round synthesis) alongside whichever service-specific `description` above
 // applies. Kept to verifiable facts about how the family actually operates — sourced from
 // its own Planning & Governance documents (2024-2026) — not a judgment of maturity level.
@@ -393,7 +393,7 @@ const FAMILY_CONTEXT =
   'partners, for every function, reviewed annually alongside succession and spousal-inclusion ' +
   'criteria. The family already runs an informal internal capability self-assessment as a ' +
   'standing practice distinct from this application, and its 2026 plan formally adopts this ' +
-  "app's own annual AI-benchmarked process (Appendix B) as the ongoing successor to that " +
+  "app's own annual benchmarked process (Appendix B) as the ongoing successor to that " +
   'exercise. Named professional advisors/partners: the introducing investment advisor (due ' +
   'diligence, analysis, reporting, compliance for passive/private-markets investing), EY (tax ' +
   'and financial administration), MLT Aikins and Miller Thomson (legal, estate), RBC ' +

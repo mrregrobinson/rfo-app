@@ -1,7 +1,7 @@
 // Regression test for the bug reported after the first real deploy: importing a zip of
 // several statements timed out at the hosting platform's reverse-proxy layer, because the
 // whole import ran inline inside one HTTP request/response cycle — fine locally, but
-// Railway's edge proxy kills a request long before a multi-statement AI extraction
+// Railway's edge proxy kills a request long before a multi-statement extraction
 // finishes. This exercises the actual Express routes (not just the pure helpers) to prove
 // the fix's real property: the POST responds immediately with a job id, and the
 // extraction work — mocked here to a short delay, since this must run fast and offline —
@@ -62,7 +62,7 @@ describe('POST /api/expenditure/import', () => {
     // changes.
     let extractionFinished = false;
     const extractMock = mock.method(ai, 'extractStatement', async () => {
-      await delay(300); // stands in for a real multi-minute AI call
+      await delay(300); // stands in for a real multi-minute extraction call
       extractionFinished = true;
       return {
         result: {
@@ -109,7 +109,7 @@ describe('POST /api/expenditure/import', () => {
     }
   });
 
-  test('re-importing the same statement filename skips it without calling the AI again', async () => {
+  test('re-importing the same statement filename skips it without extracting again', async () => {
     const extractMock = mock.method(ai, 'extractStatement', async () => ({
       result: {
         periodStart: '2026-02-01', periodEnd: '2026-02-28',

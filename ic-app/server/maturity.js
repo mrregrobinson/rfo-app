@@ -1047,7 +1047,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
   });
 
   // ===================================================================================
-  // AI — benchmark / synthesis / descriptor suggestions (member+, degrade gracefully)
+  // Benchmark / synthesis / descriptor suggestions (member+, degrade gracefully)
   // ===================================================================================
 
   app.post('/api/maturity/rounds/:id/benchmark', requireAuth, async (req, res) => {
@@ -1196,7 +1196,7 @@ module.exports = function registerMaturityRoutes(app, { db, logAudit }) {
         for (const qs of questions) {
           const sortOrder = Number(qs.sortOrder);
           const target = currentQuestions.find((q) => q.sortOrder === sortOrder);
-          if (!target) continue; // the AI returned a slot that doesn't match a real question — skip rather than guess
+          if (!target) continue; // the response returned a slot that doesn't match a real question — skip rather than guess
           insQ.run(
             crypto.randomUUID(), r.id, s.id, target.id, target.prompt, target.helpText || '',
             String(qs.suggestedPrompt || target.prompt), String(qs.suggestedHelpText ?? target.helpText ?? ''),

@@ -533,7 +533,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
 
   // Body: { files: [{ filename, base64 }] }. A .zip is expanded server-side (skipping
   // non-PDF entries and macOS __MACOSX junk); a .pdf is used as-is. Each resulting
-  // statement PDF is extracted via the AI (server/ai.js#extractStatement — see its
+  // statement PDF is extracted automatically (server/ai.js#extractStatement — see its
   // header comment for why: these statements' two-column layout breaks plain text
   // extraction), reconciled against its own reported totals, and — if the account
   // pattern isn't recognized — skipped with an error the caller can surface, rather than
@@ -611,7 +611,7 @@ module.exports = function registerExpenditureRoutes(app, { db, logAudit }) {
     if (!detected) return { filename, ok: false, error: 'Unrecognized statement filename — this account pattern isn\'t known yet.' };
     const account = findOrCreateAccount(ledgerId, detected);
 
-    // Fast-path dedup, before spending an AI call: this household's real statement
+    // Fast-path dedup, before spending an extraction call: this household's real statement
     // filenames end in the statement's own period-end date (confirmed against real RBC
     // exports), so a re-uploaded or overlapping-zip duplicate can usually be caught for
     // free. This is a guess only — a renamed or differently-formatted filename just falls
