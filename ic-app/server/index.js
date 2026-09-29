@@ -18,6 +18,7 @@ const fx = require('./fx');
 const { logAudit, auditRowToJson } = require('./audit');
 const { logApiUsage, usageSummary } = require('./usage');
 const { runBackup, listBackups, scheduleBackups, BACKUPS_DIR } = require('./backup');
+const dropboxBackup = require('./dropbox');
 const mailer = require('./mailer');
 const { contentRow, paragraph, emailShell } = require('./email-template');
 const registerTaskRoutes = require('./tasks');
@@ -1330,6 +1331,38 @@ app.get('/api/admin/backups/:filename', requireAuth, (req, res) => {
   const match = listBackups().find((b) => b.filename === req.params.filename);
   if (!match) return res.status(404).json({ error: 'Backup not found' });
   res.download(path.join(BACKUPS_DIR, match.filename));
+});
+
+// Offsite copy in Dropbox, alongside (not instead of) the weekly local Windows Task
+// (scripts/backup-to-dropbox.ps1) — same folder, same 13-file retention, either one can
+// trigger a sync without stepping on the other.
+app.get('/api/admin/backups/offsite/list', requireAuth, async (req, res) => {
+  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  try {
+    res.json(await dropboxBackup.listOffsiteBackups());
+  } catch (err) {
+    if (err instanceof dropboxBackup.DropboxNotConfiguredError) {
+      return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+    }
+    res.status(502).json({ error: err.message || 'Dropbox request failed' });
+  }
+});
+
+app.post('/api/admin/backups/offsite', requireAuth, async (req, res) => {
+  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  try {
+    const filename = runBackup();
+    const result = await dropboxBackup.syncOffsiteBackup(path.join(BACKUPS_DIR, filename), filename);
+    logAudit({ userId: req.session.userId, action: 'backup.offsite_synced', entityType: 'backup', entityId: filename, details: result });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof dropboxBackup.DropboxNotConfiguredError) {
+      return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+    }
+    res.status(502).json({ error: err.message || 'Dropbox sync failed' });
+  }
 });
 
 app.get('/api/admin/usage', requireAuth, (req, res) => {

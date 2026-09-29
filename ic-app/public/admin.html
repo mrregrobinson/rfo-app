@@ -225,12 +225,42 @@ function AuditLogPage(){
   );
 }
 
+function fmtBackupSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';return (bytes/1024/1024).toFixed(1)+' MB';}
+
+function OffsiteBackupPanel(){
+  const [files,setFiles]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [syncing,setSyncing]=useState(false);const [lastResult,setLastResult]=useState(null);
+  function load(){setLoading(true);setError('');api.get('/api/admin/backups/offsite/list').then(setFiles).catch(e=>setError(e.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':(e.message||'Failed to load'))).finally(()=>setLoading(false));}
+  useEffect(()=>{load();},[]);
+  async function syncNow(){
+    setSyncing(true);setError('');setLastResult(null);
+    try{const r=await api.post('/api/admin/backups/offsite',{});setLastResult(r);load();}
+    catch(e){setError(e.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':(e.message||'Sync failed'));}
+    finally{setSyncing(false);}
+  }
+  return h('div',{className:'card'},
+    h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('div',{className:'card-title',style:{marginBottom:0,flex:1}},'Offsite Backup (Dropbox)'),error!=='NOT_CONFIGURED'&&h('button',{className:'btn btn-teal btn-sm',disabled:syncing,onClick:syncNow},syncing?'Syncing…':'☁ Sync to Dropbox Now')),
+    h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:12}},'Mirrors a fresh database snapshot into the family\'s Dropbox backup folder — the same folder and 13-file retention the weekly Windows Task (scripts/backup-to-dropbox.ps1) uses. Either can run without conflicting with the other.'),
+    error==='NOT_CONFIGURED'&&h('div',{style:{padding:'10px 14px',background:'var(--amber-l)',border:'0.5px solid #FCD34D',borderRadius:8,fontSize:12,color:'#92400E',marginBottom:10,lineHeight:1.6}},h('strong',null,'Not configured. '),'The server has no DROPBOX_ACCESS_TOKEN set — see the README for setup steps. Local backups above are unaffected.'),
+    error&&error!=='NOT_CONFIGURED'&&h('div',{className:'alert alert-danger'},'Error: '+error),
+    lastResult&&h('div',{className:'alert alert-success'},lastResult.uploaded?`✓ Uploaded ${lastResult.filename}`:`✓ ${lastResult.filename} was already there`,lastResult.pruned.length>0?` — pruned ${lastResult.pruned.length} older file${lastResult.pruned.length===1?'':'s'}.`:'.'),
+    loading&&h('div',{style:{textAlign:'center',padding:20,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
+    !loading&&error!=='NOT_CONFIGURED'&&!error&&h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+      h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Modified'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+      h('tbody',null,files.map(f=>h('tr',{key:f.name,style:{borderBottom:'0.5px solid var(--border)'}},
+        h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},f.name),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtBackupSize(f.sizeBytes)),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(f.modifiedAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))
+      )))
+    )),
+    !loading&&error!=='NOT_CONFIGURED'&&!error&&files.length===0&&h('div',{style:{padding:16,textAlign:'center',color:'var(--muted)',fontSize:13}},'No offsite backups yet.')
+  );
+}
+
 function BackupsPage(){
   const [backups,setBackups]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [backingUp,setBackingUp]=useState(false);
   function load(){setLoading(true);api.get('/api/admin/backups').then(setBackups).catch(e=>setError(e.message||'Failed to load backups')).finally(()=>setLoading(false));}
   useEffect(()=>{load();},[]);
   async function backupNow(){setBackingUp(true);setError('');try{await api.post('/api/admin/backups',{});load();}catch(e){setError(e.message||'Backup failed');}finally{setBackingUp(false);}}
-  function fmtSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';return (bytes/1024/1024).toFixed(1)+' MB';}
   return h('div',{className:'page'},
     h('div',{style:{display:'flex',gap:10,alignItems:'center',marginBottom:6}},h('div',{style:{fontSize:18,fontWeight:600,color:'var(--navy)',flex:1}},'Database Backups'),h('button',{className:'btn btn-gold btn-sm',disabled:backingUp,onClick:backupNow},backingUp?'Backing up…':'✦ Backup Now')),
     h('div',{style:{fontSize:11,color:'var(--muted)',marginBottom:16}},'Whole-database snapshot — covers both PQ Introduced Due Diligence and the Family Task List. Automatic backups run at startup and every 24 hours — the last 14 are kept.'),
@@ -240,12 +270,13 @@ function BackupsPage(){
       h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Created',''].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
       h('tbody',null,backups.map(b=>h('tr',{key:b.filename,style:{borderBottom:'0.5px solid var(--border)'}},
         h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},b.filename),
-        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtSize(b.sizeBytes)),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtBackupSize(b.sizeBytes)),
         h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(b.createdAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
         h('td',{style:{padding:'8px 12px'}},h('a',{href:'/api/admin/backups/'+encodeURIComponent(b.filename),className:'btn btn-outline btn-sm',style:{textDecoration:'none'}},'Download'))
       )))
     ))),
-    !loading&&backups.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No backups yet.')
+    !loading&&backups.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No backups yet.'),
+    h(OffsiteBackupPanel,null)
   );
 }
 

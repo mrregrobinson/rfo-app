@@ -103,6 +103,37 @@ a key, the app runs fine; those fields just become manual entry.
 Also set `SESSION_SECRET` to a long random string before deploying anywhere real —
 the default in `.env.example` is only for local testing.
 
+### Enabling offsite database backups to Dropbox
+
+The app keeps 14 daily database backups on its own Railway volume (`server/backup.js`),
+and a separate weekly Windows Task on the family's local machine
+(`scripts/backup-to-dropbox.ps1`) mirrors the latest one into a Dropbox folder. To also
+let a Family Office admin trigger that sync from the app itself (Manage Members / Audit
+Log / Backups → Offsite Backup), set:
+
+```
+DROPBOX_ACCESS_TOKEN=...
+```
+
+To get a token:
+
+1. Go to <https://www.dropbox.com/developers/apps> and create an app.
+2. Choose **Scoped access**, **Full Dropbox** access (the backup folder lives inside the
+   family's existing Dropbox tree, not an app-specific folder).
+3. Under the app's **Permissions** tab, enable `files.content.write`,
+   `files.content.read`, and `files.metadata.read`, then save.
+4. Under the app's **Settings** tab, find **OAuth 2 → Generated access token** and click
+   Generate. Copy that token into `DROPBOX_ACCESS_TOKEN`.
+
+By default this writes to `/Personal/Family Office/RFO Backup` — the same folder the
+weekly local script uses — matching the family's `C:\Users\...\Dropbox\Personal\Family
+Office\RFO Backup` sync folder. Override with `DROPBOX_BACKUP_PATH` if needed. Both the
+in-app button and the local weekly script prune the same folder down to the 13 most
+recent files, so it's safe to use either or both — they never duplicate or conflict.
+
+Without a token, the in-app button shows a "not configured" message; local backups and
+the separate Windows-scheduled Dropbox sync still work either way.
+
 ## Permissions
 
 Two independent axes (see `RFO_Umbrella_TaskList_BuildSpec_v1.docx` in the parent folder
