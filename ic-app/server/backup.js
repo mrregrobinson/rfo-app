@@ -26,6 +26,27 @@ function pruneOldBackups() {
   for (let i = 0; i < excess; i++) fs.unlinkSync(path.join(BACKUPS_DIR, files[i]));
 }
 
+// Replaces the LIVE database with the contents of sourcePath — a local backup file or a
+// temp file downloaded from Dropbox. Always takes a fresh safety snapshot of the current
+// state first (via runBackup, so it shows up in the normal backups list like any other),
+// since a restore is otherwise unrecoverable if it turns out to be the wrong choice.
+//
+// db.js opens its DatabaseSync connection once at module load and every other module
+// holds that same reference directly — there's no supported way to hot-swap the
+// underlying file for an already-open connection. The caller MUST process.exit() shortly
+// after this returns (after sending its HTTP response) so the platform's restart policy
+// brings the app back up with db.js reading the newly-restored file fresh on next boot —
+// the same reasoning behind the existing RESEED=true escape hatch in db.js.
+function restoreFromFile(sourcePath) {
+  const safetyFilename = runBackup();
+  fs.copyFileSync(sourcePath, DB_PATH);
+  for (const suffix of ['-wal', '-shm']) {
+    const p = DB_PATH + suffix;
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  }
+  return safetyFilename;
+}
+
 function listBackups() {
   return fs
     .readdirSync(BACKUPS_DIR)
@@ -58,4 +79,4 @@ function scheduleBackups() {
   intervalHandle.unref?.();
 }
 
-module.exports = { runBackup, listBackups, scheduleBackups, BACKUPS_DIR };
+module.exports = { runBackup, listBackups, scheduleBackups, restoreFromFile, BACKUPS_DIR };

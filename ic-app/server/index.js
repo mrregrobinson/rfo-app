@@ -17,7 +17,7 @@ const ai = require('./ai');
 const fx = require('./fx');
 const { logAudit, auditRowToJson } = require('./audit');
 const { logApiUsage, usageSummary } = require('./usage');
-const { runBackup, listBackups, scheduleBackups, BACKUPS_DIR } = require('./backup');
+const { runBackup, listBackups, scheduleBackups, restoreFromFile, BACKUPS_DIR } = require('./backup');
 const dropboxBackup = require('./dropbox');
 const mailer = require('./mailer');
 const { contentRow, paragraph, emailShell } = require('./email-template');
@@ -1362,6 +1362,45 @@ app.post('/api/admin/backups/offsite', requireAuth, async (req, res) => {
       return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
     }
     res.status(502).json({ error: err.message || 'Dropbox sync failed' });
+  }
+});
+
+// Restoring replaces the live database, so: always take a safety snapshot of the
+// current state first (restoreFromFile does this internally, via the normal runBackup —
+// it shows up in the backups list like anything else), log who did it and from what
+// file, THEN respond to the client, and only after that's flushed does the process
+// deliberately exit so the platform's restart policy brings the app back up reading the
+// newly-restored file fresh (see restoreFromFile's own comment for why a hot in-process
+// swap isn't possible). Never run further queries against `db` after restoreFromFile
+// returns — the file underneath the open connection has changed.
+app.post('/api/admin/backups/:filename/restore', requireAuth, (req, res) => {
+  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  const match = listBackups().find((b) => b.filename === req.params.filename);
+  if (!match) return res.status(404).json({ error: 'Backup not found' });
+  const safetyBackup = restoreFromFile(path.join(BACKUPS_DIR, match.filename));
+  logAudit({ userId: req.session.userId, action: 'backup.restored', entityType: 'backup', entityId: match.filename, details: { source: 'local', safetyBackup } });
+  res.json({ restored: match.filename, safetyBackup, restarting: true });
+  setTimeout(() => process.exit(1), 500);
+});
+
+app.post('/api/admin/backups/offsite/:filename/restore', requireAuth, async (req, res) => {
+  const me = db.prepare('SELECT is_fo_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (!me || !me.is_fo_admin) return res.status(403).json({ error: 'Family Office admin only' });
+  const tmpPath = path.join(BACKUPS_DIR, `_offsite-restore-${Date.now()}.db`);
+  try {
+    await dropboxBackup.downloadOffsiteBackup(req.params.filename, tmpPath);
+    const safetyBackup = restoreFromFile(tmpPath);
+    fs.unlinkSync(tmpPath);
+    logAudit({ userId: req.session.userId, action: 'backup.restored', entityType: 'backup', entityId: req.params.filename, details: { source: 'dropbox', safetyBackup } });
+    res.json({ restored: req.params.filename, safetyBackup, restarting: true });
+    setTimeout(() => process.exit(1), 500);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    if (err instanceof dropboxBackup.DropboxNotConfiguredError) {
+      return res.status(503).json({ error: 'NOT_CONFIGURED', message: err.message });
+    }
+    res.status(502).json({ error: err.message || 'Restore failed' });
   }
 });
 

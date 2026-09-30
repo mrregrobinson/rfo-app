@@ -68,6 +68,15 @@ async function uploadBackupFile(localPath, filename) {
   });
 }
 
+async function downloadOffsiteBackup(filename, destPath) {
+  const resp = await dropboxRequest('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: { 'Dropbox-API-Arg': JSON.stringify({ path: `${BACKUP_PATH}/${filename}` }) },
+  });
+  const buffer = Buffer.from(await resp.arrayBuffer());
+  fs.writeFileSync(destPath, buffer);
+}
+
 async function deleteOffsiteBackup(filename) {
   await dropboxRequest('https://api.dropboxapi.com/2/files/delete_v2', {
     method: 'POST',
@@ -96,4 +105,4 @@ async function syncOffsiteBackup(localPath, filename) {
   return { filename, uploaded: !alreadyThere, pruned };
 }
 
-module.exports = { listOffsiteBackups, syncOffsiteBackup, DropboxNotConfiguredError };
+module.exports = { listOffsiteBackups, syncOffsiteBackup, downloadOffsiteBackup, DropboxNotConfiguredError };

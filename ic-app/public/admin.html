@@ -227,8 +227,27 @@ function AuditLogPage(){
 
 function fmtBackupSize(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';return (bytes/1024/1024).toFixed(1)+' MB';}
 
+// Shared by both the local and offsite backup tables. Restoring replaces the live
+// database — a plain confirm() is too easy to click through reflexively for something
+// this destructive, so this requires typing RESTORE. The server takes its own safety
+// snapshot of the current state before touching anything, and the app briefly restarts
+// afterward to pick up the restored file (see server/backup.js's restoreFromFile).
+async function restoreBackup(url,filename,createdLabel,setBusy){
+  const typed=window.prompt(`Type RESTORE to confirm.\n\nThis REPLACES the live database with "${filename}"${createdLabel?' (created '+createdLabel+')':''}. Anything created or changed after that point will be PERMANENTLY LOST unless you restore again from a later backup.\n\nA safety snapshot of the current state is taken automatically first. The app will restart (~10 seconds of downtime).`);
+  if(typed!=='RESTORE')return;
+  setBusy(true);
+  try{
+    await api.post(url,{});
+    alert('Restore started. The app is restarting — this page will reload automatically in about 10 seconds.');
+    setTimeout(()=>location.reload(),10000);
+  }catch(e){
+    alert('Restore failed: '+(e.message||'unknown error'));
+    setBusy(false);
+  }
+}
+
 function OffsiteBackupPanel(){
-  const [files,setFiles]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [syncing,setSyncing]=useState(false);const [lastResult,setLastResult]=useState(null);
+  const [files,setFiles]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [syncing,setSyncing]=useState(false);const [lastResult,setLastResult]=useState(null);const [restoringFile,setRestoringFile]=useState(null);
   function load(){setLoading(true);setError('');api.get('/api/admin/backups/offsite/list').then(setFiles).catch(e=>setError(e.message==='NOT_CONFIGURED'?'NOT_CONFIGURED':(e.message||'Failed to load'))).finally(()=>setLoading(false));}
   useEffect(()=>{load();},[]);
   async function syncNow(){
@@ -245,11 +264,12 @@ function OffsiteBackupPanel(){
     lastResult&&h('div',{className:'alert alert-success'},lastResult.uploaded?`✓ Uploaded ${lastResult.filename}`:`✓ ${lastResult.filename} was already there`,lastResult.pruned.length>0?` — pruned ${lastResult.pruned.length} older file${lastResult.pruned.length===1?'':'s'}.`:'.'),
     loading&&h('div',{style:{textAlign:'center',padding:20,color:'var(--muted)'}},h('span',{className:'spin'}),'Loading…'),
     !loading&&error!=='NOT_CONFIGURED'&&!error&&h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
-      h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Modified'].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
+      h('thead',null,h('tr',{style:{background:'var(--bg)',borderBottom:'0.5px solid var(--border)'}},['File','Size','Modified',''].map(lbl=>h('th',{key:lbl,style:{textAlign:'left',padding:'8px 12px',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}},lbl)))),
       h('tbody',null,files.map(f=>h('tr',{key:f.name,style:{borderBottom:'0.5px solid var(--border)'}},
         h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},f.name),
         h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtBackupSize(f.sizeBytes)),
-        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(f.modifiedAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(f.modifiedAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},h('button',{className:'btn btn-outline btn-sm',style:{color:'#991B1B',borderColor:'#FCA5A5'},disabled:!!restoringFile,onClick:()=>restoreBackup('/api/admin/backups/offsite/'+encodeURIComponent(f.name)+'/restore',f.name,new Date(f.modifiedAt).toLocaleString('en-CA'),busy=>setRestoringFile(busy?f.name:null))},restoringFile===f.name?'Restoring…':'Restore'))
       )))
     )),
     !loading&&error!=='NOT_CONFIGURED'&&!error&&files.length===0&&h('div',{style:{padding:16,textAlign:'center',color:'var(--muted)',fontSize:13}},'No offsite backups yet.')
@@ -257,7 +277,7 @@ function OffsiteBackupPanel(){
 }
 
 function BackupsPage(){
-  const [backups,setBackups]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [backingUp,setBackingUp]=useState(false);
+  const [backups,setBackups]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [backingUp,setBackingUp]=useState(false);const [restoringFile,setRestoringFile]=useState(null);
   function load(){setLoading(true);api.get('/api/admin/backups').then(setBackups).catch(e=>setError(e.message||'Failed to load backups')).finally(()=>setLoading(false));}
   useEffect(()=>{load();},[]);
   async function backupNow(){setBackingUp(true);setError('');try{await api.post('/api/admin/backups',{});load();}catch(e){setError(e.message||'Backup failed');}finally{setBackingUp(false);}}
@@ -272,7 +292,10 @@ function BackupsPage(){
         h('td',{style:{padding:'8px 12px',fontFamily:'monospace',fontSize:11}},b.filename),
         h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},fmtBackupSize(b.sizeBytes)),
         h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap',color:'var(--muted)'}},new Date(b.createdAt).toLocaleString('en-CA',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})),
-        h('td',{style:{padding:'8px 12px'}},h('a',{href:'/api/admin/backups/'+encodeURIComponent(b.filename),className:'btn btn-outline btn-sm',style:{textDecoration:'none'}},'Download'))
+        h('td',{style:{padding:'8px 12px',whiteSpace:'nowrap'}},
+          h('a',{href:'/api/admin/backups/'+encodeURIComponent(b.filename),className:'btn btn-outline btn-sm',style:{textDecoration:'none',marginRight:6}},'Download'),
+          h('button',{className:'btn btn-outline btn-sm',style:{color:'#991B1B',borderColor:'#FCA5A5'},disabled:!!restoringFile,onClick:()=>restoreBackup('/api/admin/backups/'+encodeURIComponent(b.filename)+'/restore',b.filename,new Date(b.createdAt).toLocaleString('en-CA'),busy=>setRestoringFile(busy?b.filename:null))},restoringFile===b.filename?'Restoring…':'Restore')
+        )
       )))
     ))),
     !loading&&backups.length===0&&h('div',{style:{padding:20,textAlign:'center',color:'var(--muted)',fontSize:13}},'No backups yet.'),
