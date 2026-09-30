@@ -61,20 +61,26 @@ function tasksForUser(db, userId) {
     title: row.title,
     priority: row.priority,
     targetQuarter: row.target_quarter,
+    targetDate: row.target_date,
     notes: row.notes,
     assignedToAll: !!row.assigned_to_all,
   }));
 }
 
+function fmtDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 function sectionHtml(label, tasks) {
   if (tasks.length === 0) return '';
   const items = tasks.map((t) => {
-    const quarter = t.targetQuarter ? ` — ${t.targetQuarter}` : '';
+    const when = t.targetDate ? ` — ${fmtDate(t.targetDate)}` : t.targetQuarter ? ` — ${t.targetQuarter}` : '';
     const allTag = t.assignedToAll ? ' <span style="color:#854F0B;">(shared with all)</span>' : '';
     const notes = t.notes
       ? `<div style="margin-top:2px;font-size:12px;color:#6B7280;">${escapeHtml(t.notes)}</div>`
       : '';
-    return `<a href="${APP_BASE_URL}/tasks?task=${t.id}" style="color:#2A7D7B;">${escapeHtml(t.title)}</a>${quarter}${allTag}${notes}`;
+    return `<a href="${APP_BASE_URL}/tasks?task=${t.id}" style="color:#2A7D7B;">${escapeHtml(t.title)}</a>${when}${allTag}${notes}`;
   });
   return sectionLabel(label) + bulletList(items);
 }

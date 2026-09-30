@@ -71,6 +71,16 @@ function memberById(members,id){return members.find(m=>m.id===id)}
 
 const GOOGLE_TASK_LIST_TITLE='Family Office';
 
+function quarterOf(dateStr){
+  const [y,m]=dateStr.split('-').map(Number);
+  return `${y}-Q${Math.floor((m-1)/3)+1}`;
+}
+
+function fmtDate(dateStr){
+  const [y,m,d]=dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y,m-1,d)).toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'});
+}
+
 // Finds the family's "Family Office" Google Tasks list, creating it the first time a
 // given member adds anything (each Google account has its own separate list of lists).
 async function getOrCreateFamilyOfficeListId(accessToken){
@@ -117,7 +127,9 @@ function TaskRow({task,me,roles,members,onToggleDone,onEdit,onAddToGoogleTasks,g
     h('div',{style:{flex:1}},
       h('div',{className:'task-title'},task.title,
         h('span',{className:`badge badge-${task.priority}`},task.priority),
-        task.targetQuarter&&h('span',{className:'badge badge-quarter'},task.targetQuarter),
+        task.targetDate
+          ? h('span',{className:'badge badge-quarter',title:task.targetQuarter?'Quarter: '+task.targetQuarter:''},fmtDate(task.targetDate))
+          : task.targetQuarter&&h('span',{className:'badge badge-quarter'},task.targetQuarter),
         task.status==='done'&&task.completedAt&&h('span',{className:'muted',style:{marginLeft:6}},'Completed '+task.completedAt),
         h('span',{style:{marginLeft:6}},h(AssigneeBadges,{task,members}))
       ),
@@ -125,8 +137,16 @@ function TaskRow({task,me,roles,members,onToggleDone,onEdit,onAddToGoogleTasks,g
         ? h('input',{className:'notes-input',placeholder:'Add notes…',value:notesDraft,onChange:e=>setNotesDraft(e.target.value),onBlur:saveNotes,onKeyDown:e=>{if(e.key==='Enter')e.target.blur();}})
         : task.notes&&h('div',{className:'muted',style:{marginTop:3}},task.notes)
     ),
-    h('div',{style:{display:'flex',gap:6,flexShrink:0}},
-      googleTasksReady&&h('button',{className:'btn btn-outline btn-sm',title:'Add to your Google Tasks',onClick:()=>onAddToGoogleTasks(task)},'📋 Google Tasks'),
+    h('div',{style:{display:'flex',gap:6,flexShrink:0,alignItems:'center'}},
+      googleTasksReady&&(task.googleSynced
+        ? h('button',{
+            className:'btn btn-outline btn-sm',
+            style:{color:'#065F46',borderColor:'#9FE1CB',background:'var(--green-l)'},
+            title:'Added to your Google Tasks on '+task.googleSyncedAt.slice(0,10)+'. Title/date/completion changes on either side sync via the "Sync with Google Tasks" button above — this button here just re-adds it if something goes wrong.',
+            onClick:()=>onAddToGoogleTasks(task)
+          },'✓ In Google Tasks')
+        : h('button',{className:'btn btn-outline btn-sm',title:'Add to your Google Tasks',onClick:()=>onAddToGoogleTasks(task)},'📋 Google Tasks')
+      ),
       editable&&h('button',{className:'btn btn-outline btn-sm',onClick:()=>onEdit(task)},'Edit')
     )
   );
@@ -136,7 +156,7 @@ function TaskFormModal({initial,categories,members,me,roles,onSave,onCancel,onDe
   const [title,setTitle]=useState(initial?.title||'');
   const [categoryId,setCategoryId]=useState(initial?.categoryId||categories[0]?.id||'');
   const [priority,setPriority]=useState(initial?.priority||'medium');
-  const [targetQuarter,setTargetQuarter]=useState(initial?.targetQuarter||'');
+  const [targetDate,setTargetDate]=useState(initial?.targetDate||'');
   const [notes,setNotes]=useState(initial?.notes||'');
   const [assignedToAll,setAssignedToAll]=useState(initial?.assignedToAll||false);
   const [assigneeIds,setAssigneeIds]=useState(initial?.assigneeIds||(roles.tasksAdmin?[]:[me.id]));
@@ -146,7 +166,9 @@ function TaskFormModal({initial,categories,members,me,roles,onSave,onCancel,onDe
   async function save(){
     setSaving(true);
     try{
-      await onSave({title,categoryId,priority,targetQuarter:targetQuarter||null,notes,assignedToAll,assigneeIds,completedAt:completedAt||null});
+      // The quarter is derived from the date rather than entered separately — filters
+      // and the digest still group by quarter, but there's only one date to set here.
+      await onSave({title,categoryId,priority,targetDate:targetDate||null,targetQuarter:targetDate?quarterOf(targetDate):null,notes,assignedToAll,assigneeIds,completedAt:completedAt||null});
     }finally{setSaving(false);}
   }
   return h('div',{className:'modal-overlay',onClick:onCancel},
@@ -156,12 +178,16 @@ function TaskFormModal({initial,categories,members,me,roles,onSave,onCancel,onDe
       h('input',{className:'form-input',value:title,onChange:e=>setTitle(e.target.value),autoFocus:true}),
       h('label',{className:'form-label'},'Category'),
       h('select',{className:'form-select',value:categoryId,onChange:e=>setCategoryId(e.target.value),disabled:!roles.tasksAdmin},
-        categories.map(c=>h('option',{key:c.id,value:c.id},c.name))),
+        // Categories come back ordered per-pillar (sort_order resets 1-4 within each of
+        // the 4 pillars), which interleaves them in this flat dropdown. Names all start
+        // "01. ", "02. ", etc. across all 12, so sorting on that numeric prefix gives the
+        // intended 01→12 reading order here regardless of the API's per-pillar ordering.
+        [...categories].sort((a,b)=>parseInt(a.name,10)-parseInt(b.name,10)).map(c=>h('option',{key:c.id,value:c.id},c.name))),
       h('label',{className:'form-label'},'Priority'),
       h('select',{className:'form-select',value:priority,onChange:e=>setPriority(e.target.value)},
         h('option',{value:'high'},'High'),h('option',{value:'medium'},'Medium'),h('option',{value:'low'},'Low')),
-      h('label',{className:'form-label'},'Target quarter (e.g. 2026-Q3)'),
-      h('input',{className:'form-input',value:targetQuarter,onChange:e=>setTargetQuarter(e.target.value),placeholder:'2026-Q3'}),
+      h('label',{className:'form-label'},'Target date'),
+      h('input',{className:'form-input',type:'date',value:targetDate,onChange:e=>setTargetDate(e.target.value)}),
       h('label',{className:'form-label'},'Notes'),
       h('textarea',{className:'form-textarea',value:notes,onChange:e=>setNotes(e.target.value)}),
       h('label',{className:'form-label'},'Completion date'),
@@ -292,58 +318,145 @@ function TasksApp({me,roles}){
 
   const googleTasksReady=!!googleClientId;
 
-  function addToGoogleTasks(task){
-    if(!googleClientId)return;
-    function start(){
+  // Shared by "Add to Google Tasks" and "Sync with Google Tasks" — both are
+  // user-initiated, in-the-moment actions, so a short-lived popup access token is all
+  // either needs; neither requires the server-side offline/refresh-token machinery true
+  // background sync would.
+  function getGoogleAccessToken(){
+    return new Promise((resolve,reject)=>{
+      if(!googleClientId){reject(new Error('Google Tasks is not configured.'));return;}
+      if(!(window.google&&window.google.accounts&&window.google.accounts.oauth2)){reject(new Error('Still loading Google sign-in — try again in a moment.'));return;}
       try{
         const tokenClient=google.accounts.oauth2.initTokenClient({
           client_id:googleClientId,
           scope:'https://www.googleapis.com/auth/tasks',
-          callback:async(resp)=>{
+          callback:(resp)=>{
             console.log('Google token response:',resp);
-            if(!resp||resp.error){
-              console.error('Google sign-in error:',resp);
-              setToast('Google sign-in was cancelled or failed'+(resp&&resp.error?(': '+resp.error):'')+'.');
-              return;
-            }
-            const noteLines=[];
-            if(task.notes)noteLines.push(task.notes);
-            if(task.targetQuarter)noteLines.push('Target quarter: '+task.targetQuarter);
-            noteLines.push('From the Robinson Family Office Task List: '+location.origin+'/tasks?task='+task.id);
-            // Default the due date to today when the task has no exact date of its own
-            // (most tasks only carry a target quarter) — Google Tasks needs a concrete
-            // date, and "today" is a reasonable placeholder the member can adjust.
-            const dueDate=task.targetDate||new Date().toISOString().slice(0,10);
-            const body={title:task.title,notes:noteLines.join('\n\n'),due:new Date(dueDate+'T00:00:00Z').toISOString()};
-            try{
-              const listId=await getOrCreateFamilyOfficeListId(resp.access_token);
-              const r=await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks`,{
-                method:'POST',
-                headers:{'Content-Type':'application/json',Authorization:'Bearer '+resp.access_token},
-                body:JSON.stringify(body),
-              });
-              const responseBody=await r.json().catch(()=>null);
-              console.log('Google Tasks API response:',r.status,responseBody);
-              if(!r.ok)throw new Error((responseBody&&responseBody.error&&responseBody.error.message)||('Google Tasks API error ('+r.status+')'));
-              setToast('Added "'+task.title+'" to your "'+GOOGLE_TASK_LIST_TITLE+'" list in Google Tasks.');
-            }catch(e){
-              console.error('Failed to add to Google Tasks:',e);
-              setToast('Failed to add to Google Tasks: '+e.message);
-            }
+            if(!resp||resp.error){reject(new Error('Google sign-in was cancelled or failed'+(resp&&resp.error?(': '+resp.error):'')+'.'));return;}
+            resolve(resp.access_token);
           },
           error_callback:(err)=>{
             console.error('Google token client error:',err);
-            setToast('Google sign-in error: '+(err&&err.message?err.message:JSON.stringify(err)));
+            reject(new Error('Google sign-in error: '+(err&&err.message?err.message:JSON.stringify(err))));
           },
         });
         tokenClient.requestAccessToken();
-      }catch(e){
-        console.error('Failed to start Google sign-in:',e);
-        setToast('Failed to start Google sign-in: '+e.message);
-      }
+      }catch(e){reject(e);}
+    });
+  }
+
+  async function addToGoogleTasks(task){
+    try{
+      const accessToken=await getGoogleAccessToken();
+      const noteLines=[];
+      if(task.notes)noteLines.push(task.notes);
+      if(task.targetQuarter)noteLines.push('Target quarter: '+task.targetQuarter);
+      noteLines.push('From the Robinson Family Office Task List: '+location.origin+'/tasks?task='+task.id);
+      // Default the due date to today when the task has no exact date of its own (most
+      // tasks only carry a target quarter) — Google Tasks needs a concrete date, and
+      // "today" is a reasonable placeholder the member can adjust.
+      const dueDate=task.targetDate||new Date().toISOString().slice(0,10);
+      const body={title:task.title,notes:noteLines.join('\n\n'),due:new Date(dueDate+'T00:00:00Z').toISOString()};
+      const listId=await getOrCreateFamilyOfficeListId(accessToken);
+      const r=await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+accessToken},
+        body:JSON.stringify(body),
+      });
+      const responseBody=await r.json().catch(()=>null);
+      console.log('Google Tasks API response:',r.status,responseBody);
+      if(!r.ok)throw new Error((responseBody&&responseBody.error&&responseBody.error.message)||('Google Tasks API error ('+r.status+')'));
+      // Record locally that *this member* has pushed this task, so the button can show
+      // "already added" — this is just a marker, not a live link (see migration 044's
+      // note: nothing here polls Google or receives updates back on its own).
+      const updated=await api.post(`/api/tasks/${task.id}/google-sync`,{googleTaskId:responseBody.id,googleTaskListId:listId});
+      setTasks(list=>list.map(t=>t.id===task.id?updated:t));
+      setToast('Added "'+task.title+'" to your "'+GOOGLE_TASK_LIST_TITLE+'" list in Google Tasks.');
+    }catch(e){
+      console.error('Failed to add to Google Tasks:',e);
+      setToast('Failed to add to Google Tasks: '+e.message);
     }
-    if(window.google&&window.google.accounts&&window.google.accounts.oauth2)start();
-    else setToast('Still loading Google sign-in — try again in a moment.');
+  }
+
+  // Manual two-way sync: fetches the member's own previously-synced tasks from Google
+  // Tasks, compares each one's "last changed" timestamp on both sides against when we
+  // last synced it, and moves the newer side's title/date/completion onto the older
+  // side. If BOTH sides changed since the last sync, whichever has the more recent
+  // timestamp wins outright for that task (a real conflict — simplest defensible policy
+  // for a family task list, not a merge). Notes are intentionally left out of this — the
+  // note pushed to Google is a composite of your notes plus a quarter line and a link
+  // back here, so pulling it apart again isn't reliable.
+  async function syncWithGoogleTasks(){
+    try{
+      const accessToken=await getGoogleAccessToken();
+      const syncMap=await api.get('/api/tasks/google-sync-map');
+      if(syncMap.length===0){setToast("You haven't added any tasks to Google Tasks yet — nothing to sync.");return;}
+      const listIds=[...new Set(syncMap.map(s=>s.googleTaskListId))];
+      const googleTasksById={};
+      for(const listId of listIds){
+        const r=await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks?showCompleted=true&showHidden=true`,{headers:{Authorization:'Bearer '+accessToken}});
+        const body=await r.json().catch(()=>null);
+        if(!r.ok){console.error('Google Tasks list fetch failed:',body);continue;}
+        for(const gt of body.items||[])googleTasksById[gt.id]=gt;
+      }
+      let pushedCount=0,pulledCount=0,conflictCount=0,missingCount=0,failedCount=0;
+      for(const link of syncMap){
+        const gt=googleTasksById[link.googleTaskId];
+        if(!gt){missingCount++;continue;}
+        const local=tasks.find(t=>t.id===link.taskId);
+        if(!local)continue;
+        const syncedAt=new Date(link.syncedAt).getTime();
+        const localChanged=new Date(local.updatedAt).getTime()>syncedAt;
+        const googleChanged=new Date(gt.updated).getTime()>syncedAt;
+        if(!localChanged&&!googleChanged)continue;
+        const isConflict=localChanged&&googleChanged;
+        const direction=isConflict
+          ?(new Date(local.updatedAt).getTime()>=new Date(gt.updated).getTime()?'push':'pull')
+          :(localChanged?'push':'pull');
+        try{
+          if(direction==='push'){
+            const patchBody={title:local.title,status:local.status==='done'?'completed':'needsAction'};
+            if(local.targetDate)patchBody.due=new Date(local.targetDate+'T00:00:00Z').toISOString();
+            const r=await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${link.googleTaskListId}/tasks/${link.googleTaskId}`,{
+              method:'PATCH',
+              headers:{'Content-Type':'application/json',Authorization:'Bearer '+accessToken},
+              body:JSON.stringify(patchBody),
+            });
+            const rb=await r.json().catch(()=>null);
+            if(!r.ok)throw new Error((rb&&rb.error&&rb.error.message)||('Google Tasks API error ('+r.status+')'));
+            pushedCount++;
+          }else{
+            const patch={};
+            if(gt.title&&gt.title!==local.title)patch.title=gt.title;
+            if(gt.status==='completed'&&local.status!=='done')patch.completedAt=(gt.completed||new Date().toISOString()).slice(0,10);
+            else if(gt.status==='needsAction'&&local.status==='done')patch.completedAt=null;
+            if(gt.due){
+              const gDate=gt.due.slice(0,10);
+              if(gDate!==local.targetDate){patch.targetDate=gDate;patch.targetQuarter=quarterOf(gDate);}
+            }
+            if(Object.keys(patch).length>0){
+              const updated=await api.put(`/api/tasks/${local.id}`,patch);
+              setTasks(list=>list.map(t=>t.id===local.id?updated:t));
+            }
+            pulledCount++;
+          }
+          if(isConflict)conflictCount++;
+          // Re-record the sync link so this task's baseline moves forward — otherwise
+          // we'd keep re-detecting the same already-resolved difference next time.
+          await api.post(`/api/tasks/${local.id}/google-sync`,{googleTaskId:link.googleTaskId,googleTaskListId:link.googleTaskListId});
+        }catch(e){console.error('Failed to sync task',local.id,e);failedCount++;}
+      }
+      const notes=[];
+      if(conflictCount)notes.push(`${conflictCount} changed on both sides — used the most recent edit`);
+      if(missingCount)notes.push(`${missingCount} no longer found in Google Tasks`);
+      if(failedCount)notes.push(`${failedCount} couldn't be synced`);
+      const suffix=notes.length?` (${notes.join('; ')})`:'';
+      const total=pushedCount+pulledCount;
+      setToast(total===0?'Checked Google Tasks — everything already matches.'+suffix:`Synced ${total} task${total===1?'':'s'} with Google Tasks — ${pushedCount} sent, ${pulledCount} received.`+suffix);
+    }catch(e){
+      console.error('Sync with Google Tasks failed:',e);
+      setToast('Failed to sync with Google Tasks: '+e.message);
+    }
   }
 
   function load(){
@@ -425,6 +538,7 @@ function TasksApp({me,roles}){
       h('div',{style:{display:'flex',gap:8}},
         roles.tasksAdmin&&h('button',{className:'btn btn-outline',onClick:()=>setShowRoles(true)},'Roles'),
         roles.tasksAdmin&&h('button',{className:'btn btn-outline',onClick:()=>setShowDigest(true)},'Digest Settings'),
+        roles.tasksMember&&googleTasksReady&&h('button',{className:'btn btn-outline',title:'Two-way sync of title/date/completion for anything you\'ve already added to Google Tasks',onClick:syncWithGoogleTasks},'🔄 Sync with Google Tasks'),
         roles.tasksMember&&h('button',{className:'btn btn-gold',onClick:()=>setShowAdd(true)},'+ Add Task'))
     ),
     h('div',{className:'filters'},

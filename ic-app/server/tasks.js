@@ -20,9 +20,15 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
     };
   }
 
-  function taskRowToJson(row) {
+  // googleSynced/googleSyncedAt reflect the *requesting user's own* Google Tasks push
+  // (task_google_sync is keyed per task+user, since Google Tasks is personal to each
+  // account — see migration 044) — not whether anyone else has added it to theirs.
+  function taskRowToJson(row, forUserId) {
     const assigneeRows = db.prepare('SELECT user_id FROM task_assignees WHERE task_id = ?').all(row.id);
     const assignedToAll = assigneeRows.some((a) => a.user_id === null);
+    const sync = forUserId
+      ? db.prepare('SELECT synced_at FROM task_google_sync WHERE task_id = ? AND user_id = ?').get(row.id, forUserId)
+      : null;
     return {
       id: row.id,
       categoryId: row.category_id,
@@ -40,6 +46,8 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
       updatedAt: row.updated_at,
       assignedToAll,
       assigneeIds: assignedToAll ? [] : assigneeRows.map((a) => a.user_id),
+      googleSynced: !!sync,
+      googleSyncedAt: sync ? sync.synced_at : null,
     };
   }
 
@@ -72,6 +80,17 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
     });
   });
 
+  // Lets the browser match Google Tasks API results back to our task rows for the
+  // manual two-way "Sync with Google Tasks" action (public/tasks.html) — only ever the
+  // calling member's own links, since Google Tasks is personal per account (migration
+  // 044). syncedAt is the baseline the client compares both sides' "last changed"
+  // timestamps against, to decide whether to push, pull, or (if both moved) resolve by
+  // whichever side changed more recently.
+  app.get('/api/tasks/google-sync-map', requireAuth, (req, res) => {
+    const rows = db.prepare('SELECT task_id, google_task_id, google_task_list_id, synced_at FROM task_google_sync WHERE user_id = ?').all(req.session.userId);
+    res.json(rows.map((r) => ({ taskId: r.task_id, googleTaskId: r.google_task_id, googleTaskListId: r.google_task_list_id, syncedAt: r.synced_at })));
+  });
+
   // ---- tasks ----
   // Every role (admin/member/viewer) sees the full list — Section 6.1: the list view is
   // the same for all roles, only edit/create/delete rights differ.
@@ -83,7 +102,7 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
       if (!row) return res.status(403).json({ error: 'No Task List access' });
     }
     const rows = db.prepare('SELECT * FROM tasks ORDER BY created_at').all();
-    res.json(rows.map(taskRowToJson));
+    res.json(rows.map((r) => taskRowToJson(r, req.session.userId)));
   });
 
   app.post('/api/tasks', requireAuth, (req, res) => {
@@ -122,7 +141,7 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
     });
     setAssignees(id, assigneeIds, assignedToAll);
     logAudit({ userId: req.session.userId, action: 'task.created', entityType: 'task', entityId: id, details: { title: b.title } });
-    res.status(201).json(taskRowToJson(db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)));
+    res.status(201).json(taskRowToJson(db.prepare('SELECT * FROM tasks WHERE id = ?').get(id), req.session.userId));
   });
 
   app.put('/api/tasks/:id', requireAuth, (req, res) => {
@@ -172,7 +191,25 @@ module.exports = function registerTaskRoutes(app, { db, logAudit }) {
       setAssignees(row.id, b.assigneeIds || [], !!b.assignedToAll);
     }
     logAudit({ userId: req.session.userId, action: nextStatus === 'done' && wasOpen ? 'task.completed' : 'task.updated', entityType: 'task', entityId: row.id });
-    res.json(taskRowToJson(db.prepare('SELECT * FROM tasks WHERE id = ?').get(row.id)));
+    res.json(taskRowToJson(db.prepare('SELECT * FROM tasks WHERE id = ?').get(row.id), req.session.userId));
+  });
+
+  // Records that the calling member pushed this task to their own Google Tasks —
+  // called from the browser right after the client-side Google Tasks API call
+  // succeeds (see addToGoogleTasks in public/tasks.html). Upserts so re-adding the
+  // same task just refreshes the timestamp/IDs rather than erroring.
+  app.post('/api/tasks/:id/google-sync', requireAuth, (req, res) => {
+    const row = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Task not found' });
+    const { googleTaskId, googleTaskListId } = req.body || {};
+    if (!googleTaskId || !googleTaskListId) return res.status(400).json({ error: 'googleTaskId and googleTaskListId are required' });
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO task_google_sync (task_id, user_id, google_task_id, google_task_list_id, synced_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(task_id, user_id) DO UPDATE SET google_task_id = excluded.google_task_id, google_task_list_id = excluded.google_task_list_id, synced_at = excluded.synced_at`
+    ).run(req.params.id, req.session.userId, googleTaskId, googleTaskListId, now);
+    res.json(taskRowToJson(db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id), req.session.userId));
   });
 
   app.delete('/api/tasks/:id', requireAuth, (req, res) => {
